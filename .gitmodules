@@ -1,9 +1,0 @@
-[submodule "homeserver-homepanel"]
-	path = homeserver-homepanel
-	url = https://github.com/harkhenon/homeserver-homepanel
-[submodule "homeserver-homebank"]
-	path = homeserver-homebank
-	url = https://github.com/harkhenon/homeserver-homebank
-[submodule "homeserver-homeshop"]
-	path = homeserver-homeshop
-	url = https://github.com/harkhenon/homeserver-homeshop
