@@ -8,7 +8,8 @@ use
     App\Models\BankAccount,
     App\Models\BankExpense,
     App\Models\BankIncoming,
-    App\Models\BankRegularFee
+    App\Models\BankRegularFee,
+    App\Models\BankAccountType
 ;
 
 class BankController extends Controller
@@ -17,9 +18,15 @@ class BankController extends Controller
 
     }
 
+    /**
+     * Get all accounts with their types and their mooves
+     * 
+     * @param Request $request Request object
+     * 
+     * @return response()->json
+     */
     public function index(Request $request) {
-        return response()->json([
-            "accounts" => BankAccount::with([
+        return response()->json(BankAccount::with([
                 'type',
                 'expenses' => function($query) {
                     $query->orderBy("created_at", "DESC");
@@ -30,19 +37,19 @@ class BankController extends Controller
                 'regularFees' => function($query) {
                     $query->orderBy("created_at", "DESC");
                 },
-            ])->get(),
-            "hash" => hash("sha256", BankAccount::with([
-                'type',
-                'expenses',
-                'incomings',
-                'regularFees'
-            ])->get())
-            ]
+            ])->get()
             , 200, [], JSON_PRETTY_PRINT
         );
         
     }
-
+    /**
+     * Get One account by id
+     * 
+     * @param int $id Account ID
+     * @param Request $request Request object
+     * 
+     * @return response()->json
+     */
     public function getCurrentAccount($id, Request $request) {
         return response()->json(
             BankAccount::with([
@@ -63,7 +70,14 @@ class BankController extends Controller
             , 200, [], JSON_PRETTY_PRINT
         );
     }
-
+    /**
+     * Updates account informations
+     * 
+     * @param int $id Account ID
+     * @param Request $request Request object
+     * @return response()->json
+     * 
+     */ 
     public function updateAccount($id, Request $request) {
         $validatedData = $request->validate([
             "name" => ["required"],
@@ -86,6 +100,14 @@ class BankController extends Controller
         ], 200, [], JSON_PRETTY_PRINT);
     }
 
+    /**
+     * Deletes account by its ID
+     * 
+     * @param int $id Account ID
+     * @param Request $request Request object
+     * @return response()->json
+     * 
+     */
     public function deleteAccount($id, Request $resquest) {
         $account = new BankAccount();
         $deleted = $account->find($id);
@@ -96,10 +118,24 @@ class BankController extends Controller
         ], 200, [], JSON_PRETTY_PRINT);
     }
 
+    /**
+     * Create an account
+     * 
+     * @param Request $request
+     * 
+     * @return response()->json
+     */
     public function createAccount(Request $request) {
 
     }
 
+    /**
+     * Create an operation
+     * 
+     * @param Request $request Request object
+     * 
+     * @return respone()->json
+     */
     public function createOperation(Request $request) {
 
         $validatedData = $request->validate([
@@ -170,6 +206,10 @@ class BankController extends Controller
             "message" => "Deleted",
             "data" => $deleted
         ], 200, [], JSON_PRETTY_PRINT);
+    }
+
+    public function getAccountTypes(Request $request) {
+        return response()->json(BankAccountType::all(), 200, [], JSON_PRETTY_PRINT);
     }
 
     protected function _chooseType($type) {

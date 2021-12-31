@@ -1,0 +1,91 @@
+html body {
+    background-color: #212121;
+}
+
+html body.pushable {
+    background-color: #212121;
+}
+
+html body header {
+    width: 100vw;
+    height: 150px;
+    background-color: #212121;
+}
+
+html body header .sidebar-toggle {
+    padding: 20px;
+    cursor: pointer;
+}
+
+html body header .sidebar-button {
+    color: white;
+}
+
+html body main .pusher {
+    width: 100vw;
+    min-height: 100vh;
+    background-color: #212121;
+}
+
+html body main .circle {
+    border-top-left-radius: 290px;
+    border-top-right-radius: 290px;
+}
+
+html body main #main-table {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    padding: 50px;
+}
+
+html body main #main-table .machine-container {
+    height: 75px;
+    overflow-y: hidden;
+    flex: 1;
+    color: white;
+    text-align: center;
+}
+
+html body main #main-table .machine-container div.machine-cpu , div.machine-ram, div.machine-disk, div.os {
+    height: 75px;
+    width: 150px;
+    text-align: center;
+    line-height: 75px;
+    vertical-align: middle;
+    border-left: 10px solid black;
+    border-right: 10px solid black;
+    border-top: 10px solid black;
+    margin: 0 auto;
+}
+
+html body main #main-table .machine-container div.os {
+    border-bottom: 10px black !important;
+}
+
+html body main #main-table .cpu>.load, .ram>.load, .disk>.load {
+    border-color: greenyellow !important;
+}
+
+html body main #main-table .machine-container .load {
+    height: 75px;
+    width: 150px;
+    border-left: 10px solid ;
+    border-right: 10px solid ;
+    border-bottom: 10px solid ;
+    border-bottom-left-radius: 190px;
+    border-bottom-right-radius: 190px;
+    transition: all 1s ease-in-out;
+    transform-origin: top center;
+    transform: rotate(0deg);
+    margin: 0 auto;
+}
+
+.ui.sidebar ul {
+    list-style: none;
+}
+
+.ui.sidebar ul li {
+    padding: 0 5px 0 5px;
+}
