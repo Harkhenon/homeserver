@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Clean named.conf file 
+
+if [ -e "/etc/bind/named.conf" ]; then
+    rm /etc/bind/named.conf;
+    touch /etc/bind/named.conf;
+    blue_info "File named.conf cleaned";
+fi
+
+# Create/Clean log folder
+
+if [ -d "/var/log/homeserver" ]; then
+    rm -R /var/log/homeserver;
+    mkdir /var/log/homeserver;
+    blue_info "Folder /var/log/homeserver cleaned and created";
+else
+    mkdir /var/log/homeserver
+fi
+
+# We create the main web folder and delete the old /var/www/html
+
+if [ -d /var/www/html ]; then
+    rm -R /var/www/html;
+fi
+
+# Creating/Cleaning the base folder
+
+rm -R /usr/share/homeserver
+
+if [ ! -d $HOMESERVERPATH ]; then
+    mkdir /usr/share/homeserver
+fi
+
+# Create log files
+
+touch /var/log/homeserver/error.log;
+touch /var/log/homeserver/activity.log;
+
+touch /etc/bind/$fqdn.zone;
+touch /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
+sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zonefile > /etc/bind/$fqdn.zone;
+sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zone > /etc/bind/named.conf;
+sed 's/{fqdn}/'$fqdn'/g' ./pattern/virtualhost > /etc/apache2/sites-available/$fqdn.conf;
+sed 's/{fqdn}/'$fqdn'/g' ./pattern/pool > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
+cp ./pattern/apachedefault.conf /etc/apache2/sites-available/000-default.conf

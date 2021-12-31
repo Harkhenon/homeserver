@@ -1,0 +1,23 @@
+; {fqdn}
+$TTL 3600
+{fqdn}. IN     SOA    a.root-servers.net. admin@{fqdn}. (
+                                2021081701  ; Serial
+                                3H          ; refresh after 3 hours
+                                1H          ; retry after 1 hour
+                                1W          ; expire after 1 week
+                                1D)         ; minimum TTL of 1 day
+
+        ; Name Server
+        IN      NS      a.root-servers.net.     ; VeriSign verteilt (anycast)
+        IN      NS      e.root-servers.net.     ; ns.nasa.gov, Mountain View, Kalifornien, USA
+        IN      NS      ns1.{fqdn}.
+        IN      NS      ns2.{fqdn}.
+
+        ; Mail Exchanger
+        IN      MX      50 mx1.{fqdn}.
+
+{fqdn}.                         IN A            {ip}
+www                             IN CNAME        {ip}
+ns1                             IN A            {ip}
+ns2                             IN A            {ip}
+mx1                             IN a            {ip}

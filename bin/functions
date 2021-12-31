@@ -1,0 +1,183 @@
+#!/bin/bash
+
+function red () {
+  echo -e "\e[38;5;196m$1\e[0m"
+}
+function blue () {
+  echo -e "\e[38;5;25m$1\e[0m"
+}
+function green () {
+  echo -e "\e[38;5;118m$1\e[0m"
+}
+function orange () {
+  echo -e "\e[38;5;178m$1\e[0m"
+}
+
+function red_warning () {
+  echo -e "\e[38;5;9m[WARNING]  $1\e[0m"
+}
+function blue_info () {
+  echo -e "\e[38;5;39m[INFO]  $1\e[0m"
+}
+function green_success () {
+  echo -e "\e[38;5;190m[SUCCESS]  $1\e[0m"
+}
+function orange_important () {
+  echo -e "\e[38;5;178m[IMPORTANT]  $1\e[0m"
+}
+
+function newVirtualHost () {
+
+  if [ "$1" = "info" ]
+  then
+    blue_info "newVirtualhost [FQDN] [POOL_PATTERN]"
+    exit 1;
+  fi
+
+  blue "Création du Virtualhost $1"
+
+  touch /etc/apache2/sites-available/$1.conf
+
+  echo -e "$virtualhost" > /etc/apache2/sites-available/$1.conf
+
+  blue "Activation du site $1"
+
+  a2ensite $1.conf >> /dev/null
+
+  blue "Écriture de la pool PHP-FPM"
+
+  echo -e "$2" > /etc/php/7.4/fpm/pool.d/$1.pool.conf
+}
+
+function createFolders () {
+
+  blue "Création des dossiers..."
+
+  mkdir /var/www/$user
+  mkdir /var/www/$user/$fqdn/
+  mkdir /var/www/$user/$fqdn/public
+  chown -R $user:$user /var/www/$user
+  echo "Hello World! I am <?=exec('whoami')?> !" > /var/www/$user/$fqdn/public/index.php
+
+  blue "Création du symlink dans le dossier personnel"
+
+  ln -s /var/www/$user/$fqdn /home/$user/$fqdn
+}
+
+function reloads () {
+
+  blue "Redémarrage d'apache..."
+
+  service apache2 restart
+
+  blue "Redémarrage de PHP"
+
+  service php7.4-fpm restart
+
+  blue "Redémarrage de Bind"
+
+  service bind9 restart
+}
+
+function certbotDeliver () {
+
+  blue "Création du certificat SSL (Let's Encrypt)";
+
+  certbot certonly --webroot -w /var/www/$user/$fqdn/public -d www.$fqdn -d $fqdn --non-interactive > /dev/null
+}
+
+function createZone () {
+
+  # Écriture de la zone dans named.conf
+
+  if [ ! -d /etc/bind/named.conf.d ]
+  then
+    mkdir /etc/bind/named.conf.d
+  fi
+
+  echo -e "$zone" > /etc/bind/named.conf.d/$fqdn.zone.conf;
+
+  local newNamedConf="$namedconf";
+
+  rm /etc/bind/named.conf
+  touch /etc/bind/named.conf
+  echo -e "$newNamedConf" > /etc/bind/named.conf
+
+  local allZones="$(cat /etc/bind/named.conf.d/*.zone.conf)";
+
+  echo -e "$allZones" >> /etc/bind/named.conf
+
+  # Écriture du fichier de zone
+
+  if [ ! -d /etc/bind/zones ]
+  then
+    mkdir /etc/bind/zones
+  fi
+
+  touch "/etc/bind/zones/$fqdn.zone";
+
+  echo -e "$zonefile" > "/etc/bind/zones/$fqdn.zone"
+
+  service bind9 restart
+}
+function createPool () {
+
+  if [ "$1" == "-h" || "$1" == "--help" ]
+  then
+    blue_info "createPool [FQDN] [USER] [POOL_PATTERN]"
+  fi
+
+  pool="[$1]
+        user = $2
+        group = $2
+        listen = /var/run/php/$1-fpm.sock
+        listen.owner = www-data
+        listen.group = www-data
+        php_admin_value[open_basedir] = /var/www/$2/$1/:/tmp
+
+        ; mandatory values
+        pm = dynamic
+        pm.max_children = 5
+        pm.start_servers = 2
+        pm.min_spare_servers = 1
+        pm.max_spare_servers = 3"
+
+        blue "Écriture de la Pool"
+
+        echo -e "$3" > /etc/php/7.4/fpm/pool.d/$1.pool.conf
+}
+
+
+function undoSite () {
+
+  blue "Désactivation du site et suppression configuration apache"
+  a2dissite $fqdn
+  rm /etc/apache2/sites-available/$fqdn.conf
+
+  blue "Suppression des zones"
+  rm /etc/bind/zones/$fqdn.zone
+  rm /etc/bind/named.conf.d/$fqdn.zone.conf
+
+  blue "Suppression des pools PHP"
+
+  rm /etc/php/7.4/fpm/pool.d/$fqdn-fpm.sock
+
+  blue "Suppression des dossiers"
+
+  rm -R /var/www/$user/$fqdn/
+
+  rm /home/$user/$fqdn
+
+  blue "Redémarrage des programmes"
+
+  reloads
+}
+
+function installPackageIfNotExists() {
+  dpkgcommand=$(dpkg -l | grep -o "ii  $1" -m 1)
+
+  if [ "$dpkgcommand" != "ii  $1" ]
+  then
+    apt-get install -y $1
+  fi
+}

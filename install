@@ -1,0 +1,113 @@
+#!/bin/bash
+
+user=$(whoami);
+
+SCRIPTPATH=$(pwd)
+
+source $SCRIPTPATH/bin/functions;
+
+if [ $user != root ]
+then
+    red_warning "Vous devez être root pour lancer cette installation!";
+    exit 1;
+fi
+
+clear;
+
+orange '
+    __  __                                            __
+   / / / /___  ____ ___  ___  ____  ____ _____  ___  / /
+  / /_/ / __ \/ __ `__ \/ _ \/ __ \/ __ `/ __ \/ _ \/ / 
+ / __  / /_/ / / / / / /  __/ /_/ / /_/ / / / /  __/ /  
+/_/ /_/\____/_/ /_/ /_/\___/ .___/\__,_/_/ /_/\___/_/   
+                          /_/                           
+'
+
+green "This script will install automatically your panel\n";
+orange_important "A domain name is absolutely required!";
+orange "             if you doesn't have one, type CTRL+C and go buy one\n";
+orange_important "For more informations or read the wiki, go to https://github.com/harkhenon/homepanel";
+orange_important "This script and this panel are distributed under MIT license\n\n";
+
+sleep 3;
+
+# 1.) Variables
+
+source $SCRIPTPATH/bin/baseVariables
+
+
+while true
+do
+    echo -n -e "\e[38;5;135mPlease enter the domain name [example: mydomain.com]: \e[0m" && read fqdn;
+    echo -n -e "\n"
+    echo -n -e "\e[38;5;135mConfirm the domain name [example: mydomain.com]: \e[0m" && read fqdnconfirm;
+    echo -n -e "\n"
+    
+    if [[ "$fqdn" == "$fqdnconfirm" && ! -z "${fqdn// /}" ]]; then
+        break
+    else
+        red_warning "Domains names doesn't match or are blank, please retry\n"
+    fi
+done
+
+# Install package base
+
+source $SCRIPTPATH/bin/baseInstall
+
+# Configure database
+
+source $SCRIPTPATH/bin/databaseModifications
+
+# Creating filesystem
+
+source $SCRIPTPATH/bin/cleanFilesAndCreateNews
+
+# Add homeserver user
+
+groupadd homeserver;
+useradd homeserver -g homeserver -b /usr/share/homeserver;
+
+# Downloading the panel
+
+blue_info "Homeserver download from Github...";
+git clone git://github.com/harkhenon/homeserver --branch dev $HOMESERVERPATH;
+green_success "Download done";
+
+# Fill .env file
+
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
+
+# Set permissions on main folder
+
+green_success "Permissions update";
+chown -R homeserver:homeserver /usr/share/homeserver;
+
+orange_important "Apache and PHP restart";
+
+a2ensite $fqdn;
+service apache2 restart;
+service php$SHORTPHPVERSION-fpm restart;
+
+blue_info "Panel packages update, it may take some minutes";
+
+composer update --working-dir $HOMESERVERPATH;
+
+su homeserver -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan key:generate)";
+
+su homeserver -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan passport:keys)";
+
+green_success "Update done";
+
+blue_info "Database populating"
+
+su homepanel -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan migrate)";
+
+blue_info "SSL certificate creation";
+
+certbot --apache --non-interactive --agree-tos -m admin@$fqdn --domain $fqdn;
+
+green_success "SSL certificate created";
+
+orange_important "To connect to phpMyAdmin, enter url: http://$(wget -qO- http://ipecho.net/plain | xargs echo)/phpmyadmin"
+orange_important "MySQL homepanel database password is: $MYSQLPASSWORD, please note it!";
+orange_important "Your panel URL is: https://$fqdn, enjoy!";

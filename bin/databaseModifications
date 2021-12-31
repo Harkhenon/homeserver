@@ -1,0 +1,52 @@
+#!/bin/bash
+
+while true
+do
+    echo -n -e "\e[38;5;135mHomeserver MySQL user password: \e[0m" && read -s HSPASSWORD;
+    echo -n -e "\n"
+    echo -n -e "\e[38;5;135mConfirm Homeserver MySQL user password: \e[0m" && read -s HSPASSWORDCONFIRM;
+    echo -n -e "\n"
+    
+    if [ "$HSPASSWORD" == "$HSPASSWORDCONFIRM" ]; then
+        break
+    else
+        red_warning "Passwords doesn't match, please retry\n"
+    fi
+done
+
+
+# Check if homeserver user exists in MySQL installation
+
+MYSQL_USER_EXISTS=$(mysql -e "SELECT user FROM mysql.user WHERE user='homeserver'");
+
+# Create user with password or update it
+
+if [ -z "$MYSQL_USER_EXISTS" ]
+then
+    mysql -e "CREATE USER 'homeserver'@'localhost' IDENTIFIED BY '$HSPASSWORD';";
+    blue_info "MySQL User created";
+else
+    mysql -e "ALTER USER 'homeserver'@'localhost' IDENTIFIED BY '$HSPASSWORD';";
+    green "User homeserver exists, password updated";
+fi
+
+# Creating database and grant privileges
+
+mysql -e "CREATE DATABASE IF NOT EXISTS homeserver";
+mysql -e "GRANT ALL ON homeserver.* TO 'homeserver'@'localhost';";
+mysql -e "FLUSH PRIVILEGES;";
+
+# Secure MySQL installation for production
+
+mysql_secure_installation << EOF
+n
+$MYSQLPASSWORD
+$MYSQLPASSWORD
+y
+y
+y
+y
+y
+EOF;
+
+blue_info "MySQL configuration done"

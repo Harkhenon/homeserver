@@ -1,0 +1,93 @@
+#!/bin/bash
+
+# Installing base environment (in future, it'll be with docker, maybe)
+
+blue_info "Base environment installation";
+
+# Update and Upgrade system
+
+blue_info "Software update and upgrade, it may take some minutes";
+
+apt-get update > /dev/null;
+apt-get -y upgrade > /dev/null;
+
+## Base
+
+blue_info "Installing base packages"
+
+installPackageIfNotExists "zip";
+installPackageIfNotExists "apache2";
+installPackageIfNotExists "mariadb-server";
+installPackageIfNotExists "bind9";
+installPackageIfNotExists "fuse"
+installPackageIfNotExists "snapd"
+
+installPackageIfNotExists "php";
+installPackageIfNotExists "php-fpm";
+
+# Get the version of PHP, if version is like 7.4.3,
+# we truncate for getting a 3 characters version (ex: 7.4)
+
+PHPVERSION=$(php -r "echo PHP_VERSION;");
+
+if [ ${#PHPVERSION} -eq 5 ]
+then
+    SHORTPHPVERSION=${PHPVERSION:0:-2}
+elif [ ${#PHPVERSION} -eq 6 ]
+then
+    SHORTPHPVERSION=${PHPVERSION:0:-3}
+fi
+
+blue_info "PHP version is $SHORTPHPVERSION"
+
+installPackageIfNotExists "php$SHORTPHPVERSION-curl"
+installPackageIfNotExists "php$SHORTPHPVERSION-mbstring"
+installPackageIfNotExists "php$SHORTPHPVERSION-xml"
+installPackageIfNotExists "php$SHORTPHPVERSION-zip"
+installPackageIfNotExists "fail2ban"
+installPackageIfNotExists "curl"
+
+# Enable PHP-FPM in apache
+
+a2enmod proxy_fcgi setenvif;
+a2enconf php7.4-fpm;
+
+# Add PhpMyAdmin
+
+installPackageIfNotExists "phpmyadmin"
+
+# Add NodeJS
+
+snap install node --classic &> /dev/null
+
+# Upgrade npm
+
+npm install -g npm &> /dev/null
+
+# Add yarn to NodeJS
+
+npm install --global yarn; &> /dev/null
+
+# Install the correct certbot for Let's Encrypt
+
+snap install core;
+snap refresh core;
+snap install --classic certbot;
+ln -s /snap/bin/certbot /usr/bin/certbot;
+
+# Install Composer v2
+
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php -r "if (hash_file('sha384', 'composer-setup.php') === '906a84df04cea2aa72f40b5f787e49f22d4c2f19492ac310e8cba5b96ac8b64115ac402c8cd292b8a03482574915d1a8') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+php composer-setup.php
+php -r "unlink('composer-setup.php');"
+cp composer.phar /usr/bin/composer
+orange "Composer is installed globally, you can use \"composer\" command directly"
+rm composer.phar
+
+# Clean useless packages
+
+blue_info "Packages cleaning, it may take some minutes";
+
+apt-get autoclean > /dev/null
+apt-get autoremove -y > /dev/null;

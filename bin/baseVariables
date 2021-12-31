@@ -1,0 +1,5 @@
+#!/bin/bash
+
+HOMESERVERPATH=/usr/share/homeserver;
+
+MYSQLPASSWORD=$(openssl rand -hex 15);
