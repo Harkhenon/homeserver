@@ -17,7 +17,8 @@ $TTL 3600
         IN      MX      50 mx1.{fqdn}.
 
 {fqdn}.                         IN A            {ip}
-www                             IN CNAME        {ip}
+www                             IN CNAME        {fqdn}.
 ns1                             IN A            {ip}
 ns2                             IN A            {ip}
-mx1                             IN a            {ip}
+mx1                             IN A            {ip}
+sql                             IN A            {ip}

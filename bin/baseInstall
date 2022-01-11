@@ -13,6 +13,14 @@ apt-get -y upgrade > /dev/null;
 
 ## Base
 
+### Because if Mariadb/Mysql is installed it can cause some problems,
+### we remove them before reinstall
+
+orange_important "MariaDB and MySQL uninstall to prevent troubles"
+DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mariadb* mysql*
+rm -R /etc/mysql
+rm -R /var/lib/mysql
+
 blue_info "Installing base packages"
 
 installPackageIfNotExists "zip";
@@ -47,14 +55,26 @@ installPackageIfNotExists "php$SHORTPHPVERSION-zip"
 installPackageIfNotExists "fail2ban"
 installPackageIfNotExists "curl"
 
+# Configure database
+
+source $SCRIPTPATH/bin/databaseModifications
+
 # Enable PHP-FPM in apache
 
 a2enmod proxy_fcgi setenvif;
 a2enconf php7.4-fpm;
 
-# Add PhpMyAdmin
+# Add Adminer
 
-installPackageIfNotExists "phpmyadmin"
+rm -R /usr/share/adminer
+wget https://adminer.org/latest.php
+mkdir /usr/share/adminer
+cp latest.php /usr/share/adminer/index.php
+chown -R homeserver:homeserver /usr/share/adminer
+chmod 0755 /usr/share/adminer
+chmod 0755 /usr/share/adminer/index.php
+rm latest.php
+
 
 # Add NodeJS
 

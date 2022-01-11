@@ -5,7 +5,7 @@ group = homeserver
 listen = /var/run/php/{fqdn}-fpm.sock
 listen.owner = www-data
 listen.group = www-data
-php_admin_value[open_basedir] = /usr/share/homeserver/:/tmp
+php_admin_value[open_basedir] = /usr/share/homeserver/:/tmp:/usr/share/adminer
 
 ; mandatory values
 pm = dynamic

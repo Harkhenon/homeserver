@@ -1,7 +1,7 @@
 APP_NAME=Homeserver
-APP_ENV=production
+APP_ENV={env}
 APP_KEY=
-APP_DEBUG=true
+APP_DEBUG=false
 APP_URL=https://{fqdn}
 
 LOG_CHANNEL=stack

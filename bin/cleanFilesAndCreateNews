@@ -24,6 +24,8 @@ if [ -d /var/www/html ]; then
     rm -R /var/www/html;
 fi
 
+cp ./pattern/apachedefault.conf /etc/apache2/sites-available/000-default.conf
+
 # Creating/Cleaning the base folder
 
 rm -R /usr/share/homeserver
@@ -37,10 +39,27 @@ fi
 touch /var/log/homeserver/error.log;
 touch /var/log/homeserver/activity.log;
 
+# Bind zone file
+
 touch /etc/bind/$fqdn.zone;
+
+# PHP-FPM pool file
+
 touch /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
-sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zonefile > /etc/bind/$fqdn.zone;
-sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zone > /etc/bind/named.conf;
-sed 's/{fqdn}/'$fqdn'/g' ./pattern/virtualhost > /etc/apache2/sites-available/$fqdn.conf;
-sed 's/{fqdn}/'$fqdn'/g' ./pattern/pool > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
+
+# Filling zone file and Bind9 named.conf
+
+sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zonefile.bind > /etc/bind/$fqdn.zone;
+sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/zone.bind > /etc/bind/named.conf;
+
+# Filling virtualhost file for Apache
+
+sed 's/{fqdn}/'$fqdn'/g' ./pattern/virtualhost.apache > /etc/apache2/sites-available/$fqdn.conf;
+
+# Filling PHP-FPM pool file
+
+sed 's/{fqdn}/'$fqdn'/g' ./pattern/pool.php-fpm) > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
+
+# Editing the apache default website
+
 cp ./pattern/apachedefault.conf /etc/apache2/sites-available/000-default.conf

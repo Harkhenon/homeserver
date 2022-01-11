@@ -27,26 +27,22 @@ then
     blue_info "MySQL User created";
 else
     mysql -e "ALTER USER 'homeserver'@'localhost' IDENTIFIED BY '$HSPASSWORD';";
-    green "User homeserver exists, password updated";
+    blue_info "User homeserver exists, password updated";
 fi
 
 # Creating database and grant privileges
 
 mysql -e "CREATE DATABASE IF NOT EXISTS homeserver";
 mysql -e "GRANT ALL ON homeserver.* TO 'homeserver'@'localhost';";
-mysql -e "FLUSH PRIVILEGES;";
 
 # Secure MySQL installation for production
 
-mysql_secure_installation << EOF
-n
-$MYSQLPASSWORD
-$MYSQLPASSWORD
-y
-y
-y
-y
-y
-EOF;
+red_warning $MYSQLPASSWORD
+
+mysql -e "DELETE FROM mysql.user WHERE User='';"
+mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
+mysql -e "DROP DATABASE IF EXISTS test;"
+mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
+mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQLPASSWORD';FLUSH PRIVILEGES;"
 
 blue_info "MySQL configuration done"

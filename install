@@ -8,7 +8,7 @@ source $SCRIPTPATH/bin/functions;
 
 if [ $user != root ]
 then
-    red_warning "Vous devez être root pour lancer cette installation!";
+    red_warning "You must be root, sorry! Try sudo -s or sudo -i";
     exit 1;
 fi
 
@@ -54,10 +54,6 @@ done
 
 source $SCRIPTPATH/bin/baseInstall
 
-# Configure database
-
-source $SCRIPTPATH/bin/databaseModifications
-
 # Creating filesystem
 
 source $SCRIPTPATH/bin/cleanFilesAndCreateNews
@@ -71,40 +67,61 @@ useradd homeserver -g homeserver -b /usr/share/homeserver;
 
 blue_info "Homeserver download from Github...";
 git clone git://github.com/harkhenon/homeserver --branch dev $HOMESERVERPATH;
+
+ln -s /usr/share/adminer $HOMESERVERPATH/public
+
 green_success "Download done";
 
 # Fill .env file
 
-sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
 
 # Set permissions on main folder
 
 green_success "Permissions update";
 chown -R homeserver:homeserver /usr/share/homeserver;
 
-orange_important "Apache and PHP restart";
+
+
+# Enabling main websites
+
+blue_info "Enabling virtualhosts"
 
 a2ensite $fqdn;
+a2ensite sql.$fqdn
+
+# Apache and PHP-FPM restart
+
+blue_info "Apache and PHP restart";
+
 service apache2 restart;
 service php$SHORTPHPVERSION-fpm restart;
 
 blue_info "Panel packages update, it may take some minutes";
 
-composer update --working-dir $HOMESERVERPATH;
+su homeserver -s /bin/bash -c "composer update --working-dir $HOMESERVERPATH";
 
-su homeserver -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan key:generate)";
-
-su homeserver -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan passport:keys)";
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate";
 
 green_success "Update done";
 
 blue_info "Database populating"
 
-su homepanel -s /bin/bash -c "(cd $HOMESERVERPATH && php artisan migrate)";
+su homepanel -s /bin/bash -c "php $HOMESERVERPATH/artisan migrate";
+
+rm $HOMESERVERPATH/.env
+
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/production/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
+
+chown homeserver:homeserver $HOMESERVERPATH/.env
+
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate";
 
 blue_info "SSL certificate creation";
 
 certbot --apache --non-interactive --agree-tos -m admin@$fqdn --domain $fqdn;
+certbot --apache --non-interactive --agree-tos -m admin@$fqdn --domain sql.$fqdn;
+
 
 green_success "SSL certificate created";
 
