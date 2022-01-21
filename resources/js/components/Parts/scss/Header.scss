@@ -1,0 +1,16 @@
+html {
+    & body {
+        & #root {
+            & header {
+              text-align: center;
+              color: white;
+              font-weight: bolder;
+              height: 20vh;
+
+              & .sidenav {
+                  text-align: left;
+              }
+            }
+        }
+    }
+}

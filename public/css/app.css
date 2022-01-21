@@ -1,0 +1,61 @@
+@import url(https://fonts.googleapis.com/css?family=Nunito);
+html body {
+  background-color: #212121;
+}
+html body input {
+  color: #eee;
+}
+html body #root main {
+  min-height: 60vh;
+}
+html body #root main .circle-load {
+  border-top-left-radius: 290px;
+  border-top-right-radius: 290px;
+}
+html body #root main #main-table {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+  padding: 50px;
+}
+html body #root main #main-table .machine-container {
+  height: 75px;
+  overflow-y: hidden;
+  flex: 1;
+  color: white;
+  text-align: center;
+}
+html body #root main #main-table .machine-container div.machine-cpu, html body #root main #main-table .machine-container div.machine-ram, html body #root main #main-table .machine-container div.machine-disk, html body #root main #main-table .machine-container div.os {
+  height: 75px;
+  width: 150px;
+  text-align: center;
+  line-height: 75px;
+  vertical-align: middle;
+  border-left: 10px solid black;
+  border-right: 10px solid black;
+  border-top: 10px solid black;
+  margin: 0 auto;
+}
+html body #root main #main-table .machine-container div.os {
+  border-bottom: 10px black !important;
+}
+html body #root main #main-table .machine-container .load {
+  height: 75px;
+  width: 150px;
+  border-left: 10px solid;
+  border-right: 10px solid;
+  border-bottom: 10px solid;
+  border-bottom-left-radius: 190px;
+  border-bottom-right-radius: 190px;
+  transition: all 1s ease-in-out;
+  transform-origin: top center;
+  transform: rotate(0deg);
+  margin: 0 auto;
+}
+html body #root main #main-table .cpu > .load, html body #root main #main-table .ram > .load, html body #root main #main-table .disk > .load {
+  border-color: greenyellow !important;
+}
+html body #root footer {
+  height: 20vh;
+}

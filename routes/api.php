@@ -3,6 +3,11 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\API\BankAccountController;
+use App\Http\Controllers\API\UserController;
+
+use App\Http\Controllers\API\RegisterController;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -29,4 +34,13 @@ Route::post('/bank/account/operation', [\App\Http\Controllers\BankController::cl
 Route::patch('/bank/account/operation/{id}', [\App\Http\Controllers\BankController::class, 'updateOperation'])->name('bank.update_operation');
 Route::delete('/bank/account/operation/{id}', [\App\Http\Controllers\BankController::class, 'deleteOperation'])->name('bank.delete_operation');
 
-Route::get('/server/informations', [\App\Http\Controllers\ServerController::class, "getLoadJson"])->name('server.load.json');
+Route::middleware('auth:api')->group( function () {
+    Route::get('check', [RegisterController::class, 'check']);
+    Route::get('/server/informations', [\App\Http\Controllers\ServerController::class, "getLoadJson"])->name('server.load.json');
+    Route::resource('bank_accounts', BankAccountController::class);
+    Route::resource('user', UserController::class);
+});
+
+Route::post('register', [RegisterController::class, 'register']);
+
+Route::post('login', [RegisterController::class, 'login']);

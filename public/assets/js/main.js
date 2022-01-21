@@ -20,10 +20,10 @@ $('.sidebar-toggle').click(() => {
 const getMachineLoad = () => {
     $.ajax({
         type: 'GET',
-        url: "https://homeserver.test/api/server/informations"
+        url: "/api/server/informations"
     })
     .done(function(data) {
-        $('.system').text("Platform: " + data.os);
+        $('.system').append("<h2>Platform</h2>" + data.os);
         $('.cpu .load').css("transform", "rotate(" + Math.round(180 * data.cpuUsage / 100) + "deg)");
         $('.ram .load').css("transform", "rotate(" + Math.round(180 * data.ramUsage / 100) + "deg)");
         $('.disk .load').css("transform", "rotate(" + Math.round(180 * data.diskUsage / 100) + "deg)");
