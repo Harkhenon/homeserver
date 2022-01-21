@@ -3,3 +3,6 @@
 HOMESERVERPATH=/usr/share/homeserver;
 
 MYSQLPASSWORD=$(openssl rand -hex 15);
+
+TEMP_LARAVEL_APP_KEY=$(openssl rand -hex 15);
+LARAVEL_APP_KEY=$(base64 -e $TEMP_LARAVEL_APP_KEY);

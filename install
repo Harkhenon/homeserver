@@ -74,14 +74,12 @@ green_success "Download done";
 
 # Fill .env file
 
-sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $SCRIPTPATH/pattern/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
 
 # Set permissions on main folder
 
 green_success "Permissions update";
 chown -R homeserver:homeserver /usr/share/homeserver;
-
-
 
 # Enabling main websites
 
@@ -89,6 +87,8 @@ blue_info "Enabling virtualhosts"
 
 a2ensite $fqdn;
 a2ensite sql.$fqdn
+a2enconf rewrite
+a2enconf env
 
 # Apache and PHP-FPM restart
 
@@ -97,11 +97,10 @@ blue_info "Apache and PHP restart";
 service apache2 restart;
 service php$SHORTPHPVERSION-fpm restart;
 
+
 blue_info "Panel packages update, it may take some minutes";
 
 su homeserver -s /bin/bash -c "composer update --working-dir $HOMESERVERPATH";
-
-su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate";
 
 green_success "Update done";
 
@@ -109,18 +108,17 @@ blue_info "Database populating"
 
 su homepanel -s /bin/bash -c "php $HOMESERVERPATH/artisan migrate";
 
-rm $HOMESERVERPATH/.env
+# Pass Laravel/Homeserver in production mode
 
-sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/production/g' $SCRIPTPATH/pattern/dotenv > $HOMESERVERPATH/.env;
+rm /etc/apache2/HomeserverEnv.conf
 
-chown homeserver:homeserver $HOMESERVERPATH/.env
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/production/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $SCRIPTPATH/pattern/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
 
-su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate";
+service apache2 restart
 
 blue_info "SSL certificate creation";
 
-certbot --apache --non-interactive --agree-tos -m admin@$fqdn --domain $fqdn;
-certbot --apache --non-interactive --agree-tos -m admin@$fqdn --domain sql.$fqdn;
+certbot --apache --non-interactive --agree-tos -m admin@$fqdn -d $fqdn -d www.$fqdn -d sql.$fqdn;
 
 
 green_success "SSL certificate created";
