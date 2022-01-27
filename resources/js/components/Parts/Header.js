@@ -25,14 +25,19 @@ class Header extends React.Component {
                             <div className="background">
                                 <img src="https://placeimg.com/640/480/tech" alt="tech" />
                             </div>
-                            <Link className="btn-small white-text" to="/user">
+                            <Link className="waves-effect waves-light btn-small" to="/user">
+                                <i className="material-icons left">person</i>
                                 {username}
                             </Link>
-                            <span className="white-text email">{email}</span>
+                            <span className="white-text email btn-small orange">
+                                <i className="material-icons left">email</i>
+                                {email}
+                            </span>
                             <Link
                                 to="/user/logout"
-                                className="btn red"
+                                className="waves-effect waves-light btn-small red"
                             >
+                                <i className="material-icons left">logout</i>
                                 Log Out
                             </Link>
                         </div>

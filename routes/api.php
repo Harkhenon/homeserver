@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\API\BankAccountController;
 use App\Http\Controllers\API\UserController;
-
+use App\Http\Controllers\API\ServerController;
 use App\Http\Controllers\API\RegisterController;
 
 /*
@@ -36,11 +36,12 @@ Route::delete('/bank/account/operation/{id}', [\App\Http\Controllers\BankControl
 
 Route::middleware('auth:api')->group( function () {
     Route::get('check', [RegisterController::class, 'check']);
-    Route::get('/server/informations', [\App\Http\Controllers\ServerController::class, "getLoadJson"])->name('server.load.json');
+    Route::get('/server/informations', [ServerController::class, "getLoadJson"])->name('server.load.json');
+    Route::get('/server/config', [ServerController::class, 'getServerConfigInformations'])->name('server.configInformations');
     Route::resource('bank_accounts', BankAccountController::class);
     Route::resource('user', UserController::class);
 });
 
-Route::post('register', [RegisterController::class, 'register']);
+// Route::post('register', [RegisterController::class, 'register']);
 
 Route::post('login', [RegisterController::class, 'login']);

@@ -11,6 +11,21 @@ html {
             color: #eee;
         }
         & #root {
+            header .sidenav .user-view {
+                & a:hover {
+                    background-color: #2bbbad;
+                }
+
+                & .email {
+                    line-height: 2.3em;
+                    cursor: default;
+                }
+
+                & .btn-small {
+                    padding-left: 8px;
+                    padding-right: 13px;
+                }
+            }
             & main {
                 min-height: 60vh;
                 & .circle-load {
@@ -21,9 +36,6 @@ html {
                 & #main-table {
 
                     width: 100%;
-                    display: flex;
-                    flex-direction: row;
-                    justify-content: space-evenly;
                     padding: 50px;
 
                     & .machine-container {
@@ -32,6 +44,7 @@ html {
                         flex: 1;
                         color: white;
                         text-align: center;
+                        margin-bottom: 50px; 
 
                         & div.machine-cpu , div.machine-ram, div.machine-disk, div.os {
                             height: 75px;
@@ -43,7 +56,8 @@ html {
                             border-right: 10px solid black;
                             border-top: 10px solid black;
                             margin: 0 auto;
-                            //font-size: 0.8em;
+                            font-size: 0.8em;
+                            
                         }
 
                         & div.os {

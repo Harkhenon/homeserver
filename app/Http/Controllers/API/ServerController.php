@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\API;
 
 use Illuminate\Http\Request;
 
-class ServerController extends Controller
+class ServerController extends BaseController
 {
     public function getLoadJson(Request $request) {
 
@@ -22,6 +22,20 @@ class ServerController extends Controller
             "ramUsage" => $ram[0],
             "diskUsage" => $disk,
             "os" => trim($os[1])
+        ];
+
+        return response()->json($json, 200, [], JSON_PRETTY_PRINT);
+    }
+
+    public function getServerConfigInformations() {
+        exec("hostname -f", $hostname);
+        exec("hostname -s", $shortHostname);
+        exec("hostname -i", $hostnameIp);
+
+        $json = [
+            "hostname" => $hostname,
+            "shortHostname" => $shortHostname,
+            "hostnameIp" => $hostnameIp
         ];
 
         return response()->json($json, 200, [], JSON_PRETTY_PRINT);

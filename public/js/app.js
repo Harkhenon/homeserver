@@ -2157,7 +2157,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _containers_Parts_Header__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../../containers/Parts/Header */ "./resources/js/containers/Parts/Header.js");
 /* harmony import */ var _Parts_Footer__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../Parts/Footer */ "./resources/js/components/Parts/Footer.js");
 /* harmony import */ var _containers_Home__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../../containers/Home */ "./resources/js/containers/Home.js");
-/* harmony import */ var _Settings__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../Settings */ "./resources/js/components/Settings/index.js");
+/* harmony import */ var _containers_Settings__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../../containers/Settings */ "./resources/js/containers/Settings/index.js");
 /* harmony import */ var _Errors_Error404__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../Errors/Error404 */ "./resources/js/components/Errors/Error404.js");
 /* harmony import */ var _AppRouter_Logout__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ../AppRouter/Logout */ "./resources/js/components/AppRouter/Logout.js");
 /* harmony import */ var _store__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ../../store */ "./resources/js/store/index.js");
@@ -2185,6 +2185,11 @@ var AppRouter = function AppRouter(props) {
             userUsername = _response$data$data.name,
             userEmail = _response$data$data.email;
         setCredentials(userUsername, userEmail);
+      })["catch"](function (error) {
+        console.info('User Token is expired, deleting it...');
+        localStorage.removeItem('userToken');
+        localStorage.removeItem('userId');
+        window.location.reload();
       });
     }
   });
@@ -2196,7 +2201,7 @@ var AppRouter = function AppRouter(props) {
         element: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(_containers_Home__WEBPACK_IMPORTED_MODULE_3__["default"], {})
       }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(react_router__WEBPACK_IMPORTED_MODULE_9__.Route, {
         path: "/system",
-        element: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(_Settings__WEBPACK_IMPORTED_MODULE_4__["default"], {})
+        element: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(_containers_Settings__WEBPACK_IMPORTED_MODULE_4__["default"], {})
       }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(react_router__WEBPACK_IMPORTED_MODULE_9__.Route, {
         path: "/user/logout",
         element: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_8__.jsx)(_AppRouter_Logout__WEBPACK_IMPORTED_MODULE_6__["default"], {})
@@ -2387,11 +2392,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "./node_modules/react/index.js");
-/* harmony import */ var react_router_dom__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! react-router-dom */ "./node_modules/react-router-dom/index.js");
+/* harmony import */ var react_router_dom__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! react-router-dom */ "./node_modules/react-router-dom/index.js");
 /* harmony import */ var _scss_404_scss__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./scss/404.scss */ "./resources/js/components/Errors/scss/404.scss");
-/* harmony import */ var _Parts_Header__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../Parts/Header */ "./resources/js/components/Parts/Header.js");
-/* harmony import */ var _Parts_Footer__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../Parts/Footer */ "./resources/js/components/Parts/Footer.js");
-/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
 function _typeof(obj) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (obj) { return typeof obj; } : function (obj) { return obj && "function" == typeof Symbol && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }, _typeof(obj); }
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -2419,8 +2422,6 @@ function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.g
 
 
 
-
-
 var Error404 = /*#__PURE__*/function (_Component) {
   _inherits(Error404, _Component);
 
@@ -2435,15 +2436,13 @@ var Error404 = /*#__PURE__*/function (_Component) {
   _createClass(Error404, [{
     key: "render",
     value: function render() {
-      return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, {
-        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(_Parts_Header__WEBPACK_IMPORTED_MODULE_2__["default"], {}), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("main", {
-          children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("p", {
-            children: "Erreur 404 - La page n'existe pas"
-          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(react_router_dom__WEBPACK_IMPORTED_MODULE_5__.Link, {
-            to: "/",
-            children: "Retour \xE0 l'accueil"
-          })]
-        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(_Parts_Footer__WEBPACK_IMPORTED_MODULE_3__["default"], {})]
+      return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("main", {
+        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("p", {
+          children: "Erreur 404 - La page n'existe pas"
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)(react_router_dom__WEBPACK_IMPORTED_MODULE_3__.Link, {
+          to: "/",
+          children: "Retour \xE0 l'accueil"
+        })]
       });
     }
   }]);
@@ -2590,11 +2589,12 @@ var Home = /*#__PURE__*/function (_React$Component) {
     value: function render() {
       return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("main", {
         children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("div", {
-          id: "presentation",
+          id: "presentation row",
           children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("h3", {
             children: "PLATFORM"
           }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("div", {
             id: "platform",
+            className: "col s12",
             children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("h4", {
               children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)(react_materialize__WEBPACK_IMPORTED_MODULE_1__.Preloader, {
                 active: true
@@ -2603,8 +2603,9 @@ var Home = /*#__PURE__*/function (_React$Component) {
           })]
         }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("div", {
           id: "main-table",
+          className: "row",
           children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("div", {
-            className: "machine-container cpu",
+            className: "machine-container cpu col s12 m12 l4 xl4",
             children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("div", {
               className: "machine-cpu circle-load",
               children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)(react_materialize__WEBPACK_IMPORTED_MODULE_1__.Preloader, {
@@ -2616,7 +2617,7 @@ var Home = /*#__PURE__*/function (_React$Component) {
               className: "load"
             })]
           }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("div", {
-            className: "machine-container ram",
+            className: "machine-container ram col s12 m12 l4 xl4",
             children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("div", {
               className: "machine-ram circle-load",
               children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)(react_materialize__WEBPACK_IMPORTED_MODULE_1__.Preloader, {
@@ -2628,7 +2629,7 @@ var Home = /*#__PURE__*/function (_React$Component) {
               className: "load"
             })]
           }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsxs)("div", {
-            className: "machine-container disk",
+            className: "machine-container disk col s12 m12 l4 xl4",
             children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)("div", {
               className: "machine-disk circle-load",
               children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_5__.jsx)(react_materialize__WEBPACK_IMPORTED_MODULE_1__.Preloader, {
@@ -2799,17 +2800,26 @@ var Header = /*#__PURE__*/function (_React$Component) {
                   src: "https://placeimg.com/640/480/tech",
                   alt: "tech"
                 })
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)(react_router_dom__WEBPACK_IMPORTED_MODULE_4__.Link, {
-                className: "btn-small white-text",
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)(react_router_dom__WEBPACK_IMPORTED_MODULE_4__.Link, {
+                className: "waves-effect waves-light btn-small",
                 to: "/user",
-                children: username
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("span", {
-                className: "white-text email",
-                children: email
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)(react_router_dom__WEBPACK_IMPORTED_MODULE_4__.Link, {
+                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("i", {
+                  className: "material-icons left",
+                  children: "person"
+                }), username]
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("span", {
+                className: "white-text email btn-small orange",
+                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("i", {
+                  className: "material-icons left",
+                  children: "email"
+                }), email]
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)(react_router_dom__WEBPACK_IMPORTED_MODULE_4__.Link, {
                 to: "/user/logout",
-                className: "btn red",
-                children: "Log Out"
+                className: "waves-effect waves-light btn-small red",
+                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("i", {
+                  className: "material-icons left",
+                  children: "logout"
+                }), "Log Out"]
               })]
             })
           }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("li", {
@@ -2933,13 +2943,33 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "./node_modules/react/index.js");
 /* harmony import */ var react_toastify__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! react-toastify */ "./node_modules/react-toastify/dist/react-toastify.esm.js");
-/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+/* harmony import */ var _store__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../../store */ "./resources/js/store/index.js");
+/* harmony import */ var react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! react/jsx-runtime */ "./node_modules/react/jsx-runtime.js");
+
 
 
 
 
 
 var Settings = function Settings(props) {
+  var serverHostname = props.serverHostname,
+      serverDomain = props.serverDomain,
+      serverMainemail = props.serverMainemail,
+      serverIp = props.serverIp,
+      controlFormInput = props.controlFormInput,
+      controlFormErrors = props.controlFormErrors;
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    if (serverHostname, serverDomain, serverMainemail, serverIp === "") {
+      _store__WEBPACK_IMPORTED_MODULE_2__.client.get('/api/server/config').then(function (response) {
+        controlFormInput("serverHostname", response.data.shortHostname);
+        controlFormInput("serverDomain", response.data.hostname);
+        controlFormInput("serverIp", response.data.hostnameIp);
+      })["catch"](function (errors) {
+        console.log(errors);
+      });
+    }
+  });
+
   var handleStop = function handleStop() {
     /* Stops the server after verifications */
     react_toastify__WEBPACK_IMPORTED_MODULE_1__.toast.success('Successfuly stop the server');
@@ -2952,66 +2982,109 @@ var Settings = function Settings(props) {
 
   var handleForm = function handleForm(e) {
     e.preventDefault();
+    console.log(e.target[1].value);
   };
 
-  return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("main", {
-    children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+  var handleChange = function handleChange(e) {
+    var _e$target = e.target,
+        name = _e$target.name,
+        value = _e$target.value;
+    controlFormInput(name, value);
+  };
+
+  return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("main", {
+    children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
       className: "settings",
-      children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+      children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
         className: "row",
-        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("h3", {
+        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("h3", {
           children: "Server commands"
-        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("div", {
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("div", {
           className: "col s4 m4 l2 xl2 push-s2 push-m2 push-l4 push-xl4",
-          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("button", {
+          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("button", {
             className: "btn red",
             onClick: handleStop,
             children: "Stop"
           })
-        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("div", {
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("div", {
           className: "col s4 m4 l2 xl2 push-s2 push-m2 push-l4 push-xl4",
-          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("button", {
+          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("button", {
             className: "btn orange",
             onClick: handleRestart,
             children: "Restart"
           })
         })]
-      }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("div", {
+      }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("div", {
         className: "row",
-        children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("form", {
-          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+        children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("form", {
+          onSubmit: handleForm,
+          children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
             className: "col s12 m12 l6 xl6 push-l3 push-xl3",
-            children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("h3", {
+            children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("h3", {
               children: "Server settings"
-            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("div", {
               className: "input-field",
-              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("input", {
-                type: "url",
-                name: "hostname",
-                id: "hostname"
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("label", {
+              children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("button", {
+                type: "submit",
+                className: "btn",
+                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("i", {
+                  className: "material-icons left",
+                  children: "save"
+                }), "Save configuration"]
+              })
+            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
+              className: "input-field",
+              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("input", {
+                type: "text",
+                name: "serverHostname",
+                id: "hostname",
+                defaultValue: serverHostname,
+                onChange: handleChange
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("label", {
                 htmlFor: "hostname",
                 children: "Hostname"
               })]
-            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
               className: "input-field",
-              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("input", {
-                type: "url",
-                name: "domain",
-                id: "domain"
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("label", {
+              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("input", {
+                type: "text",
+                name: "serverDomain",
+                id: "domain",
+                defaultValue: serverDomain,
+                onChange: handleChange
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("label", {
                 htmlFor: "domain",
                 children: "Server domain"
               })]
-            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsxs)("div", {
+            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
               className: "input-field",
-              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("input", {
+              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("input", {
                 type: "email",
-                name: "mainemail",
-                id: "mainemail"
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_2__.jsx)("label", {
+                name: "serverMainemail",
+                id: "mainemail",
+                defaultValue: serverMainemail,
+                onChange: handleChange
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("label", {
                 htmlFor: "mainemail",
-                children: "Main admin email"
+                children: "Admin E-Mail"
+              })]
+            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("div", {
+              className: "input-field",
+              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("input", {
+                type: "text",
+                name: "serverIp",
+                id: "ip",
+                defaultValue: serverIp,
+                onChange: handleChange
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("label", {
+                htmlFor: "ip",
+                children: "Server IP"
+              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsxs)("p", {
+                className: "chip red white-text",
+                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_3__.jsx)("i", {
+                  className: "material-icons left",
+                  children: "warning"
+                }), "Be careful, wrong IP can broke the server!"]
               })]
             })]
           })
@@ -3345,6 +3418,76 @@ mapDispatchToProps,
 
 /***/ }),
 
+/***/ "./resources/js/containers/Settings/index.js":
+/*!***************************************************!*\
+  !*** ./resources/js/containers/Settings/index.js ***!
+  \***************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
+/* harmony export */ });
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react-redux */ "./node_modules/react-redux/es/index.js");
+/* harmony import */ var _components_Settings__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../../components/Settings */ "./resources/js/components/Settings/index.js");
+/* harmony import */ var _store_reducer__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../../store/reducer */ "./resources/js/store/reducer.js");
+// == Import : npm
+ // == Import : local
+
+
+
+/* === State (données) ===
+* - mapStateToProps retroune un objet de props pour le composant de présentation
+* - mapStateToProps met à dispo 2 params
+*  - state : le state du store (getState)
+*  - ownProps : les props passées au container
+* Pas de data à transmettre ? const mapStateToProps = null;
+*/
+
+var mapStateToProps = function mapStateToProps(state, ownProps) {
+  var _state$serverHostname, _state$serverMainemai, _state$serverDomain, _state$serverIp;
+
+  return {
+    serverHostname: (_state$serverHostname = state.serverHostname) !== null && _state$serverHostname !== void 0 ? _state$serverHostname : "",
+    serverMainemail: (_state$serverMainemai = state.serverMainemail) !== null && _state$serverMainemai !== void 0 ? _state$serverMainemai : "",
+    serverDomain: (_state$serverDomain = state.serverDomain) !== null && _state$serverDomain !== void 0 ? _state$serverDomain : "",
+    serverIp: (_state$serverIp = state.serverIp) !== null && _state$serverIp !== void 0 ? _state$serverIp : ""
+  };
+};
+/* === Actions ===
+* - mapDispatchToProps retroune un objet de props pour le composant de présentation
+* - mapDispatchToProps met à dispo 2 params
+*  - dispatch : la fonction du store pour dispatcher une actio
+*  - ownProps : les props passées au container
+* Pas de disptach à transmettre ? const mapDispatchToProps = {};
+*/
+
+
+var mapDispatchToProps = function mapDispatchToProps(dispatch, ownProps) {
+  return {
+    controlFormInput: function controlFormInput(name, value) {
+      return dispatch((0,_store_reducer__WEBPACK_IMPORTED_MODULE_2__.controlFormInput)(name, value));
+    },
+    controlFormErrors: function controlFormErrors(errors) {
+      return dispatch((0,_store_reducer__WEBPACK_IMPORTED_MODULE_2__.controlFormErrors)(errors));
+    }
+  };
+}; // Container
+
+
+var SettingsContainer = (0,react_redux__WEBPACK_IMPORTED_MODULE_0__.connect)(mapStateToProps, mapDispatchToProps)(_components_Settings__WEBPACK_IMPORTED_MODULE_1__["default"]); // == Export
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (SettingsContainer);
+/* = export à la volée
+export default connect(
+mapStateToProps,
+mapDispatchToProps,
+)(Settings);
+*/
+
+/***/ }),
+
 /***/ "./resources/js/index.js":
 /*!*******************************!*\
   !*** ./resources/js/index.js ***!
@@ -3441,6 +3584,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "setServerInformations": () => (/* binding */ setServerInformations),
 /* harmony export */   "setCredentials": () => (/* binding */ setCredentials),
 /* harmony export */   "toggleLoading": () => (/* binding */ toggleLoading),
+/* harmony export */   "controlFormInput": () => (/* binding */ controlFormInput),
+/* harmony export */   "controlFormErrors": () => (/* binding */ controlFormErrors),
 /* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
 /* harmony export */ });
 function ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); enumerableOnly && (symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; })), keys.push.apply(keys, symbols); } return keys; }
@@ -3455,12 +3600,26 @@ var initialState = {
 var TOGGLE_LOADING = "TOGGLE_LOADING";
 var SET_CREDENTIALS = "SET_CREDENTIALS";
 var SET_SERVER_INFORMATIONS = "SET_SERVER_INFORMATIONS";
+var CONTROL_FORM_INPUT = "CONTROL_FORM_INPUT";
+var CONTROL_FORM_ERRORS = "CONTROL_FORM_ERRORS";
 
 var reducer = function reducer() {
   var state = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : initialState;
   var action = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
 
   switch (action.type) {
+    case CONTROL_FORM_INPUT:
+      {
+        return _objectSpread(_objectSpread({}, state), {}, _defineProperty({}, action.key, action.value));
+      }
+
+    case CONTROL_FORM_ERRORS:
+      {
+        return _objectSpread(_objectSpread({}, state), {}, {
+          form_errors: action.errors
+        });
+      }
+
     case SET_SERVER_INFORMATIONS:
       {
         return _objectSpread(_objectSpread({}, state), {}, {
@@ -3512,6 +3671,19 @@ var setCredentials = function setCredentials(username, email) {
 var toggleLoading = function toggleLoading() {
   return {
     type: TOGGLE_LOADING
+  };
+};
+var controlFormInput = function controlFormInput(key, value) {
+  return {
+    type: CONTROL_FORM_INPUT,
+    key: key,
+    value: value
+  };
+};
+var controlFormErrors = function controlFormErrors(errors) {
+  return {
+    type: CONTROL_FORM_ERRORS,
+    errors: errors
   };
 };
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (reducer);
@@ -3729,7 +3901,7 @@ __webpack_require__.r(__webpack_exports__);
 
 var ___CSS_LOADER_EXPORT___ = _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default()(function(i){return i[1]});
 // Module
-___CSS_LOADER_EXPORT___.push([module.id, "html body #root header {\n  text-align: center;\n  color: white;\n  font-weight: bolder;\n  height: 20vh;\n}\nhtml body #root header .sidenav {\n  text-align: left;\n}", ""]);
+___CSS_LOADER_EXPORT___.push([module.id, "html body #root header {\n  text-align: center;\n  color: white;\n  height: 20vh;\n}\nhtml body #root header .sidenav {\n  text-align: left;\n}", ""]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
@@ -22021,7 +22193,7 @@ module.exports = function(isValidElement, throwOnDirectAccess) {
         if (checkerResult == null) {
           return null;
         }
-        if (checkerResult.data.hasOwnProperty('expectedType')) {
+        if (checkerResult.data && has(checkerResult.data, 'expectedType')) {
           expectedTypes.push(checkerResult.data.expectedType);
         }
       }
@@ -66214,7 +66386,7 @@ module.exports = JSON.parse('{"name":"axios","version":"0.21.4","description":"P
 /******/ 				if(__webpack_require__.o(installedChunks, chunkId) && installedChunks[chunkId]) {
 /******/ 					installedChunks[chunkId][0]();
 /******/ 				}
-/******/ 				installedChunks[chunkIds[i]] = 0;
+/******/ 				installedChunks[chunkId] = 0;
 /******/ 			}
 /******/ 			return __webpack_require__.O(result);
 /******/ 		}

@@ -81,9 +81,9 @@ class Home extends React.Component {
     render() {
         return (
             <main>
-                <div id="presentation">
+                <div id="presentation row">
                     <h3>PLATFORM</h3>
-                    <div id="platform">
+                    <div id="platform" className="col s12">
                         <h4>
                             <Preloader
                                 active
@@ -91,8 +91,8 @@ class Home extends React.Component {
                         </h4>
                     </div>
                 </div>
-                <div id="main-table">
-                    <div className="machine-container cpu">
+                <div id="main-table" className="row">
+                    <div className="machine-container cpu col s12 m12 l4 xl4">
                         <div className="machine-cpu circle-load">
                             <Preloader
                                 active
@@ -102,7 +102,7 @@ class Home extends React.Component {
                         </div>
                         <div className="load"></div>
                     </div>
-                    <div className="machine-container ram">
+                    <div className="machine-container ram col s12 m12 l4 xl4">
                         <div className="machine-ram circle-load">
                             <Preloader
                                 active
@@ -112,7 +112,7 @@ class Home extends React.Component {
                         </div>
                         <div className="load"></div>
                     </div>
-                    <div className="machine-container disk">
+                    <div className="machine-container disk col s12 m12 l4 xl4">
                         <div className="machine-disk circle-load">
                         <Preloader
                             active

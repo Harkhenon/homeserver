@@ -5,7 +5,7 @@ import { Route, Routes } from 'react-router';
 import Header from '../../containers/Parts/Header';
 import Footer from '../Parts/Footer';
 import Home from '../../containers/Home';
-import Settings from '../Settings';
+import Settings from '../../containers/Settings';
 import Error404 from '../Errors/Error404';
 import Logout from "../AppRouter/Logout";
 import { client } from '../../store';
@@ -20,6 +20,12 @@ const AppRouter = (props) => {
                 .then(response => {
                     const { name: userUsername, email: userEmail } = response.data.data;
                     setCredentials(userUsername, userEmail);
+                })
+                .catch(error => {
+                    console.info('User Token is expired, deleting it...');
+                    localStorage.removeItem('userToken');
+                    localStorage.removeItem('userId');
+                    window.location.reload();
                 })
         }
     })
