@@ -3,8 +3,9 @@ import { connect } from 'react-redux';
 
 
 // == Import : local
-import Header from '../../components/Parts/Header';
-import { setSidebarVisibility } from '../../store/reducer';
+import Domains from '../../../components/Components/Domains';
+import { controlFormInput, storeData } from '../../../store/reducer';
+
 
 /* === State (données) ===
 * - mapStateToProps retroune un objet de props pour le composant de présentation
@@ -14,9 +15,14 @@ import { setSidebarVisibility } from '../../store/reducer';
 * Pas de data à transmettre ? const mapStateToProps = null;
 */
 const mapStateToProps = (state, ownProps) => ({
-    username: state.username ?? null,
-    email: state.email ?? null,
-    sidebarVisibility: state.sidebarVisibility ?? null,
+    domains: state.domains ?? null,
+    addModalOpened: state.addModalOpened ?? null,
+    domain: state.domain ?? null,
+    nsserver1: state.nsserver1 ?? null,
+    nsserver2: state.nsserver2 ?? null,
+    editModalOpened: state.editModalOpened ?? null,
+    editDomain: state.editDomain ?? null,
+    loading: state.loading ?? null,
 });
 
 
@@ -28,24 +34,25 @@ const mapStateToProps = (state, ownProps) => ({
 * Pas de disptach à transmettre ? const mapDispatchToProps = {};
 */
 const mapDispatchToProps = (dispatch, ownProps) => ({
-    setSidebarVisibility: () => (dispatch(setSidebarVisibility())),
+    storeData: (name, data) => (dispatch(storeData(name, data))),
+    controlFormInput: (name, value) => (dispatch(controlFormInput(name, value))),
 });
 
 
 // Container
-const HeaderContainer = connect(
+const DomainsContainer = connect(
 mapStateToProps,
 mapDispatchToProps,
-)(Header);
+)(Domains);
 
 
 // == Export
-export default HeaderContainer;
+export default DomainsContainer;
 
 
 /* = export à la volée
 export default connect(
 mapStateToProps,
 mapDispatchToProps,
-)(Header);
+)(Domains);
 */

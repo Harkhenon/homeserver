@@ -7,6 +7,10 @@ use App\Http\Controllers\API\BankAccountController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\ServerController;
 use App\Http\Controllers\API\RegisterController;
+use App\Http\Controllers\API\DomainsController;
+
+use App\Models\Domains;
+use App\Models\Zones;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,8 +44,10 @@ Route::middleware('auth:api')->group( function () {
     Route::get('/server/config', [ServerController::class, 'getServerConfigInformations'])->name('server.configInformations');
     Route::resource('bank_accounts', BankAccountController::class);
     Route::resource('user', UserController::class);
+    Route::resource('domains', DomainsController::class);
 });
 
+Route::get('/default-domain', [DomainsController::class, 'getDefaultDomain'])->name('domain.getDefaultDomain');
 // Route::post('register', [RegisterController::class, 'register']);
 
 Route::post('login', [RegisterController::class, 'login']);

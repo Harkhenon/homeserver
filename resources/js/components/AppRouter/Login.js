@@ -1,11 +1,11 @@
-import axios from 'axios';
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { Button, Container, Form, Header } from 'semantic-ui-react';
 
-import { client } from '../../store'
 import Footer from '../Parts/Footer';
 import './scss/AppRouter.scss'
+import client from '../../axiosConfig';
 
 const Login = (props) => {
 
@@ -39,9 +39,9 @@ const Login = (props) => {
     return (
         <React.Fragment>
             <main>
-                <div className="row">
-                    <div className='col s12 m12 l8 xl8 push-l2 push-xl2 login-form'>
-                        <h1>Sign-in</h1>
+                <div className='login-form'>
+                    <Container textAlign='center'>
+                        <Header as='h1'>Sign-in</Header>
                         <h2>Please enter your email and password</h2>
                         <h5>
                             Forgotten your password ?
@@ -49,36 +49,27 @@ const Login = (props) => {
                         <Link to='/user/lost-password'>
                             Retrieve lost password
                         </Link>
-                        <form onSubmit={handleSubmit}>
-                            <div className='input-field'>
+                    
+                        <Form onSubmit={handleSubmit} inverted>
+                            <Form.Field>
+                                <label>E-Mail</label>
                                 <input
                                     type='email'
                                     name='email'
-                                    id='login-email'
-                                    className='validate'
                                 />
-                                <label htmlFor='login-email'>E-Mail</label>
-                                <span
-                                    className="helper-text white-text"
-                                    data-error="Enter a valid email address"
-                                    data-success="E-Mail is valid"
-                                >
-                                </span>
-                            </div>
-                            <div className='input-field'>
+                            </Form.Field>
+                            <Form.Field>
+                                <label>Password</label>
                                 <input
                                     type='password'
                                     name='password'
-                                    id='login-password'
-                                    className='validate'
                                 />
-                                <label htmlFor='login-password'>Password</label>
-                            </div>
+                            </Form.Field>
                             <div className='input-field'>
-                                <button className='btn'>Sign In</button>
+                                <Button>Sign In</Button>
                             </div>
-                        </form>
-                    </div>
+                        </Form>
+                    </Container>
                 </div>
             </main>
             <Footer />

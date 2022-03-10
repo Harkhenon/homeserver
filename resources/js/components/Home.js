@@ -2,8 +2,8 @@ import React from 'react';
 import { Preloader } from 'react-materialize';
 import { toast } from 'react-toastify';
 
-import { client } from '../store';
 import './scss/Home.scss';
+import client from '../axiosConfig';
 
 class Home extends React.Component {
 

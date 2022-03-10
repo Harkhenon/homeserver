@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { client } from '../../store';
 
 const Settings = (props) =>  {
 
@@ -77,7 +76,7 @@ const Settings = (props) =>  {
                                     defaultValue={serverHostname}
                                     onChange={handleChange}
                                 />
-                                <label htmlFor="hostname">Hostname</label>
+                                <label htmlFor="hostname">Short hostname</label>
                             </div>
                             <div className="input-field">
                                 <input
@@ -87,7 +86,7 @@ const Settings = (props) =>  {
                                     defaultValue={serverDomain}
                                     onChange={handleChange}
                                 />
-                                <label htmlFor="domain">Server domain</label>
+                                <label htmlFor="domain">Long hostname</label>
                             </div>
                             <div className="input-field">
                                 <input

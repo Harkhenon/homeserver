@@ -13,7 +13,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run()
     {
-        \App\Models\User::factory(10)->create();
+        \App\Models\User::factory(1)->create();
         \App\Models\BankAccountType::factory()->create(['name' => 'livreta']);
         \App\Models\BankAccountType::factory()->create(['name' => 'ccp']);
         \App\Models\BankAccountType::factory()->create(['name' => 'assurancevie']);
@@ -21,5 +21,9 @@ class DatabaseSeeder extends Seeder
         \App\Models\BankIncoming::factory(200)->create();
         \App\Models\BankExpense::factory(200)->create();
         \App\Models\BankRegularFee::factory(40)->create();
+        \App\Models\Domains::factory()->create(['fqdn' => 'isodev.ovh']);
+        \App\Models\Domains::factory()->create(['fqdn' => 'isoweb.ovh']);
+        \App\Models\Domains::factory()->create(['fqdn' => 'isoweb.eu']);
+        \App\Models\Packages::factory(5)->create();
     }
 }

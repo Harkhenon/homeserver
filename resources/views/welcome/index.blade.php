@@ -8,7 +8,7 @@
   <!-- Import Google Icon Font -->
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Import materialize.css -->
-  <link href="{{ asset('css/materialize.min.css') }}" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/semantic-ui@2/dist/semantic.min.css" rel="stylesheet">
   <link href="{{ asset('css/app.css') }}" rel="stylesheet">
 </head>
 
@@ -17,7 +17,7 @@
     <!-- React root DOM -->
     <div id="root">
     </div>
-    <script src="{{ asset('js/materialize.min.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/semantic-ui-react/dist/umd/semantic-ui-react.min.js"></script>
     <!-- React JS -->
     <script src="{{ asset('js/app.js') }}" defer></script>
 

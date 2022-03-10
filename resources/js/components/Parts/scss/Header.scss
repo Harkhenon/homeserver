@@ -4,10 +4,11 @@ html {
             & header {
               text-align: center;
               color: white;
-              height: 20vh;
+              height: 15vh;
 
-              & .sidenav {
-                  text-align: left;
+              & h1 {
+                  padding-top: 0;
+                  margin-top: 0;
               }
             }
         }

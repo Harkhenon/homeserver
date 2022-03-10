@@ -8,7 +8,11 @@ import Home from '../../containers/Home';
 import Settings from '../../containers/Settings';
 import Error404 from '../Errors/Error404';
 import Logout from "../AppRouter/Logout";
-import { client } from '../../store';
+import Console from '../Console';
+import Hosting from '../Components/Hosting';
+import Domains from '../../containers/Components/Domains';
+import client from '../../axiosConfig';
+import { Container, Segment, Sidebar } from 'semantic-ui-react';
 
 const AppRouter = (props) => {
     
@@ -32,15 +36,23 @@ const AppRouter = (props) => {
 
     return (
         <React.Fragment>
+        <Sidebar.Pushable>
             <Header />
-            <Routes>
-                <Route exact path="/" element={<Home />} />
-                <Route path="/system" element={<Settings />} />
-                <Route path="/user/logout" element={<Logout />} />
-                <Route path="/user" />
-                <Route path="*" exact element={<Error404 />} />
-            </Routes>
-            <Footer />
+                <Sidebar.Pusher>
+                    <Container>
+                        <Routes>
+                            <Route exact path="/" element={<Home />} />
+                            <Route path='/domains' element={<Domains />} />
+                            <Route path='/hosting' element={<Hosting />} />
+                            <Route path="/terminal" element={<Console />} />
+                            <Route path="/system" element={<Settings />} />
+                            <Route path="/user/logout" element={<Logout />} />
+                            <Route path="*" exact element={<Error404 />} />
+                        </Routes>
+                    </Container>
+                    <Footer />
+                </Sidebar.Pusher>
+            </Sidebar.Pushable>
         </React.Fragment>
     );
 }
