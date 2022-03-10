@@ -48,9 +48,37 @@ html body main #main-table .machine-container {
     text-align: center;
 }
 
-html body main #main-table .machine-container div.machine-cpu , div.machine-ram, div.machine-disk, div.os {
+html body main #main-table .machine-container div.machine-cpu , div.machine-ram, div.machine-disk {
     height: 75px;
     width: 150px;
+    text-align: center;
+    line-height: 75px;
+    vertical-align: middle;
+    border-left: 10px solid black;
+    border-right: 10px solid black;
+    border-top: 10px solid black;
+    margin: 0 auto;
+}
+
+html body main .machine-container {
+    height: 75px;
+    overflow-y: hidden;
+    flex: 1;
+    color: white;
+    text-align: center;
+}
+
+html body main .presentation {
+    width: 80vw;
+    color: white;
+    margin-top: 20px;
+    margin-bottom: 100px;
+    padding: 50px;
+}
+
+html body main .machine-container div.os {
+    height: 75px;
+    width: 100vw;
     text-align: center;
     line-height: 75px;
     vertical-align: middle;

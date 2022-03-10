@@ -15,6 +15,8 @@ class TrustHosts extends Middleware
     {
         return [
             $this->allSubdomainsOfApplicationUrl(),
+            'https://isodev.ovh',
+            'https://www.isodev.ovh'
         ];
     }
 }
