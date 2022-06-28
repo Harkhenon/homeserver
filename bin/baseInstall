@@ -17,7 +17,8 @@ apt-get -y upgrade > /dev/null;
 ### we remove them before reinstall
 
 orange_important "MariaDB and MySQL uninstall to prevent troubles"
-DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y mariadb* mysql*
+DEBIAN_FRONTEND=noninteractive
+apt-get remove --purge -y mariadb* mysql*
 rm -R /etc/mysql
 rm -R /var/lib/mysql
 

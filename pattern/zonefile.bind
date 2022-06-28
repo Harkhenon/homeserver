@@ -1,6 +1,6 @@
 ; {fqdn}
 $TTL 3600
-{fqdn}. IN     SOA    a.root-servers.net. admin@{fqdn}. (
+{fqdn}. IN     SOA    ns1.{fqdn}. admin@{fqdn}. (
                                 2021081701  ; Serial
                                 3H          ; refresh after 3 hours
                                 1H          ; retry after 1 hour

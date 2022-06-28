@@ -123,6 +123,6 @@ certbot --apache --non-interactive --agree-tos -m admin@$fqdn -d $fqdn -d www.$f
 
 green_success "SSL certificate created";
 
-orange_important "To connect to phpMyAdmin, enter url: http://$(wget -qO- http://ipecho.net/plain | xargs echo)/phpmyadmin"
+orange_important "To connect to Adminer, enter url: https://sql.$fqdn"
 orange_important "MySQL homepanel database password is: $MYSQLPASSWORD, please note it!";
 orange_important "Your panel URL is: https://$fqdn, enjoy!";
