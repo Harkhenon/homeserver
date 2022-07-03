@@ -6,7 +6,6 @@
         ErrorLog /var/log/apache2/{fqdn}-error_log
         TransferLog /var/log/apache2/{fqdn}-access_log
         DocumentRoot /usr/share/homeserver/public
-        Include /etc/apache2/homeserverEnv.conf
 
         <Directory "/usr/share/homeserver/public">
                 Options Indexes FollowSymLinks
