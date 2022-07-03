@@ -58,7 +58,7 @@ sed 's/{fqdn}/'$fqdn'/g' ./pattern/virtualhost.apache > /etc/apache2/sites-avail
 
 # Filling PHP-FPM pool file
 
-sed 's/{fqdn}/'$fqdn'/g' ./pattern/pool.php-fpm) > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
+sed 's/{fqdn}/'$fqdn'/g' ./pattern/pool.php-fpm > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
 
 # Editing the apache default website
 
