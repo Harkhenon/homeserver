@@ -66,7 +66,7 @@ useradd homeserver -g homeserver -b /usr/share/homeserver;
 # Downloading the panel
 
 blue_info "Homeserver download from Github...";
-git clone git://github.com/harkhenon/homeserver --branch dev $HOMESERVERPATH;
+git clone https://github.com/Harkhenon/homeserver.git --branch dev $HOMESERVERPATH;
 
 ln -s /usr/share/adminer $HOMESERVERPATH/public
 
