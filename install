@@ -1,9 +1,8 @@
 #!/bin/bash
 
-user=$(whoami);
+SCRIPTPATH=$(pwd);
 
-SCRIPTPATH=$(pwd)
-
+source $SCRIPTPATH/bin/baseVariables;
 source $SCRIPTPATH/bin/functions;
 
 if [ $user != root ]
@@ -15,26 +14,21 @@ fi
 clear;
 
 orange '
-    __  __                                            __
-   / / / /___  ____ ___  ___  ____  ____ _____  ___  / /
-  / /_/ / __ \/ __ `__ \/ _ \/ __ \/ __ `/ __ \/ _ \/ / 
- / __  / /_/ / / / / / /  __/ /_/ / /_/ / / / /  __/ /  
-/_/ /_/\____/_/ /_/ /_/\___/ .___/\__,_/_/ /_/\___/_/   
-                          /_/                           
+    __  __                       ______                             
+   / / / /____  ____ ____  ___  / ____/___ ,_________  __ ___ ,______
+  / /_/ // __ \/  __ `__ \/ _ \/___ \ / _ \/  ___/| | / // _ \/  ___/
+ / __  // /_/ /  / / / / /  __/___/ //  __/  /    | |/ //  __/  /    
+/_/ /_/ \____//_/ /_/ /_/\___//____/ \___/__/     |___/ \___/__/     
+                                                                         
 '
 
-green "This script will install automatically your panel\n";
+green "This script will install automatically HomeServer and it's dependencies\n";
 orange_important "A domain name is absolutely required!";
 orange "             if you doesn't have one, type CTRL+C and go buy one\n";
-orange_important "For more informations or read the wiki, go to https://github.com/harkhenon/homepanel";
+orange_important "For more informations or read the wiki, go to https://github.com/harkhenon/homeserver";
 orange_important "This script and this panel are distributed under MIT license\n\n";
 
 sleep 3;
-
-# 1.) Variables
-
-source $SCRIPTPATH/bin/baseVariables
-
 
 while true
 do
@@ -54,14 +48,13 @@ done
 
 source $SCRIPTPATH/bin/baseInstall
 
-# Creating filesystem
+# Creating/Cleaning the base folder
 
-source $SCRIPTPATH/bin/cleanFilesAndCreateNews
+rm -R /usr/share/homeserver
 
-# Add homeserver user
-
-groupadd homeserver;
-useradd homeserver -g homeserver -b /usr/share/homeserver;
+if [ ! -d $HOMESERVERPATH ]; then
+    mkdir /usr/share/homeserver
+fi
 
 # Downloading the panel
 
@@ -72,9 +65,19 @@ ln -s /usr/share/adminer $HOMESERVERPATH/public
 
 green_success "Download done";
 
+# Creating filesystem
+
+source $SCRIPTPATH/bin/cleanFilesAndCreateNews
+
+# Add homeserver user
+
+groupadd homeserver;
+useradd homeserver -g homeserver -b /usr/share/homeserver;
+
+
 # Fill .env file
 
-sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $SCRIPTPATH/pattern/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $PATTERNS_PATH/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
 
 # Set permissions on main folder
 
@@ -87,8 +90,8 @@ blue_info "Enabling virtualhosts"
 
 a2ensite $fqdn;
 a2ensite sql.$fqdn
-a2enconf rewrite
-a2enconf env
+a2enmod rewrite
+a2enmod env
 
 # Apache and PHP-FPM restart
 
@@ -106,23 +109,41 @@ green_success "Update done";
 
 blue_info "Database populating"
 
-su homepanel -s /bin/bash -c "php $HOMESERVERPATH/artisan migrate";
+# Pass Laravel/Homeserver in development mode
 
-# Pass Laravel/Homeserver in production mode
+sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g' $PATTERNS_PATH/dotenv > $HOMESERVERPATH/.env;
+chown homeserver:homeserver $HOMESERVERPATH/.env;
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate -q";
 
-rm /etc/apache2/HomeserverEnv.conf
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan migrate:fresh -q";
 
-sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/production/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $SCRIPTPATH/pattern/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
+# Pass Laravel/Homeserver in production mode (disabled during development)
+
+# rm $HOMESERVERPATH/.env
+
+# sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/production/g' $PATTERNS_PATH/dotenv > $HOMESERVERPATH/.env;
+# chown homeserver:homeserver $HOMESERVERPATH/.env;
+# su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate -q";
+
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan passport:install --force -q"
 
 service apache2 restart
 
-blue_info "SSL certificate creation";
+# Disabled certbot while testing installator
 
-certbot --apache --non-interactive --agree-tos -m admin@$fqdn -d $fqdn -d www.$fqdn -d sql.$fqdn;
+# blue_info "SSL certificate creation";
 
+# certbot --apache --non-interactive --agree-tos -m admin@$fqdn -d $fqdn -d www.$fqdn -d sql.$fqdn;
+# green_success "SSL certificate created";
 
-green_success "SSL certificate created";
+blue_info "Homeserver Core daemon installation..."
+
+cp ./daemon/homeserver /usr/bin/homeserver
+cp ./daemon/homeserver.service /etc/systemd/system/homeserver.service
+systemctl enable homeserver.service
+service homeserver restart
 
 orange_important "To connect to Adminer, enter url: https://sql.$fqdn"
-orange_important "MySQL homepanel database password is: $MYSQLPASSWORD, please note it!";
+orange_important "MySQL homeserver database password is: $HSPASSWORD, please note it!";
+orange_important "MySQL root database password is: $MYSQLPASSWORD, please note it!";
 orange_important "Your panel URL is: https://$fqdn, enjoy!";

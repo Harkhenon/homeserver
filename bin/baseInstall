@@ -8,8 +8,9 @@ blue_info "Base environment installation";
 
 blue_info "Software update and upgrade, it may take some minutes";
 
-apt-get update > /dev/null;
-apt-get -y upgrade > /dev/null;
+apt-get -qq update;
+apt-get -yqq upgrade;
+apt-get -yqq dist-upgrade
 
 ## Base
 
@@ -18,12 +19,13 @@ apt-get -y upgrade > /dev/null;
 
 orange_important "MariaDB and MySQL uninstall to prevent troubles"
 DEBIAN_FRONTEND=noninteractive
-apt-get remove --purge -y mariadb* mysql*
+apt-get remove --purge -yqq mariadb* mysql*
 rm -R /etc/mysql
 rm -R /var/lib/mysql
 
 blue_info "Installing base packages"
 
+installPackageIfNotExists "inotify-tools"
 installPackageIfNotExists "zip";
 installPackageIfNotExists "apache2";
 installPackageIfNotExists "mariadb-server";
@@ -36,6 +38,7 @@ installPackageIfNotExists "php-fpm";
 
 # Get the version of PHP, if version is like 7.4.3,
 # we truncate for getting a 3 characters version (ex: 7.4)
+# and we install php and it's dependencies
 
 PHPVERSION=$(php -r "echo PHP_VERSION;");
 
@@ -47,12 +50,15 @@ then
     SHORTPHPVERSION=${PHPVERSION:0:-3}
 fi
 
-blue_info "PHP version is $SHORTPHPVERSION"
+# Only available in development mode
+
+# blue_info "PHP version is $SHORTPHPVERSION"
 
 installPackageIfNotExists "php$SHORTPHPVERSION-curl"
 installPackageIfNotExists "php$SHORTPHPVERSION-mbstring"
 installPackageIfNotExists "php$SHORTPHPVERSION-xml"
 installPackageIfNotExists "php$SHORTPHPVERSION-zip"
+
 installPackageIfNotExists "fail2ban"
 installPackageIfNotExists "curl"
 
@@ -83,11 +89,11 @@ snap install node --classic &> /dev/null
 
 # Upgrade npm
 
-npm install -g npm &> /dev/null
+npm install -gs npm;
 
 # Add yarn to NodeJS
 
-npm install --global yarn; &> /dev/null
+npm install -gs yarn;
 
 # Install the correct certbot for Let's Encrypt
 
@@ -98,17 +104,16 @@ ln -s /snap/bin/certbot /usr/bin/certbot;
 
 # Install Composer v2
 
-php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-php -r "if (hash_file('sha384', 'composer-setup.php') === '906a84df04cea2aa72f40b5f787e49f22d4c2f19492ac310e8cba5b96ac8b64115ac402c8cd292b8a03482574915d1a8') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
-php composer-setup.php
-php -r "unlink('composer-setup.php');"
-cp composer.phar /usr/bin/composer
-orange "Composer is installed globally, you can use \"composer\" command directly"
-rm composer.phar
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');";
+php composer-setup.php;
+php -r "unlink('composer-setup.php');";
+cp composer.phar /usr/bin/composer;
+orange "Composer is installed globally, you can use \"composer\" command directly";
+rm composer.phar;
 
 # Clean useless packages
 
 blue_info "Packages cleaning, it may take some minutes";
 
-apt-get autoclean > /dev/null
-apt-get autoremove -y > /dev/null;
+apt-get autoclean -yqq;
+apt-get autoremove -yqq;

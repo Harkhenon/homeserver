@@ -1,8 +1,8 @@
 ; {fqdn}
 $TTL 3600
-{fqdn}. IN     SOA    ns1.{fqdn}. admin@{fqdn}. (
+{fqdn}. IN     SOA    ns1.{fqdn}. admin.{fqdn}. (
                                 2021081701  ; Serial
-                                3H          ; refresh after 3 hours
+                                14400       ; refresh after 3 hours
                                 1H          ; retry after 1 hour
                                 1W          ; expire after 1 week
                                 1D)         ; minimum TTL of 1 day

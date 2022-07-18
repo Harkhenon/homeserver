@@ -1,0 +1,138 @@
+#!/bin/bash
+
+. /usr/share/homeserver/.env
+
+# Set some variables
+HOMESERVERPATH="/usr/share/homeserver"
+HOMESERVERPATTERNSPATH="$HOMESERVERPATH/storage/app/patterns"
+DOMAIN_LOG="$HOMESERVERPATH/storage/logs/domains.log";
+CONFIGURATION_FILE="$HOMESERVERPATH/storage/app/observers/configuration.obs";
+MYSQL_COMMAND_ID=0
+
+function echoToLogs() {
+	string=$1;
+	echo $string;
+	echo $string >> /var/log/homeserver/homeserver.log;
+}
+
+# Echo for the daemon log
+echoToLogs "Homeserver starting... Done"
+
+	# Clear available only for tests
+	# clear
+
+	#############################################
+	#			CONFIGURATION SECTION			#
+	#############################################
+
+	# inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $CONFIGURATION_FILE | while read file; do
+	# 	echoToLogs "[INFO] Configuration changed";
+	# done
+
+	#############################################
+	#			WEBSERVER SECTION   			#
+	#############################################
+
+	# inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $CONFIGURATION_FILE | while read file; do
+	# 	echoToLogs "[INFO] Configuration changed";
+	# done
+
+	#############################################
+	#             DOMAINS SECTION				#
+	#############################################
+
+	inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $DOMAIN_LOG | while read file; do
+
+		last_lines=$(tail -1 $MYSQL_LOG);
+		eval `echo "$last_lines" | perl -ne 'if (/(?<COMMAND>update|insert|delete)[[:space:]]?(?<TABLE>[a-z0-9_]*)[[:space:]]?(?:from:(?<FROM>[a-z0-9-_.]*)[[:space:]]to:(?<TO>[a-z0-9-_.]*)[[:space:]])?(?:new:(?<NEW>[a-z0-9-_.]*)[[:space:]])?(?:deleted:(?<DELETED>[a-z0-9-_.]*)[[:space:]])?(?:ns1:(?<NS1>[a-z0-9-_.]*)[[:space:]]?ns2:(?<NS2>[a-z0-9-_.]*))?/) { print "COMMAND=".$1."; TABLE=".$2."; FROM=".$3."; TO=".$4."; NEW=".$5."; DELETED=".$6."; NS1=".$7."; NS2=".$8 }'`
+		
+		# Regex debug line
+		#echoToLogs "$COMMAND | $TABLE | $FROM | $TO | $NEW | $DELETED | $NS1 | $NS2"
+
+			if [[ "$TABLE" == "domains" ]]; then
+
+				if [[ "$COMMAND" == "insert" ]]; then
+					# Check if file already exists
+
+					if [[ ! -f /etc/bind/$NEW.zone ]]; then
+
+						# Create zone file
+						touch /etc/bind/$NEW.zone
+
+						# Fill it
+						sed 's|{fqdn}|'$NEW'|g;s|{ip}|'$(wget -qO- http://ipecho.net/plain | xargs echo)'|g;s|{base_url}|'$APP_FQDN'|g;s|{serial}|'$(date +%Y%m%d%H)'|g;s|{nsone}|'$NS1'|g;s|{nstwo}|'$NS2'|g' $HOMESERVERPATTERNSPATH/zonefile.bind > /etc/bind/$NEW.zone;
+
+						# Fill named.conf with new configuration between #domain.tld# brackets
+						# (More easy to erase when domain will be deleted)
+						sed 's|{fqdn}|'$NEW'|g;s|{ip}|'$(wget -qO- http://ipecho.net/plain | xargs echo)'|g' $HOMESERVERPATTERNSPATH/zone.bind >> /etc/bind/named.conf;
+
+						# Reload Bind9
+						service bind9 reload
+
+						# Echo to log file
+						echoToLogs "[INFO] Creating domain $NEW... done"
+					else
+						echoToLogs "[INFO] Domain already exists, skipping..."
+					fi
+
+				elif [[ "$COMMAND" == "delete" ]]; then
+
+
+					# Get domain from regex
+
+					DOMAIN_ESCAPED=${DELETED//./\\.};
+
+					# Delete zone file
+					if [[ -f /etc/bind/$DELETED.zone ]]; then
+						rm /etc/bind/$DELETED.zone
+					fi
+
+					# Delete zone in named.conf
+					sed "/#$DOMAIN_ESCAPED#/,/#end$DOMAIN_ESCAPED#/s/.*//" /etc/bind/named.conf > /etc/bind/named.conf.tmp;
+
+					# Trim blanks (Run twice because of bug with sed)
+					sed ':a;N;$!ba;s/[\n\s]$//mg' /etc/bind/named.conf.tmp > /etc/bind/named.conf
+					sed ':a;N;$!ba;s/[\n\s]$//mg' /etc/bind/named.conf.tmp > /etc/bind/named.conf
+
+					# Reload Bind9
+					service bind9 reload
+
+					echoToLogs "[INFO] Deleting domain $DELETED... done"
+
+				elif [[ "$COMMAND" == "update" ]]; then
+
+					# Get domain from regex
+
+					DOMAIN_ESCAPED=${FROM//./\\.};
+					NEW_DOMAIN_ESCAPED=${TO//./\\.};
+
+					# Delete zone file
+					if [[ -f /etc/bind/$FROM.zone ]]; then
+						rm /etc/bind/$FROM.zone
+					fi
+
+					# Create a new one
+
+					touch /etc/bind/$TO.zone
+
+					# Fill it
+
+					NS1REGISTERED=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT ns1 FROM domains WHERE fqdn='$NEW_DOMAIN_ESCAPED'");
+					NS2REGISTERED=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT ns2 FROM domains WHERE fqdn='$NEW_DOMAIN_ESCAPED'");
+
+					sed 's|{fqdn}|'$TO'|g;s|{ip}|'$(wget -qO- http://ipecho.net/plain | xargs echo)'|g;s|{serial}|'$(date +%Y%m%d%H)'|g;s|{nsone}|'$NS1REGISTERED'|g;s|{nstwo}|'$NS2REGISTERED'|g' $HOMESERVERPATTERNSPATH/zonefile.bind > /etc/bind/$TO.zone;
+
+					# Update zone in named.conf
+					sed "s|$DOMAIN_ESCAPED|$NEW_DOMAIN_ESCAPED|g" /etc/bind/named.conf > /etc/bind/named.conf.tmp;
+
+					# Trim blanks (Run twice because of bug with sed)
+					sed ':a;N;$!ba;s/[\n\s]$//mg' /etc/bind/named.conf.tmp > /etc/bind/named.conf
+					sed ':a;N;$!ba;s/[\n\s]$//mg' /etc/bind/named.conf.tmp > /etc/bind/named.conf
+
+					# Reload Bind9
+					service bind9 reload
+
+					echoToLogs "[INFO] Update domain $FROM to $TO... done"
+				fi
+			fi
+	done
