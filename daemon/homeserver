@@ -43,7 +43,7 @@ echoToLogs "Homeserver starting... Done"
 
 	inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $DOMAIN_LOG | while read file; do
 
-		last_lines=$(tail -1 $MYSQL_LOG);
+		last_lines=$(tail -1 $DOMAIN_LOG);
 		eval `echo "$last_lines" | perl -ne 'if (/(?<COMMAND>update|insert|delete)[[:space:]]?(?<TABLE>[a-z0-9_]*)[[:space:]]?(?:from:(?<FROM>[a-z0-9-_.]*)[[:space:]]to:(?<TO>[a-z0-9-_.]*)[[:space:]])?(?:new:(?<NEW>[a-z0-9-_.]*)[[:space:]])?(?:deleted:(?<DELETED>[a-z0-9-_.]*)[[:space:]])?(?:ns1:(?<NS1>[a-z0-9-_.]*)[[:space:]]?ns2:(?<NS2>[a-z0-9-_.]*))?/) { print "COMMAND=".$1."; TABLE=".$2."; FROM=".$3."; TO=".$4."; NEW=".$5."; DELETED=".$6."; NS1=".$7."; NS2=".$8 }'`
 		
 		# Regex debug line
@@ -106,6 +106,8 @@ echoToLogs "Homeserver starting... Done"
 					DOMAIN_ESCAPED=${FROM//./\\.};
 					NEW_DOMAIN_ESCAPED=${TO//./\\.};
 
+					DOMAIN_ID=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT id FROM domains WHERE fqdn='$NEW_DOMAIN_ESCAPED'");
+
 					# Delete zone file
 					if [[ -f /etc/bind/$FROM.zone ]]; then
 						rm /etc/bind/$FROM.zone
@@ -119,11 +121,24 @@ echoToLogs "Homeserver starting... Done"
 
 					NS1REGISTERED=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT ns1 FROM domains WHERE fqdn='$NEW_DOMAIN_ESCAPED'");
 					NS2REGISTERED=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT ns2 FROM domains WHERE fqdn='$NEW_DOMAIN_ESCAPED'");
+					ZONE_ENTRIES=$(mysql -u $DB_USERNAME -p$DB_PASSWORD -D $DB_DATABASE -N -e "SELECT sub, type, ip_or_fqdn FROM zones WHERE domains_id='$DOMAIN_ID'");
 
 					sed 's|{fqdn}|'$TO'|g;s|{ip}|'$(wget -qO- http://ipecho.net/plain | xargs echo)'|g;s|{serial}|'$(date +%Y%m%d%H)'|g;s|{nsone}|'$NS1REGISTERED'|g;s|{nstwo}|'$NS2REGISTERED'|g' $HOMESERVERPATTERNSPATH/zonefile.bind > /etc/bind/$TO.zone;
 
 					# Update zone in named.conf
 					sed "s|$DOMAIN_ESCAPED|$NEW_DOMAIN_ESCAPED|g" /etc/bind/named.conf > /etc/bind/named.conf.tmp;
+
+					# Add zones from DB
+
+					for i in "${ZONE_ENTRIES[@]}"
+					do
+						if [[ $i["ip_or_fqdn"] =~ ([a-zA-Z0-9])+\.([a-z]{1,5}) ]]
+						then
+							echo "$i" >> /etc/bind/$TO.zone
+						else
+							echo "$i." >> /etc/bind/$TO.zone
+						fi
+					done
 
 					# Trim blanks (Run twice because of bug with sed)
 					sed ':a;N;$!ba;s/[\n\s]$//mg' /etc/bind/named.conf.tmp > /etc/bind/named.conf
