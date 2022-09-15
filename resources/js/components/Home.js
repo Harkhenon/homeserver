@@ -1,5 +1,5 @@
 import React from 'react';
-import { Preloader } from 'react-materialize';
+import { Button, Form, Icon, Input, Loader } from 'semantic-ui-react';
 import { toast } from 'react-toastify';
 
 import './scss/Home.scss';
@@ -9,23 +9,6 @@ class Home extends React.Component {
 
     constructor(props) {
         super(props);
-        toast.configure();
-        
-    }
-
-    getRotationDegrees(obj) {
-        var matrix = obj.css("-webkit-transform") ||
-        obj.css("-moz-transform")    ||
-        obj.css("-ms-transform")     ||
-        obj.css("-o-transform")      ||
-        obj.css("transform");
-        if(matrix !== 'none') {
-            var values = matrix.split('(')[1].split(')')[0].split(',');
-            var a = values[0];
-            var b = values[1];
-            var angle = Math.round(Math.atan2(b, a) * (180/Math.PI));
-        } else { var angle = 0; }
-        return (angle < 0) ? angle + 360 : angle;
     }
 
     getServerInformations(
@@ -43,58 +26,153 @@ class Home extends React.Component {
             const { cpuUsage, ramUsage, diskUsage, os: osUsed } = response.data;
             const { setServerInformations } = this.props;
 
-            const cpu = document.querySelector('.cpu .load');
-            const ram = document.querySelector('.ram .load');
-            const disk = document.querySelector('.disk .load');
+            const cpu = document.querySelector('.machine-cpu');
+            const ram = document.querySelector('.machine-ram');
+            const disk = document.querySelector('.machine-disk');
             const platform = document.querySelector('#platform > h4');
-            const cpuText = document.querySelector('.machine-cpu');
-            const ramText = document.querySelector('.machine-ram');
-            const diskText = document.querySelector('.machine-disk');
+            const cpuText = document.querySelector('.cpu .load');
+            const ramText = document.querySelector('.ram .load');
+            const diskText = document.querySelector('.disk .load');
 
-            platform.classList.remove('red-text');
             platform.textContent = (serverOs ??= osUsed);
-            cpu.style.transform = "rotate(" + Math.round(180 * (serverCpu ??= cpuUsage) / 100) + "deg)";
-            ram.style.transform = "rotate(" + Math.round(180 * (serverRam ??= ramUsage) / 100) + "deg)";
-            disk.style.transform = "rotate(" + Math.round(180 * (serverDisk ??= diskUsage) / 100) + "deg)";
-            cpuText.textContent = "CPU: " + Math.round(serverCpu ??= cpuUsage) + "%";
-            ramText.textContent = "RAM: " + Math.round(serverRam ??= ramUsage) + "%";
-            diskText.textContent = "DISK: " + Math.round(serverDisk ??= diskUsage) + "%";
 
+            cpuText.textContent = Math.round(serverCpu ??= cpuUsage) + "%";
+            ramText.textContent = Math.round(serverRam ??= ramUsage) + "%";
+            diskText.textContent = Math.round(serverDisk ??= diskUsage) + "%";
+
+            if(document.querySelector('.machine-disk .ui.loader')) {
+                document.querySelector('.machine-cpu .ui.loader').remove();
+                document.querySelector('.machine-ram .ui.loader').remove();
+                document.querySelector('.machine-disk .ui.loader').remove();
+            }
+            
+            const realCPU = (serverCpu ??= cpuUsage);
+            const realRAM = (serverRam ??= ramUsage);
+            const realDISK = (serverDisk ??= diskUsage);
+
+            cpu.style.background = `conic-gradient(
+                greenyellow ${realCPU * 3.6}deg,
+                #000 ${realCPU * 3.6}deg 
+            )`;
+            ram.style.background = `conic-gradient(
+                greenyellow ${realRAM * 3.6}deg,
+                #000 ${realRAM * 3.6}deg 
+            )`;
+            disk.style.background = `conic-gradient(
+                greenyellow ${realDISK * 3.6}deg,
+                #000 ${realDISK * 3.6}deg 
+            )`;
             setServerInformations(cpuUsage, ramUsage, diskUsage, osUsed);
         })
     }
 
+    // handleDomainAvailability(e) {
+
+    //     const { storeData, settings } = this.props;
+        
+    //     var options = {
+    //         method: 'GET',
+    //         url: 'https://whoisapi-whois-v2-v1.p.rapidapi.com/whoisserver/WhoisService',
+    //         params: {
+    //           domainName: e.target[0].value,
+    //           apiKey: 'at_6ZoxX96RnetMR6UCvkyG6FsevqX8W',
+    //           outputFormat: 'JSON',
+    //           da: '1',
+    //           ipwhois: '0',
+    //           thinWhois: '0',
+    //           _parse: '0',
+    //           preferfresh: '0',
+    //           checkproxydata: '0',
+    //           ip: '0'
+    //         },
+    //         headers: {
+    //           'x-rapidapi-host': 'whoisapi-whois-v2-v1.p.rapidapi.com',
+    //           'x-rapidapi-key': '04d93a463amsh315b1cc4a9f9e73p112d52jsn30c8d677e5b2'
+    //         }
+    //       };
+        
+    //     storeData('settings', {
+    //         ...settings,
+    //         loading: true
+    //     });
+
+    //     client.request(options)
+    //     .then(r => {
+    //         if(r.data.WhoisRecord.domainAvailability === "AVAILABLE") {
+    //             toast.success('Domain is available!')
+    //             console.log(r.data)
+    //         } else {
+    //             toast.error("Domain isn't available for the moment...")
+    //         }
+    //     })
+    //     .finally(() => {
+    //         storeData('settings', {
+    //             ...settings,
+    //             loading: false
+    //         });
+    //     })
+    // }
+    
     componentDidMount() {
-        const { serverCpu, serverRam, serverDisk, serverOs } = this.props;
+        const {
+            serverCpu,
+            serverRam,
+            serverDisk,
+            serverOs,
+            storeData,
+            settings
+        } = this.props;
+
         if(serverCpu, serverRam, serverDisk, serverOs === null) {
             this.getServerInformations()
         }
 
-        setInterval(() => {this.getServerInformations(
+        let intervalId = setInterval(() => {this.getServerInformations(
             serverCpu,
             serverRam,
             serverDisk,
             serverOs
-        )}, 60000 * 10)
+        )}, 3000);
+
+        storeData("settings", {
+            ...settings,
+            intervalId
+        });
     };
 
+    componentWillUnmount() {
+        const { settings } = this.props;
+        clearInterval(settings['intervalId']);
+    }
+
     render() {
+
+        const { settings } = this.props;
         return (
             <main>
-                <div id="presentation row">
+                {/*<h3>Domain checker</h3>
+                <Form onSubmit={this.handleDomainAvailability}>
+                    <Input
+                        type='text'
+                        name='domain-availability'
+                        placeholder='example.com'
+                    />
+                    <Button type="submit" loading={settings.loading}>Test</Button>
+                </Form>*/}
+                <div id="presentation">
                     <h3>PLATFORM</h3>
-                    <div id="platform" className="col s12">
+                    <div id="platform">
                         <h4>
-                            <Preloader
+                            <Loader
                                 active
                             />
                         </h4>
                     </div>
                 </div>
                 <div id="main-table" className="row">
-                    <div className="machine-container cpu col s12 m12 l4 xl4">
+                    <div className="machine-container cpu">
                         <div className="machine-cpu circle-load">
-                            <Preloader
+                            <Loader
                                 active
                                 size="small"
                                 color="green"
@@ -102,9 +180,9 @@ class Home extends React.Component {
                         </div>
                         <div className="load"></div>
                     </div>
-                    <div className="machine-container ram col s12 m12 l4 xl4">
+                    <div className="machine-container ram">
                         <div className="machine-ram circle-load">
-                            <Preloader
+                            <Loader
                                 active
                                 size="small"
                                 color="green"
@@ -112,13 +190,13 @@ class Home extends React.Component {
                         </div>
                         <div className="load"></div>
                     </div>
-                    <div className="machine-container disk col s12 m12 l4 xl4">
+                    <div className="machine-container disk">
                         <div className="machine-disk circle-load">
-                        <Preloader
-                            active
-                            size="small"
-                            color="green"
-                        />
+                            <Loader
+                                active
+                                size="small"
+                                color="green"
+                            />
                         </div>
                         <div className="load"></div>
                     </div>

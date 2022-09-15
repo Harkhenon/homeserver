@@ -4,7 +4,7 @@ import { connect } from 'react-redux';
 
 // == Import : local
 import Home from '../components/Home';
-import { setServerInformations } from '../store/reducer';
+import { setServerInformations, storeData } from '../store/reducer';
 
 
 /* === State (données) ===
@@ -19,6 +19,7 @@ const mapStateToProps = (state, ownProps) => ({
     serverRam: state.serverRam ?? null,
     serverDisk: state.serverDisk ?? null,
     serverOs: state.serverOs ?? null,
+    settings: state.settings ?? null,
 });
 
 
@@ -31,6 +32,7 @@ const mapStateToProps = (state, ownProps) => ({
 */
 const mapDispatchToProps = (dispatch, ownProps) => ({
     setServerInformations: (cpu, ram, disk, os) => (dispatch(setServerInformations(cpu, ram, disk, os))),
+    storeData: (name, value) => (dispatch(storeData(name, value))),
 });
 
 

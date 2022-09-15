@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM from 'react-dom/client';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import store from './store';
@@ -8,17 +8,19 @@ import { ToastContainer } from 'react-toastify';
 
 import App from "./containers/App";
 
+import 'semantic-ui-css/semantic.min.css'
+
 const Entry = () => (
-    <Provider store={store}>
-        <Router>
+    <Router>
+        <Provider store={store}>
             <App />
             <ToastContainer 
                 pauseOnFocusLoss={false}
                 limit={2}
                 autoClose={3000}
             />
-        </Router>
-    </Provider>
+        </Provider>
+    </Router>
 );
 
-ReactDOM.render(<Entry />, document.getElementById('root'));
+ReactDOM.createRoot(document.getElementById('root')).render(<Entry />);

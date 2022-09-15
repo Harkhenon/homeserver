@@ -16,7 +16,7 @@ import { setSidebarVisibility } from '../../store/reducer';
 const mapStateToProps = (state, ownProps) => ({
     username: state.username ?? null,
     email: state.email ?? null,
-    sidebarVisibility: state.sidebarVisibility ?? null,
+    settings: state.settings ?? null,
 });
 
 

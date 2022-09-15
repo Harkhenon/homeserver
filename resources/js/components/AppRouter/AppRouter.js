@@ -2,16 +2,18 @@ import React, { useEffect } from 'react';
 
 import { Route, Routes } from 'react-router';
 
-import Header from '../../containers/Parts/Header';
-import Footer from '../Parts/Footer';
-import Home from '../../containers/Home';
-import Settings from '../../containers/Settings';
-import Error404 from '../Errors/Error404';
-import Logout from "../AppRouter/Logout";
-import Console from '../Console';
-import Hosting from '../Components/Hosting';
-import Domains from '../../containers/Components/Domains';
-import client from '../../axiosConfig';
+import Header from '@containers/Parts/Header';
+import Footer from '@src/Parts/Footer';
+import Home from '@containers/Home';
+import Settings from '@containers/Settings';
+import Error404 from '@src/Errors/Error404';
+import Logout from "@src/AppRouter/Logout";
+import Console from '@src/Console';
+import Hosting from '@components/Hosting';
+import Domains from '@containers/Components/Domains';
+import AddDomainForm from '@containers/Components/Domains/Forms/AddDomainForm';
+import EditDomainForm from '@containers/Components/Domains/Forms/EditDomainForm';
+import client from '@js/axiosConfig';
 import { Container, Segment, Sidebar } from 'semantic-ui-react';
 
 const AppRouter = (props) => {
@@ -42,6 +44,8 @@ const AppRouter = (props) => {
                     <Container>
                         <Routes>
                             <Route exact path="/" element={<Home />} />
+                            <Route path='/domains/add' element={<AddDomainForm />} />
+                            <Route path='/domains/edit' element={<EditDomainForm />} />
                             <Route path='/domains' element={<Domains />} />
                             <Route path='/hosting' element={<Hosting />} />
                             <Route path="/terminal" element={<Console />} />

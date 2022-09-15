@@ -5,7 +5,11 @@
 
     RewriteEngine On
 
-    RewriteRule ^adminer - [L,NC]
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST} [L,R=301]
+
+    RewriteRule ^js - [L,NC]
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .

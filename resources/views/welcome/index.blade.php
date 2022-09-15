@@ -4,11 +4,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Homeserver is your web home companion!" />
+    <meta name="theme-color" content="#202124"/>
     <title>Homeserver</title>
-  <!-- Import Google Icon Font -->
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Import materialize.css -->
-  <link href="https://cdn.jsdelivr.net/npm/semantic-ui@2/dist/semantic.min.css" rel="stylesheet">
   <link href="{{ asset('css/app.css') }}" rel="stylesheet">
 </head>
 
@@ -17,7 +16,6 @@
     <!-- React root DOM -->
     <div id="root">
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/semantic-ui-react/dist/umd/semantic-ui-react.min.js"></script>
     <!-- React JS -->
     <script src="{{ asset('js/app.js') }}" defer></script>
 

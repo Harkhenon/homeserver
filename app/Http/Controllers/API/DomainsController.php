@@ -62,7 +62,7 @@ class DomainsController extends BaseController {
 
     public function show($id) {
 
-        $domains = Domains::find($id);
+        $domains = Domains::find($id)->with('zone');
         if (is_null($domains)) {
             return $this->sendError('Domain not found.');
         }
@@ -86,7 +86,8 @@ class DomainsController extends BaseController {
         $validator = Validator::make($input, [
             'fqdn' => 'required',
             'ns1' => 'required',
-            'ns2' => 'required'
+            'ns2' => 'required',
+            'zone' => ''
         ]);
 
         if($validator->fails()) {

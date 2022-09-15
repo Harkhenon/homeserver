@@ -10,7 +10,19 @@ class Zones extends Model
 {
     use HasFactory;
 
-    public function domain() {
-        return $this->hasOne(Domain::class);
-    }
+        /**
+     * The attributes that are mass assignable.
+     *
+     * @var string[]
+     */
+    protected $fillable = [
+        'domains_id',
+        'sub',
+        'type',
+        'ip_or_fqdn'
+    ];
+
+    // public function domain() {
+    //     return $this->belongsTo(Domain::class);
+    // }
 }

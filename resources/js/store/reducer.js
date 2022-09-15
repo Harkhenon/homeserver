@@ -1,6 +1,8 @@
 const initialState = {
-    loading: false,
-    sidebarVisibility: false
+    settings: {
+        loading: false,
+        sidebarVisibility: false
+    }
 }
 
 const TOGGLE_LOADING = "TOGGLE_LOADING";
@@ -10,13 +12,18 @@ const CONTROL_FORM_INPUT = "CONTROL_FORM_INPUT";
 const CONTROL_FORM_ERRORS = "CONTROL_FORM_ERRORS";
 const STORE_DATA = "STORE_DATA";
 const SET_SIDEBAR_VISIBILITY = "SET_SIDEBAR_VISIBILITY";
+const GET_DOMAINS = "GET_DOMAINS";
+const SET_DOMAINS = "SET_DOMAINS";
 
 const reducer = (state = initialState, action = {}) => {
     switch (action.type) {
         case CONTROL_FORM_INPUT: {
             return {
                 ...state,
-                [action.key]: action.value,
+                inputs: {
+                    ...state.inputs,
+                    [action.key]: action.value,
+                }
             }
         }
         case CONTROL_FORM_ERRORS: {
@@ -53,10 +60,24 @@ const reducer = (state = initialState, action = {}) => {
                 [action.name]: action.data,
             }
         }
+        case GET_DOMAINS: {
+            return {
+                ...state,
+            }
+        }
+        case SET_DOMAINS: {
+            return {
+                ...state,
+                domains: action.domains
+            }
+        }
         case SET_SIDEBAR_VISIBILITY: {
             return {
                 ...state,
-                sidebarVisibility: !state.sidebarVisibility
+                settings: {
+                    ...state.settings,
+                    sidebarVisibility: !state.settings.sidebarVisibility
+                }
             }
         }
         default: {
@@ -65,7 +86,9 @@ const reducer = (state = initialState, action = {}) => {
     }
 }
 
-
+export const getDomains = () => ({
+    type: GET_DOMAINS
+});
 
 export const setServerInformations = (cpu, ram, disk, os) => ({
     type: SET_SERVER_INFORMATIONS,

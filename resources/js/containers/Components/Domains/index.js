@@ -4,7 +4,7 @@ import { connect } from 'react-redux';
 
 // == Import : local
 import Domains from '../../../components/Components/Domains';
-import { controlFormInput, storeData } from '../../../store/reducer';
+import { controlFormInput, storeData, getDomains } from '../../../store/reducer';
 
 
 /* === State (données) ===
@@ -36,6 +36,7 @@ const mapStateToProps = (state, ownProps) => ({
 const mapDispatchToProps = (dispatch, ownProps) => ({
     storeData: (name, data) => (dispatch(storeData(name, data))),
     controlFormInput: (name, value) => (dispatch(controlFormInput(name, value))),
+    getDomains: () => (dispatch(getDomains())),
 });
 
 

@@ -21,7 +21,9 @@ class Domains extends Model
         'ns2',
     ];
 
+    protected $with = ['zone'];
+
     public function zone() {
-        return $this->hasOne(Zones::class);
+        return $this->hasMany(Zones::class);
     }
 }

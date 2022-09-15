@@ -10,7 +10,7 @@ class Header extends React.Component {
     }
 
     render() {
-        const { username, email, sidebarVisibility, setSidebarVisibility } = this.props;
+        const { username, email, settings, setSidebarVisibility } = this.props;
         return (
             <React.Fragment>
                 <Sidebar
@@ -19,7 +19,7 @@ class Header extends React.Component {
                     icon='labeled'
                     inverted
                     vertical
-                    visible={sidebarVisibility}
+                    visible={settings.sidebarVisibility}
                     width='wide'
                     >
                         <Text to="/user" as={Link} inverted icon>
@@ -46,6 +46,9 @@ class Header extends React.Component {
                         <Menu.Item as={Link} to='/hosting' onClick={setSidebarVisibility}>
                             Hosted domains
                         </Menu.Item>
+                        <Menu.Item as={Link} to='/security' onClick={setSidebarVisibility}>
+                            Security
+                        </Menu.Item>
                 </Sidebar>
                 <header>
                     <Button
@@ -55,6 +58,7 @@ class Header extends React.Component {
                         icon='bars'
                         onClick={setSidebarVisibility}
                         content='Menu'
+                        id='main-menu'
                     />
                     <h1>Homeserver</h1>
                 </header>

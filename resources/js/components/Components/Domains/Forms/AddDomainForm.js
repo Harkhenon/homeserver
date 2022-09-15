@@ -1,44 +1,38 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { toast } from 'react-toastify';
-import { Icon, Button, Label, Form, Popup } from 'semantic-ui-react';
+import { useNavigate } from 'react-router-dom';
+import { Icon, Button, Form, Popup } from 'semantic-ui-react';
+
 import client from '../../../../axiosConfig';
+import HSBreadcrumb from '../../../Parts/HSBreadcrumb';
+import { useValidator } from '../../../../hooks/useValidator';
 
 const AddDomainForm = (props) => {
 
   const {
     storeData,
     domains, 
-    addModalOpened,
     controlFormInput,
-    domain,
-    nsserver1,
-    nsserver2,
-    loading
+    loading,
+    inputs,
+    controlFormErrors,
+    form_errors
   } = props;
 
+  const navigate = useNavigate();
+  const validate = useValidator();
+  const { formAdd } = inputs;
 
   const handleCreate = (e) => {
 
-    toast.configure();
-
-    storeData('addModalOpened', false);
     storeData('loading', true);
 
-    const {
-      domain,
-      nsserver1,
-      nsserver2
-    } = props;
-
-    client.post('/api/domains', {
-      fqdn: domain,
-      ns1: nsserver1,
-      ns2: nsserver2
-    })
+    client.post('/api/domains', inputs.formAdd)
       .then(response => {
         storeData('loading', false);
         storeData('domains', null);
-        toast.success('Creation of ' + domain + ' done')
+        toast.success('Creation of ' + inputs.formAdd.fqdn + ' done');
+        navigate('/domains');
       })
       .catch(error => {
         toast.error("Creation failed, maybe already registered?");
@@ -47,68 +41,100 @@ const AddDomainForm = (props) => {
   }
 
   const handleChange = (e) => {
-    controlFormInput(e.target.name, e.target.value);
+    if(e.target.name === 'fqdn') {
+      if(validate.domain(e.target.value) === false) {
+        controlFormErrors({
+          add_fqdn: "Incorrect format for domain"
+        });
+      } else {
+        controlFormErrors({
+          add_fqdn: undefined
+        })
+      }
+    }
+    controlFormInput('formAdd', {
+        ...formAdd,
+        [e.target.name]: e.target.value
+    });
   }
 
-  if(domains !== null && nsserver1 === null && nsserver2 === null) {
-    controlFormInput('nsserver1', domains.find(element => element.default === 1).ns1);
-    controlFormInput('nsserver2', domains.find(element => element.default === 1).ns2);
-  }
+  useEffect(() => {
+    if (domains === null || undefined) {
+        navigate('/domains');
+        return null;
+    }
+    if(inputs.formAdd !== undefined && inputs.formAdd.ns2 === undefined) {
+
+      controlFormInput('formAdd', {
+          ...formAdd,
+          ns1: domains.find(element => element.default === 1).ns1,
+          ns2: domains.find(element => element.default === 1).ns2
+      });
+    }
+  });
+
+
 
   return (
-    <Form onSubmit={handleCreate}>
-    <Form.Field>
-      <Form.Input
-        type="text"
-        name="domain"
-        onChange={handleChange}
-        label={
-          <Popup trigger={
-            <p>Domain name (FQDN) <Icon name="info circle" /></p>
-          }>
-            <Popup.Header>
-              FQDN
-            </Popup.Header>
-            <Popup.Content>
-              Full Qualified Domain Name, otherwise by example: domain.tld (without https://)
-            </Popup.Content>
-          </Popup>
-        }
-      />
-    </Form.Field>
-    <Form.Field>
+    <main>
+      <HSBreadcrumb />
+      <p>CACA</p>
+      <Form onSubmit={handleCreate}>
+      <Form.Field>
         <Form.Input
-          type='text'
-          name='nsserver1'
+          type="text"
+          name="fqdn"
           onChange={handleChange}
-          value={nsserver1 !== null ? nsserver1 : ""}
           label={
-            <Popup
-              trigger={
-                <p>Name server 1 <Icon name='info circle' /></p>
-              }
-            >
-              <Popup.Header>Name servers</Popup.Header>
+            <Popup trigger={
+              <p>Domain name (FQDN) <Icon name="info circle" /></p>
+            }>
+              <Popup.Header>
+                FQDN
+              </Popup.Header>
               <Popup.Content>
-                Name servers are needed to rely your domain to your website.
-                You can set custom name servers or keep defaults.
+                Full Qualified Domain Name, otherwise by example: domain.tld (without https://)
               </Popup.Content>
             </Popup>
-          } />
-    </Form.Field>
-    <Form.Field>
+          }
+          error={form_errors ? form_errors.add_fqdn : false}
+          
+        />
+      </Form.Field>
+      <Form.Field>
           <Form.Input
             type='text'
-            name='nsserver2'
+            name='ns1'
             onChange={handleChange}
-            label={<p>Name server 2</p>}
-            value={nsserver2 !== null ? nsserver2 : ""}
-          />
-    </Form.Field>
-    <Form.Field>
-        <Button loading={loading}>Create domain</Button>
-    </Form.Field>
-  </Form>
+            value={formAdd ? formAdd.ns1 ? formAdd.ns1 : "" : ""}
+            label={
+              <Popup
+                trigger={
+                  <p>Name server 1 <Icon name='info circle' /></p>
+                }
+              >
+                <Popup.Header>Name servers</Popup.Header>
+                <Popup.Content>
+                  Name servers are needed to rely your domain to your website.
+                  You can set custom name servers or keep defaults.
+                </Popup.Content>
+              </Popup>
+            } />
+      </Form.Field>
+      <Form.Field>
+            <Form.Input
+              type='text'
+              name='ns2'
+              onChange={handleChange}
+              label={<p>Name server 2</p>}
+              value={formAdd ? formAdd.ns1 ? formAdd.ns1 : "" : ""}
+            />
+      </Form.Field>
+      <Form.Field>
+          <Button loading={loading}>Create domain</Button>
+      </Form.Field>
+    </Form>
+  </main>
   )
 }
 

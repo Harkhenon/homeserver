@@ -21,9 +21,8 @@ class DatabaseSeeder extends Seeder
         \App\Models\BankIncoming::factory(200)->create();
         \App\Models\BankExpense::factory(200)->create();
         \App\Models\BankRegularFee::factory(40)->create();
+        \App\Models\Zones::factory()->create();
         \App\Models\Domains::factory()->create(['fqdn' => 'isodev.ovh']);
-        \App\Models\Domains::factory()->create(['fqdn' => 'isoweb.ovh']);
-        \App\Models\Domains::factory()->create(['fqdn' => 'isoweb.eu']);
-        \App\Models\Packages::factory(5)->create();
+        //\App\Models\Packages::factory(5)->create();
     }
 }

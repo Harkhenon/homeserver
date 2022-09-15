@@ -11,7 +11,7 @@ class ServerController extends BaseController
         exec("lsb_release -d", $os);
         exec("df --output=pcent / | grep -v Use", $disk);
         exec("free | grep Mem | awk '{print $3/$2 * 100.0}'", $ram);
-        exec("cat /proc/stat | grep cpu | tail -1| awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'", $cpu);
+        exec("cat /proc/stat | grep ^cpu[^0-9] | tail -1| awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'", $cpu);
         
         $os = explode(":", $os[0]);
         
