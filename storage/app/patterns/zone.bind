@@ -1,0 +1,15 @@
+
+#{fqdn}#
+zone "{fqdn}" {
+		type master;
+		file "/etc/bind/{fqdn}.zone";
+		allow-transfer {
+			127.0.0.1;
+			198.41.0.4;
+			192.203.230.10;
+			{ip};
+		};
+		allow-query { any; };
+		notify yes;
+};
+#end{fqdn}#
