@@ -72,7 +72,7 @@ source $SCRIPTPATH/bin/cleanFilesAndCreateNews
 # Add homeserver user
 
 groupadd homeserver;
-useradd homeserver -g homeserver -b /usr/share/homeserver;
+useradd homeserver -g homeserver -b /home/homeserver;
 
 
 # Fill .env file
