@@ -2,7 +2,7 @@
 
 user=$(whoami);
 
-PATTERNS_PATH=$HOMESERVER_PATH/storage/app/patterns;
+PATTERNS_PATH=./patterns;
 
 HOMESERVERPATH=/usr/share/homeserver;
 
