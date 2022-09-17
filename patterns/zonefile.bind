@@ -9,11 +9,11 @@ $ORIGIN {fqdn}.
                                 1D)         ; minimum TTL of 1 day
 
         ; Name Server
-        IN      NS      ns1.{fqdn}.
-        IN      NS      ns2.{fqdn}.
+@                               IN      NS      ns1.{fqdn}.
+@                               IN      NS      ns2.{fqdn}.
 
         ; Mail Exchanger
-        IN      MX      50 mx1.{fqdn}.
+@                               IN      MX      50 mx1.{fqdn}.
 
 {fqdn}.                         IN A            {ip}
 www                             IN CNAME        {fqdn}.
