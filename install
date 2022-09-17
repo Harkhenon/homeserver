@@ -16,9 +16,9 @@ clear;
 orange '
     __  __                       ______                             
    / / / /____  ____ ____  ___  / ____/___ ,_________  __ ___ ,______
-  / /_/ // __ \/  __ `__ \/ _ \/___ \ / _ \/  ___/| | / // _ \/  ___/
+  / /_/ // __ \/  __` __ \/ _ \/___ \ / _ \/  ___/| | / // _ \/  ___/
  / __  // /_/ /  / / / / /  __/___/ //  __/  /    | |/ //  __/  /    
-/_/ /_/ \____//_/ /_/ /_/\___//____/ \___/__/     |___/ \___/__/     
+/_/ /_/ \____/__/ /_/ /_/\___/_____/ \___/__/     |___/ \___/__/     
                                                                          
 '
 
@@ -89,9 +89,9 @@ chown -R homeserver:homeserver /usr/share/homeserver;
 blue_info "Enabling virtualhosts"
 
 a2ensite $fqdn;
-a2ensite sql.$fqdn
-a2enmod rewrite
-a2enmod env
+a2ensite sql.$fqdn;
+a2enmod rewrite;
+a2enmod env;
 
 # Apache and PHP-FPM restart
 
@@ -116,6 +116,8 @@ chown homeserver:homeserver $HOMESERVERPATH/.env;
 su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan key:generate -q";
 
 su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan migrate:fresh -q";
+
+su homeserver -s /bin/bash -c "php $HOMESERVERPATH/artisan db:seed -q";
 
 # Pass Laravel/Homeserver in production mode (disabled during development)
 
@@ -145,5 +147,4 @@ service homeserver restart
 
 orange_important "To connect to Adminer, enter url: https://sql.$fqdn"
 orange_important "MySQL homeserver database password is: $HSPASSWORD, please note it!";
-orange_important "MySQL root database password is: $MYSQLPASSWORD, please note it!";
 orange_important "Your panel URL is: https://$fqdn, enjoy!";

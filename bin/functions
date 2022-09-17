@@ -14,25 +14,26 @@ function orange () {
 }
 
 function red_warning () {
-  echo -e "\e[38;5;9m[(/!\)]  $1\e[0m"
+  echo -e "\e[38;5;9m ☒  $1\e[0m"
 }
 function blue_info () {
-  echo -e "\e[38;5;39m[(?)]  $1\e[0m"
+  echo -e "\e[38;5;39m ℹ  $1\e[0m"
 }
 function green_success () {
-  echo -e "\e[38;5;190m[OK]  $1\e[0m"
+  echo -e "\e[38;5;190m ☑  $1\e[0m"
 }
 function orange_important () {
-  echo -e "\e[38;5;178m[!IMPORTANT!]  $1\e[0m"
+  echo -e "\e[38;5;178m ⚠  $1\e[0m"
 }
 
 function installPackageIfNotExists() {
-  dpkgcommand=$(dpkg-query -l $1)
+  dpkgcommand=$(apt-cache policy $1 | grep -e "Installed");
 
-  if [ "$dpkgcommand" != "dpkg-query: no packages found matching $1" ]
+  if [ "$dpkgcommand" != "  Installed: (none)" ]
   then
-    green "$1 is already installed"
-   else
+    green_success "Good, $1 is already installed";
+  else
+    orange_important "$1 not installed, so we'll intall it";
     apt-get install -yqq $1
   fi
 }

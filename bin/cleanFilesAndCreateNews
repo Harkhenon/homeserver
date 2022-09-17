@@ -42,11 +42,13 @@ touch /etc/php/$SHORTPHPVERSION/fpm/pool.d/$fqdn.pool.conf;
 # Filling zone file and Bind9 named.conf
 
 sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $PATTERNS_PATH/zonefile.bind > /etc/bind/$fqdn.zone;
+sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $PATTERNS_PATH/sqlSubDomainZone.bind > /etc/bind/sql.$fqdn.sub;
 sed 's/{fqdn}/'$fqdn'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g' $PATTERNS_PATH/zone.bind > /etc/bind/named.conf;
 
 # Filling virtualhost file for Apache
 
 sed 's/{fqdn}/'$fqdn'/g' $PATTERNS_PATH/virtualhost.apache > /etc/apache2/sites-available/$fqdn.conf;
+sed 's/{fqdn}/'$fqdn'/g' $PATTERNS_PATH/virtualhost-sql.apache > /etc/apache2/sites-available/sql.$fqdn.conf;
 
 # Filling PHP-FPM pool file
 

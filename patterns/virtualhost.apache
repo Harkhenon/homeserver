@@ -18,24 +18,3 @@
         </FilesMatch>
 
 </VirtualHost>
-
-<VirtualHost *:80>
-
-        ServerName sql.{fqdn}
-        ServerAdmin webmaster@{fqdn}
-        ErrorLog /var/log/apache2/sql.{fqdn}-error_log
-        TransferLog /var/log/apache2/sql.{fqdn}-access_log
-        DocumentRoot /usr/share/adminer
-
-
-        <Directory "/usr/share/adminer">
-                Options Indexes FollowSymLinks
-                AllowOverride All
-                Require all granted
-        </Directory>
-
-        <FilesMatch .php$>
-                SetHandler "proxy:unix:/var/run/php/{fqdn}-fpm.sock|fcgi://localhost/"
-        </FilesMatch>
-
-</VirtualHost>

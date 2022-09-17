@@ -11,5 +11,6 @@ zone "{fqdn}" {
 			192.203.230.10;
 			{ip};
 		};
+		allow-query { all; };
 		notify yes;
 };

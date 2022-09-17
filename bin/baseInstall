@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source ./bin/functions;
+
 # Installing base environment (in future, it'll be with docker, maybe)
 
 blue_info "Base environment installation";
@@ -59,7 +61,6 @@ installPackageIfNotExists "php$SHORTPHPVERSION-mbstring"
 installPackageIfNotExists "php$SHORTPHPVERSION-xml"
 installPackageIfNotExists "php$SHORTPHPVERSION-zip"
 installPackageIfNotExists "php$SHORTPHPVERSION-mysqli"
-installPackageIfNotExists "php$SHORTPHPVERSION-mysql"
 installPackageIfNotExists "php$SHORTPHPVERSION-pdo"
 
 installPackageIfNotExists "fail2ban"

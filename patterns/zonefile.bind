@@ -1,6 +1,7 @@
 ; {fqdn}
 $TTL 3600
-{fqdn}. IN     SOA    ns1.{fqdn}. admin.{fqdn}. (
+$ORIGIN {fqdn}. 
+@       IN      SOA     ns1.{fqdn}. admin.{fqdn}. (
                                 2021081701  ; Serial
                                 14400       ; refresh after 3 hours
                                 1H          ; retry after 1 hour
@@ -19,4 +20,6 @@ www                             IN CNAME        {fqdn}.
 ns1                             IN A            {ip}
 ns2                             IN A            {ip}
 mx1                             IN A            {ip}
-sql                             IN A            {ip}
+
+; SQL subdomain
+$INCLUDE sql.isodev.ovh.sub

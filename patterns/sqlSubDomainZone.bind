@@ -1,0 +1,7 @@
+$ORIGIN sql.{fqdn}.
+                                ; Mail Exchanger
+@                               IN MX      50 mx1
+
+sql.{fqdn}.                 IN A            {ip}
+www                             IN CNAME        sql.{fqdn}.
+mx1                             IN A            {ip}
