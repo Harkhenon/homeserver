@@ -58,6 +58,9 @@ installPackageIfNotExists "php$SHORTPHPVERSION-curl"
 installPackageIfNotExists "php$SHORTPHPVERSION-mbstring"
 installPackageIfNotExists "php$SHORTPHPVERSION-xml"
 installPackageIfNotExists "php$SHORTPHPVERSION-zip"
+installPackageIfNotExists "php$SHORTPHPVERSION-mysqli"
+installPackageIfNotExists "php$SHORTPHPVERSION-mysql"
+installPackageIfNotExists "php$SHORTPHPVERSION-pdo"
 
 installPackageIfNotExists "fail2ban"
 installPackageIfNotExists "curl"
@@ -69,7 +72,7 @@ source $SCRIPTPATH/bin/databaseModifications
 # Enable PHP-FPM in apache
 
 a2enmod proxy_fcgi setenvif;
-a2enconf php7.4-fpm;
+a2enconf php$SHORTPHPVERSION-fpm;
 
 # Add Adminer
 
