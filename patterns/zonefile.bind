@@ -22,4 +22,4 @@ ns2                             IN A            {ip}
 mx1                             IN A            {ip}
 
 ; SQL subdomain
-$INCLUDE sql.isodev.ovh.sub
+$INCLUDE /etc/bind/sql.isodev.ovh.sub
