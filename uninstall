@@ -1,0 +1,26 @@
+#!/bin/bash
+
+user=$(whoami);
+
+if [ $user != root ]
+then
+    red_warning "You must be root, sorry! Try sudo -s or sudo -i";
+    exit 1;
+fi
+
+apt remove --purge apache2* php* mariadb* snapd* fuse* bind9* zip* inotify* fail2ban curl -y
+service homeserver stop
+rm /etc/systemd/system/homeserver.service
+rm /usr/bin/homeserver
+rm -r /usr/share/homeserver
+rm -r /etc/bind
+rm -r /etc/apache2
+rm -r /etc/php
+rm -r /usr/share/adminer
+rm /usr/bin/composer
+userdel homeserver
+groupdel homeserver
+
+echo -e " "
+echo -e "\e[38;5;190m ☑ Homeserver uninstall complete"
+echo -e " "

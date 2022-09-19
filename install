@@ -44,6 +44,11 @@ do
     fi
 done
 
+# Add homeserver user
+
+groupadd homeserver;
+useradd homeserver -g homeserver -b /home/homeserver;
+
 # Install package base
 
 source $SCRIPTPATH/bin/baseInstall
@@ -68,11 +73,6 @@ green_success "Download done";
 # Creating filesystem
 
 source $SCRIPTPATH/bin/cleanFilesAndCreateNews
-
-# Add homeserver user
-
-groupadd homeserver;
-useradd homeserver -g homeserver -b /home/homeserver;
 
 
 # Fill .env file
