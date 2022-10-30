@@ -5,9 +5,9 @@
         ServerAdmin webmaster@{fqdn}
         ErrorLog /var/log/apache2/{fqdn}-error_log
         TransferLog /var/log/apache2/{fqdn}-access_log
-        DocumentRoot /usr/share/homeserver/public
+        DocumentRoot {root_dir}
                 
-        <Directory "/usr/share/homeserver/public">
+        <Directory "{root_dir}">
                 Options Indexes FollowSymLinks
                 AllowOverride All
                 Require all granted

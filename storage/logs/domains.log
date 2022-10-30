@@ -1,1 +1,22 @@
 
+[2022-09-17 23:38:03] development.INFO: insert domains new:isoweb.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-09-17 23:38:36] development.INFO: insert domains new:isoweb.eu ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-09-17 23:38:39] development.INFO: insert domains new:hark.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-09-17 23:38:45] development.INFO: insert domains new:isostatic.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-09-17 23:38:48] development.INFO: insert domains new:elitesquad.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-09-17 23:43:00] development.INFO: delete domains deleted:hark.ovh  
+[2022-09-17 23:43:05] development.INFO: insert domains new:hark.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 16:06:30] local.INFO: insert domains new:treteaux.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:18] local.INFO: insert domains new:isoweb.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:20] local.INFO: insert domains new:hark.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:26] local.INFO: insert domains new:isoweb.eu ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:30] local.INFO: insert domains new:isostatic.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:34] local.INFO: insert domains new:elitesquad.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-10 17:02:38] local.INFO: insert domains new:treteaux.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 12:20:29] local.INFO: insert domains new:isoweb.eu ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 12:20:45] local.INFO: insert domains new:isoweb.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 12:20:54] local.INFO: insert domains new:hark.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 12:21:04] local.INFO: insert domains new:elitesquad.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 12:21:13] local.INFO: insert domains new:treteaux.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  
+[2022-10-11 19:22:47] local.INFO: delete domains deleted:treteaux.isodev.ovh  
+[2022-10-11 19:23:06] local.INFO: insert domains new:treteaux.isodev.ovh ns1:ns1.isodev.ovh ns2:ns2.isodev.ovh  

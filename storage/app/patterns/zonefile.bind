@@ -1,6 +1,7 @@
 ; {fqdn}
 $TTL 3600
-{fqdn}. IN     SOA    {nsone}. admin.{fqdn}. (
+$ORIGIN {fqdn}. 
+@       IN      SOA     ns1.{fqdn}. admin.{fqdn}. (
                                 {serial}  ; Serial
                                 14400       ; refresh after 3 hours
                                 1H          ; retry after 1 hour

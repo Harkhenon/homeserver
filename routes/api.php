@@ -9,6 +9,7 @@ use App\Http\Controllers\API\ServerController;
 use App\Http\Controllers\API\RegisterController;
 use App\Http\Controllers\API\DomainsController;
 use App\Http\Controllers\API\ZoneController;
+use App\Http\Controllers\API\HostController;
 
 use App\Models\Domains;
 use App\Models\Zones;
@@ -57,7 +58,7 @@ Route::middleware('auth:api')->group( function () {
     Route::resource('domains', DomainsController::class);
     Route::resource('zone', ZoneController::class);
 });
-
+Route::resource('host', HostController::class);
 // Route::get('/default-domain', [DomainsController::class, 'getDefaultDomain'])->name('domain.getDefaultDomain');
 // Route::post('register', [RegisterController::class, 'register']);
 
