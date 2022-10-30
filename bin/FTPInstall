@@ -1,0 +1,17 @@
+#!/bin/bash
+
+installPackageIfNotExists "pure-ftpd";
+
+service pure-ftpd stop
+
+echo "yes" > /etc/pure-ftpd/conf/ChrootEveryone
+echo "yes" > /etc/pure-ftpd/conf/CreateHomeDir          
+echo "yes" > /etc/pure-ftpd/conf/UnixAuthentication
+echo "no" > /etc/pure-ftpd/conf/PAMAuthentication
+
+rm /etc/pure-ftpd/pure-ftpd.conf
+cp $PATTERNS_PATH/pure-ftpd.conf /etc/pure-ftpd/pure-ftpd.conf
+
+mkdir /home/ftpusers
+
+service pure-ftpd start
