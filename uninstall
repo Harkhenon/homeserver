@@ -8,7 +8,7 @@ then
     exit 1;
 fi
 
-apt remove --purge apache2* php* mariadb* snapd* fuse* bind9* zip* inotify* fail2ban curl -y
+apt remove --purge apache2* php* mariadb* snapd* fuse* bind9* zip* inotify* fail2ban curl pure-ftpd -y
 service homeserver stop
 rm /etc/systemd/system/homeserver.service
 rm /usr/bin/homeserver

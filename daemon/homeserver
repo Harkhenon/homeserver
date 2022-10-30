@@ -6,8 +6,19 @@
 HOMESERVERPATH="/usr/share/homeserver"
 HOMESERVERPATTERNSPATH="$HOMESERVERPATH/storage/app/patterns"
 DOMAIN_LOG="$HOMESERVERPATH/storage/logs/domains.log";
+HOST_LOG="$HOMESERVERPATH/storage/logs/hosts.log";
 CONFIGURATION_FILE="$HOMESERVERPATH/storage/app/observers/configuration.obs";
 MYSQL_COMMAND_ID=0
+
+PHPVERSION=$(php -r "echo PHP_VERSION;");
+
+if [ ${#PHPVERSION} -eq 5 ]
+then
+    SHORTPHPVERSION=${PHPVERSION:0:-2}
+elif [ ${#PHPVERSION} -eq 6 ]
+then
+    SHORTPHPVERSION=${PHPVERSION:0:-3}
+fi
 
 function echoToLogs() {
 	string=$1;
@@ -33,9 +44,80 @@ echoToLogs "Homeserver starting... Done"
 	#			WEBSERVER SECTION   			#
 	#############################################
 
-	# inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $CONFIGURATION_FILE | while read file; do
-	# 	echoToLogs "[INFO] Configuration changed";
-	# done
+	inotifywait -qrm --event close_write --format "%w %:e %f %T" --timefmt "%T" $HOST_LOG | while read file; do
+		echoToLogs "[INFO] Host file changed";
+		last_lines=$(tail -1 $HOST_LOG);
+		eval `echo "$last_lines" | perl -ne 'if (/(?<COMMAND>update|insert|delete)[[:space:]]?(?<TABLE>[a-z0-9_]*)[[:space:]]?(?:fqdn:(?<FQDN>[a-z0-9-_.]*)[[:space:]])?(?:node_port:(?<NODE_PORT>[0-9]*)[[:space:]])?(?:php_user:(?<PHP_USER>[a-z0-9-_.]*)[[:space:]])?(?:ftp_enabled:(?<FTP_ENABLED>[0-1]*)[[:space:]])?(?:ssh_enabled:(?<SSH_ENABLED>[0-1]*)[[:space:]])?(?:disk_space:(?<DISK_SPACE>[a-z0-9-_.]*)[[:space:]])?(?:plans_id:(?<PLANS_ID>[a-z0-9-_.]*)[[:space:]])?(?:root_dir:(?<ROOT_DIR>[a-z0-9-_.\/]*))?/) { print "COMMAND=".$1."; TABLE=".$2."; FQDN=".$3."; NODE_PORT=".$4."; PHP_USER=".$5."; FTP_ENABLED=".$6."; SSH_ENABLED=".$7."; DISK_SPACE=".$8."; PLANS_ID=".$9."; ROOT_DIR=".$10}'`
+		# Regex debug line
+		# echoToLogs "$COMMAND $TABLE $FQDN $NODE_PORT $PHP_USER $FTP_ENABLED $SSH_ENABLED $DISK_SPACE $ROOT_DIR"
+
+		if [[ "$TABLE" == "hosts" ]]; then
+			# echoToLogs "I am hosts on $COMMAND"
+
+			if [[ "$COMMAND" == "insert" ]]; then
+
+				# Check if a website already exists
+				if [[ ! -f /etc/apache2/sites-available/$FQDN.conf ]]; then
+					QUERY=($(mysql -u $DB_USERNAME -p$DB_PASSWORD -c $DB_DATABASE -se "SELECT * FROM $TABLE WHERE fqdn='$FQDN'"));
+
+					echoToLogs "[INFO] Creating $FQDN host on ${QUERY[8]} ..."
+
+					sed 's|{fqdn}|'$FQDN'|g;s|{root_dir}|'${QUERY[8]}'|g' $HOMESERVERPATTERNSPATH/virtualhost.apache > /etc/apache2/sites-available/$FQDN.conf;
+					sed 's|{fqdn}|'$FQDN'|g;s|{root_dir}|'${QUERY[8]}'|g;s|{user}|'${QUERY[3]}'|g' $HOMESERVERPATTERNSPATH/pool.php-fpm > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$FQDN.pool.conf;
+					mkdir /var/www/$FQDN
+					mkdir ${QUERY[8]};
+					ln -s $HOMESERVERPATTERNSPATH/index.html ${QUERY[8]}
+					ln -s $HOMESERVERPATTERNSPATH/img/home.jpg ${QUERY[8]}
+
+
+					a2ensite $FQDN
+					service apache2 reload
+					service php$SHORTPHPVERSION-fpm reload
+
+					echoToLogs "[INFO] Issuing SSL certificate..."
+					certbot --apache -d $FQDN -d www.$FQDN --non-interactive
+
+					unset -v QUERY
+
+					echoToLogs "[INFO] Done"
+				fi
+			elif [[ "$COMMAND" == "delete" ]]; then
+
+				a2dissite $FQDN
+				rm /etc/php/$SHORTPHPVERSION/fpm/pool.d/$FQDN.pool.conf
+				rm /etc/apache2/sites-available/$FQDN.conf
+				rm -R /var/www/$FQDN
+
+				service apache2 reload
+				service php$SHORTPHPVERSION-fpm reload
+				echoToLogs "[INFO] Host $FQDN deleted"
+
+			elif [[ "$COMMAND" == "update" ]]; then
+				echoToLogs "Update $FQDN website..."
+
+				QUERY=($(mysql -u $DB_USERNAME -p$DB_PASSWORD -c $DB_DATABASE -se "SELECT * FROM $TABLE WHERE fqdn='$FQDN'"));
+
+				a2dissite $FQDN
+				rm /etc/php/$SHORTPHPVERSION/fpm/pool.d/$FQDN.pool.conf
+				rm /etc/apache2/sites-available/$FQDN.conf
+				rm /etc/apache2/sites-available/$FQDN-le-ssl.conf
+
+				sed 's|{fqdn}|'$FQDN'|g;s|{root_dir}|'${QUERY[8]}'|g' $HOMESERVERPATTERNSPATH/virtualhost.apache > /etc/apache2/sites-available/$FQDN.conf;
+				sed 's|{fqdn}|'$FQDN'|g;s|{root_dir}|'${QUERY[8]}'|g;s|{user}|'${QUERY[3]}'|g' $HOMESERVERPATTERNSPATH/pool.php-fpm > /etc/php/$SHORTPHPVERSION/fpm/pool.d/$FQDN.pool.conf;
+
+				a2ensite $FQDN
+
+				service apache2 reload
+				service php$SHORTPHPVERSION-fpm reload
+
+				certbot --apache -d $FQDN -d www.$FQDN -n
+
+				echoToLogs "$FQDN has been updated"
+			else
+				echoToLogs "Nothing appends"
+			fi
+		fi
+	done
 
 	#############################################
 	#             DOMAINS SECTION				#
@@ -47,7 +129,7 @@ echoToLogs "Homeserver starting... Done"
 		eval `echo "$last_lines" | perl -ne 'if (/(?<COMMAND>update|insert|delete)[[:space:]]?(?<TABLE>[a-z0-9_]*)[[:space:]]?(?:from:(?<FROM>[a-z0-9-_.]*)[[:space:]]to:(?<TO>[a-z0-9-_.]*)[[:space:]])?(?:new:(?<NEW>[a-z0-9-_.]*)[[:space:]])?(?:deleted:(?<DELETED>[a-z0-9-_.]*)[[:space:]])?(?:ns1:(?<NS1>[a-z0-9-_.]*)[[:space:]]?ns2:(?<NS2>[a-z0-9-_.]*))?/) { print "COMMAND=".$1."; TABLE=".$2."; FROM=".$3."; TO=".$4."; NEW=".$5."; DELETED=".$6."; NS1=".$7."; NS2=".$8 }'`
 		
 		# Regex debug line
-		#echoToLogs "$COMMAND | $TABLE | $FROM | $TO | $NEW | $DELETED | $NS1 | $NS2"
+		# echoToLogs "$COMMAND | $TABLE | $FROM | $TO | $NEW | $DELETED | $NS1 | $NS2"
 
 			if [[ "$TABLE" == "domains" ]]; then
 

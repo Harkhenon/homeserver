@@ -44,10 +44,11 @@ do
     fi
 done
 
-# Add homeserver user
+# Add homeserver user, add it to the homeserver group
+# and create the defualt folder
 
 groupadd homeserver;
-useradd homeserver -g homeserver -b /home/homeserver;
+useradd homeserver -s /bin/bash -G homeserver -d /home/homeserver -m;
 
 # Install package base
 
@@ -60,6 +61,9 @@ rm -R /usr/share/homeserver
 if [ ! -d $HOMESERVERPATH ]; then
     mkdir /usr/share/homeserver
 fi
+
+# Add symlink of homeserver to homeserver's user folder
+ln -s /usr/share/homeserver /home/homeserver/homeserver
 
 # Downloading the panel
 
@@ -79,10 +83,14 @@ source $SCRIPTPATH/bin/cleanFilesAndCreateNews
 
 sed 's/{fqdn}/'$fqdn'/g;s/{mysqlpassword}/'$HSPASSWORD'/g;s/{ip}/'$(wget -qO- http://ipecho.net/plain | xargs echo)'/g;s/{env}/development/g;s/{app_key}/'$LARAVEL_APP_KEY'/g' $PATTERNS_PATH/envVariablesIncludeApache.conf > /etc/apache2/HomeserverEnv.conf;
 
-# Set permissions on main folder
+# Set permissions on homeserver's app folder
 
 green_success "Permissions update";
 chown -R homeserver:homeserver /usr/share/homeserver;
+find $HOMESERVERPATH -type f -exec chmod 644 {} \;
+find $HOMESERVERPATH -type d -exec chmod 755 {} \;
+chmod -R 0775 /usr/share/homeserver/storage
+chmod -R 0775 /usr/share/homeserver/vendor
 
 # Enabling main websites
 
