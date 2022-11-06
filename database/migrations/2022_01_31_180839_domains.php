@@ -16,7 +16,6 @@ class Domains extends Migration
         Schema::create('domains', function(Blueprint $table) {
             $table->increments('id');
             $table->string('fqdn')->unique();
-            $table->integer('zones_id')->unsigned()->nullable()->default(NULL);
             $table->string('ns1')->default();
             $table->string('ns2')->default();
             $table->boolean('default')->default(0);
@@ -30,10 +29,6 @@ class Domains extends Migration
             $table->text('type');
             $table->text('ip_or_fqdn');
             $table->timestamps();
-        });
-
-        Schema::table('domains', function(Blueprint $table) {
-            $table->foreign('zones_id')->references('id')->on('zones');
         });
     }
 

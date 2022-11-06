@@ -13,6 +13,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::view('/{path?}', 'welcome.index')
+Route::view('/{path?}', 'home')
         ->where('path', '.*')
         ->name('react');

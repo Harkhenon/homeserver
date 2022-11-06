@@ -15,7 +15,6 @@ class DomainsFactory extends Factory
     {
         return [
             'fqdn' => $this->faker->domainName(),
-            'zones_id' => 1,
             'default' => 1,
             'ns1' => 'ns1.isodev.ovh',
             'ns2' => 'ns2.isodev.ovh',

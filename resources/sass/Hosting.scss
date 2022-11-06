@@ -1,0 +1,36 @@
+html {
+    & body {
+        & #root {
+            & main {
+                & .column {
+                    padding-top: 1em;
+                    padding-bottom: 1em;
+                }
+                & .form_title {
+                    padding: 0.2em;
+                    font-size: 1.3em;
+                    border: 0.2em black double;
+                    margin: 1em;
+                }
+
+                & .segment .button {
+                    margin-left: 1em;
+                }
+
+                & .host-header {
+                    display: table;
+                    margin: 0 auto;
+                    margin-bottom: 1em;
+                }
+
+                & .ui.tab {
+                    padding: 15px;
+                }
+
+                & .ui.grid {
+                    margin: 0; padding:0;
+                }
+            }
+        }
+    }
+}

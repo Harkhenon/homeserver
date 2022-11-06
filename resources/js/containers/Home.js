@@ -19,6 +19,7 @@ const mapStateToProps = (state, ownProps) => ({
     serverRam: state.serverRam ?? null,
     serverDisk: state.serverDisk ?? null,
     serverOs: state.serverOs ?? null,
+    serverTemp: state.serverTemp ?? null,
     settings: state.settings ?? null,
 });
 
@@ -31,7 +32,7 @@ const mapStateToProps = (state, ownProps) => ({
 * Pas de disptach à transmettre ? const mapDispatchToProps = {};
 */
 const mapDispatchToProps = (dispatch, ownProps) => ({
-    setServerInformations: (cpu, ram, disk, os) => (dispatch(setServerInformations(cpu, ram, disk, os))),
+    setServerInformations: (cpu, ram, disk, os, temp) => (dispatch(setServerInformations(cpu, ram, disk, os, temp))),
     storeData: (name, value) => (dispatch(storeData(name, value))),
 });
 

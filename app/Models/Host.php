@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Plan;
+use App\Models\Domains;
 
 class Host extends Model
 {
@@ -26,9 +27,13 @@ class Host extends Model
         'plans_id'
     ];
 
-    protected $with = ['plan'];
+    protected $with = ['plan', 'domain'];
 
     public function plan() {
         return $this->belongsTo(Plan::class);
+    }
+
+    public function domain() {
+        return $this->belongsTo(Domains::class);
     }
 }

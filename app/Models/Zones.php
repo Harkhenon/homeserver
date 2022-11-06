@@ -22,7 +22,4 @@ class Zones extends Model
         'ip_or_fqdn'
     ];
 
-    // public function domain() {
-    //     return $this->belongsTo(Domain::class);
-    // }
 }

@@ -62,7 +62,7 @@ class DomainsController extends BaseController {
 
     public function show($id) {
 
-        $domains = Domains::find($id)->with('zone');
+        $domains = Domains::find($id);
         if (is_null($domains)) {
             return $this->sendError('Domain not found.');
         }

@@ -16,7 +16,8 @@ mix.js('resources/js/app.js', 'public/js')
         '@js': path.join(__dirname, 'resources/js'),
         '@src': path.join(__dirname, 'resources/js/components'),
         '@components': path.join(__dirname, 'resources/js/components/Components'),
-        '@containers': path.join(__dirname, 'resources/js/containers')
+        '@containers': path.join(__dirname, 'resources/js/containers'),
+        '@sass': path.join(__dirname, 'resources/sass'),
     })
     .sourceMaps()
     .sass('resources/sass/app.scss', 'public/css')

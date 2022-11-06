@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cat /etc/letsencrypt/live/ftp.isodev.ovh/privkey.pem /etc/letsencrypt/live/ftp.isodev.ovh/fullchain.pem > /etc/ssl/private/pure-ftpd.pem
+chmod 600 /etc/ssl/private/pure-ftpd.pem
+service pure-ftpd restart

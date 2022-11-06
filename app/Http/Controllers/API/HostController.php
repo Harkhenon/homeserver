@@ -70,9 +70,9 @@ class HostController extends BaseController {
      * @return \Illuminate\Http\Response
      */
 
-    public function show($domain) {
+    public function show($domainId) {
 
-        $host = Host::where('fqdn', $domain)->get();
+        $host = Host::where('domains_id', $domainId)->get();
         if (is_null($host)) {
             return $this->sendError('Host not found.');
         }
@@ -140,13 +140,16 @@ class HostController extends BaseController {
      * @return \Illuminate\Http\Response
      */
 
-    public function destroy($hostname, Request $request) {
+    public function destroy($fqdn, Request $request) {
 
-        if(Host::where('fqdn', $hostname)->delete()) {
+        // Get the website before deleting it
+        $website = Host::where('fqdn', $fqdn)->first();
+
+        if(Host::where('fqdn', $fqdn)->delete()) {
         Log::build([
                 'driver' => 'single',
                 'path' => storage_path('logs/hosts.log'),
-                ])->info('delete hosts fqdn:'.$hostname);
+                ])->info('delete hosts fqdn:'.$website->fqdn.' php_user:'.$website->php_user);
         }
         return $this->sendResponse([], 'Host deleted successfully.');
     }

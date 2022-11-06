@@ -38,7 +38,8 @@ const reducer = (state = initialState, action = {}) => {
                 serverCpu: action.cpu,
                 serverRam: action.ram,
                 serverDisk: action.disk,
-                serverOS: action.os
+                serverOS: action.os,
+                serverTemp: action.temp
             }
         }
         case SET_CREDENTIALS: {
@@ -90,12 +91,13 @@ export const getDomains = () => ({
     type: GET_DOMAINS
 });
 
-export const setServerInformations = (cpu, ram, disk, os) => ({
+export const setServerInformations = (cpu, ram, disk, os, temp) => ({
     type: SET_SERVER_INFORMATIONS,
     cpu,
     ram,
     disk,
-    os
+    os,
+    temp
 });
 
 export const setCredentials = (username, email) => ({

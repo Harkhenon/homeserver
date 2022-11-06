@@ -15,19 +15,20 @@ class Hosts extends Migration
     {
         Schema::create('hosts', function(Blueprint $table) {
             $table->increments('id');
-            $table->string('fqdn')->unique();
+            $table->integer('domains_id')->unsigned()->nullable()->default(NULL);
             $table->integer('node_port')->nullable();
             $table->string('php_user')->default('homeserver')->nullable();
             $table->boolean('ftp_enabled')->default(1);
             $table->boolean('ssh_enabled')->default(0);
             $table->integer('disk_space')->default(0);
-            $table->integer('plans_id')->unsigned()->nullable()->default(NULL);
+            $table->integer('plan_id')->unsigned()->nullable()->default(NULL);
             $table->string('root_dir')->nullable()->unique();
             $table->timestamps();
         });
 
         Schema::table('hosts', function(Blueprint $table) {
-            $table->foreign('plans_id')->references('id')->on('plans');
+            $table->foreign('plan_id')->references('id')->on('plans');
+            $table->foreign('domains_id')->references('id')->on('domains');
         });
     }
 

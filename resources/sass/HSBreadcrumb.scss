@@ -1,0 +1,15 @@
+html {
+    & body {
+        & #root {
+            & main {
+                & .ui.breadcrumb {
+                    width: 100%;
+                    
+                    & .section:not(a) {
+                        color: white;
+                    }
+                }
+            }
+        }
+    }
+}
