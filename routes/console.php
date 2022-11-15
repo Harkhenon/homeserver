@@ -19,4 +19,26 @@ Artisan::command('clear:all:caches', function () {
     Artisan::call('route:clear');
     Artisan::call('config:clear');
     Artisan::call('cache:clear');
+    Artisan::call('clear-compiled');
 })->purpose('Clear all caches');
+
+Artisan::command('db:reset', function () {
+    Artisan::call('migrate:fresh');
+    Artisan::call('db:seed');
+    Artisan::call('passport:install --force');
+    Artisan::call('clear:all:caches');
+})->purpose('Reset DB and run migrations and DB seed, then clear all caches');
+
+Artisan::command('homeserver:install:dev', function () {
+    Artisan::call('migrate:fresh');
+    Artisan::call('db:seed');
+    Artisan::call('passport:install --force');
+    Artisan::call('clear:all:caches');
+})->purpose('Install Homeserver database and launch it! (dev)');
+
+Artisan::command('homeserver:install:prod', function () {
+    Artisan::call('migrate');
+    Artisan::call('db:seed');
+    Artisan::call('passport:install --force');
+    Artisan::call('clear:all:caches');
+})->purpose('Install Homeserver database and launch it!');

@@ -1,5 +1,5 @@
 const mix = require('laravel-mix');
-
+const path = require('path');
 /*
  |--------------------------------------------------------------------------
  | Mix Asset Management
@@ -12,6 +12,13 @@ const mix = require('laravel-mix');
  */
 
 mix.js('resources/js/app.js', 'public/js')
-    .react()
+    .alias({
+        '@js': path.join(__dirname, 'resources/js'),
+        '@src': path.join(__dirname, 'resources/js/components'),
+        '@components': path.join(__dirname, 'resources/js/components/Components'),
+        '@containers': path.join(__dirname, 'resources/js/containers'),
+        '@sass': path.join(__dirname, 'resources/sass'),
+    })
+    .sourceMaps()
     .sass('resources/sass/app.scss', 'public/css')
-    .browserSync('https://www.isodev.ovh');
+    .react()

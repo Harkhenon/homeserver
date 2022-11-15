@@ -1,0 +1,14 @@
+[
+    { "key": "A", "text": "A - IP v4 address", "value": "A" },
+    { "key": "AAAA", "text": "AAAA - IP v6 address", "value": "AAAA" },
+    { "key": "CNAME", "text": "CNAME - Canonical name for an alias (domain name)", "value": "CNAME" },
+    { "key": "MX", "text": "MX - Mail exchanger (preference value, domain name)", "value": "MX" },
+    { "key": "NS", "text": "NS - Authoritative nameserver (domain name)", "value": "NS" },
+    { "key": "PTR", "text": "PTR - Domain name pointer (domain name)", "value": "PTR" },
+    { "key": "SRV", "text": "SRV - Service record", "value": "SRV" },
+    { "key": "SOA", "text": "SOA - Start of Authority", "value": "SOA" },
+    { "key": "TXT", "text": "TXT - Descriptive text (one or more strings)", "value": "TXT" },
+    { "key": "CAA", "text": "CAA - Certification Authority Authorization", "value": "CAA" },
+    { "key": "DS", "text": "DS - Delegation Signer", "value": "DS" },
+    { "key": "DNSKEY", "text": "DNSKEY - ZSK / KSK Public Keys", "value": "DNSKEY" }
+]

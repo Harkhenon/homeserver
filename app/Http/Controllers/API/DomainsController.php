@@ -86,7 +86,8 @@ class DomainsController extends BaseController {
         $validator = Validator::make($input, [
             'fqdn' => 'required',
             'ns1' => 'required',
-            'ns2' => 'required'
+            'ns2' => 'required',
+            'zone' => ''
         ]);
 
         if($validator->fails()) {

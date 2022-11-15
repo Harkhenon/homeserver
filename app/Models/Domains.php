@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Zones;
+use App\Models\Host;
 
 class Domains extends Model
 {
@@ -21,7 +22,13 @@ class Domains extends Model
         'ns2',
     ];
 
-    public function zone() {
-        return $this->hasOne(Zones::class);
+    protected $with = ['zones', 'host'];
+
+    public function zones() {
+        return $this->hasMany(Zones::class);
+    }
+
+    public function host() {
+        return $this->hasOne(Host::class);
     }
 }

@@ -14,7 +14,10 @@ class ZonesFactory extends Factory
     public function definition()
     {
         return [
-            //
+            'domains_id' => 1,
+            'sub' => "",
+            'type' => "",
+            'ip_or_fqdn' => "",
         ];
     }
 }

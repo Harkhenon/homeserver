@@ -13,10 +13,14 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    return view('welcome.index');
-});
+if(env('APP_ENV') === 'production') {
+    Route::view('/{path?}', 'home')
+    ->where('path', '.*')
+    ->name('react');
+} else {
+    Route::view('/{path?}', 'homedev')
+    ->where('path', '.*')
+    ->name('react');
+}
 
-Route::get('/{any}', function () {
-    return view('welcome.index');
-});
+

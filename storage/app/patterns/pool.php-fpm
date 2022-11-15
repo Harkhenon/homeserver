@@ -1,0 +1,15 @@
+[{fqdn}]
+
+user = {user}
+group = {user}
+listen = /var/run/php/{fqdn}-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+php_admin_value[open_basedir] = {root_dir}:/tmp:/usr/share/adminer
+
+; mandatory values
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3

@@ -6,7 +6,7 @@
 
 html {
     & body {
-        background-color: #212121;
+        background-color: #202124;
         & input {
             color: #eee;
         }
@@ -26,67 +26,126 @@ html {
                     padding-right: 13px;
                 }
             }
+            & #user-bar {
+                color: white;
+                text-align: right;
+                & span {
+                    display: inline-block;
+                    margin: 0 10px 0 10px;
+                }
+                padding: 1%;
+                background-color:firebrick;
+            }
+
             & main {
                 min-height: 60vh;
-                & .circle-load {
-                    border-top-left-radius: 290px;
-                    border-top-right-radius: 290px;
+                margin-top: 4vh;
+
+                & #main-nav {
+                    display: flex;
+                    flex-direction: row;
+                    flex-flow: row;
+                    justify-content: space-evenly;
+                    flex-wrap: wrap;
+
+                    & .main-button {
+                        min-height: 125px;
+                        min-width: 375px;
+                        max-width: 100vw;
+                        font-size: 3em;
+                        margin: 10px 0 10px 0;
+                    }
+                }
+
+                
+
+                & .breadcrumb {
+                    margin-bottom: 50px;
+                    & .divider {
+                        color: white;
+                    }
+                }
+
+                & #presentation {
+                    & #platform {
+                        font-size: 5em !important;
+                    }
                 }
 
                 & #main-table {
 
                     width: 100%;
                     padding: 50px;
+                    display: flex;
+                    flex-direction: row;
+                    flex-wrap: wrap;
+                    justify-content: space-evenly;
 
                     & .machine-container {
-                        height: 75px;
-                        overflow-y: hidden;
+                        height: 150px;
                         flex: 1;
                         color: white;
                         text-align: center;
-                        margin-bottom: 50px; 
+                        margin-bottom: 50px;
+                        display: grid;
+                        place-items: center;
 
-                        & div.machine-cpu , div.machine-ram, div.machine-disk, div.os {
-                            height: 75px;
+                        & .circle-load {
+                            border-radius: 50%;
+                        }
+
+                        & .load {
+                            height: 100px;
+                            width: 125px;
+                            position: absolute;
+                            font-weight: bold;
+                            font-size: 25px;
+                            line-height: 160px;
+                            vertical-align: middle;
+                        }
+
+                        & div.machine-cpu , div.machine-ram, div.machine-disk, div.os, div.machine-temp {
+                            height: 150px;
                             width: 150px;
+                            position: relative;
                             text-align: center;
                             line-height: 75px;
-                            vertical-align: middle;
-                            border-left: 10px solid black;
-                            border-right: 10px solid black;
-                            border-top: 10px solid black;
                             margin: 0 auto;
                             font-size: 0.8em;
-                            
+                            background-color: greenyellow;
+                            display: grid;
+                            place-items: center;
+                            transition: all 1s ease-in-out;
                         }
 
                         & div.os {
                             border-bottom: 10px black !important;
                         }
 
-                        & .load {
-                            height: 75px;
-                            width: 150px;
-                            border-left: 10px solid ;
-                            border-right: 10px solid ;
-                            border-bottom: 10px solid ;
-                            border-bottom-left-radius: 190px;
-                            border-bottom-right-radius: 190px;
-                            transition: all 1s ease-in-out;
-                            transform-origin: top center;
-                            transform: rotate(0deg);
-                            margin: 0 auto;
+
+                        & div.machine-cpu:before , div.machine-ram:before, div.machine-disk:before, div.os:before, div.machine-temp:before {
+                            content: "";
+                            position: absolute;
+                            height: 84%;
+                            width: 84%;
+                            background-color: #212121;
+                            border-radius: 50%;
+                            display: grid;
+                            place-items: center;
                         }
                     }
 
-                    & .cpu>.load, .ram>.load, .disk>.load {
-                        border-color: greenyellow !important;
-                    }
                 }
             }
             footer {
+                margin-top: 1em;
                 height: 20vh;
+                padding: 2em;
+                color: white;
+                background-color: #0f2121;
             }
         }
     }
+
+    button { color: black }
 }

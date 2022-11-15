@@ -1,8 +1,10 @@
 /node_modules
 /public/hot
 /public/storage
+/public/build
 /storage/*.key
 /vendor
+/storage/logs/*.log
 .env
 .env.backup
 .phpunit.result.cache

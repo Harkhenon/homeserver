@@ -1,5 +1,6 @@
 // == Import : npm
 import { createStore, compose, applyMiddleware } from 'redux';
+import getDomainsMiddleware from './middlewares/getDomainsMiddleware';
 
 
 // == Import : local
@@ -10,6 +11,7 @@ const composeEnhancers = window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ || compose;
 
 const enhancers = composeEnhancers(
   applyMiddleware(
+    getDomainsMiddleware,
   ),
 );
 
