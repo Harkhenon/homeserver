@@ -13,6 +13,14 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::view('/{path?}', 'home')
-        ->where('path', '.*')
-        ->name('react');
+if(env('APP_ENV') === 'production') {
+    Route::view('/{path?}', 'home')
+    ->where('path', '.*')
+    ->name('react');
+} else {
+    Route::view('/{path?}', 'homedev')
+    ->where('path', '.*')
+    ->name('react');
+}
+
+

@@ -35,5 +35,6 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 
 import Entry from './Entry';
 import ReactDOM from 'react-dom/client';
+import '@sass/app.scss';
 
 ReactDOM.createRoot(document.getElementById('root')).render(<Entry />);

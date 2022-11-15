@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import react from '@vitejs/plugin-react';
-import basicSsl from '@vitejs/plugin-basic-ssl'
+import path from 'path';
  
 export default defineConfig({
     plugins: [
@@ -13,11 +13,19 @@ export default defineConfig({
             refresh: true,
         }),
         react(),
-        //basicSsl(),
     ],
     server: {
         hmr: {
-            host: 'localhost',
+            host: '127.0.0.1',
+        }
+    },
+    resolve: {
+        alias: {
+            '@': path.join(__dirname, 'resources/'),
+            '@js': path.join(__dirname, 'resources/js'),
+            '@sass': path.join(__dirname, 'resources/sass'),
+            '@src': path.join(__dirname, 'resources/js/components'),
+            '@containers': path.join(__dirname, 'resources/js/containers'),
         }
     }
 });

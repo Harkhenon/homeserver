@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { Breadcrumb, Icon } from 'semantic-ui-react';
 
-import '../../../sass/HSBreadcrumb.scss';
+import '@sass/HSBreadcrumb.scss';
 
 const HSBreadcrumb = () => {
 

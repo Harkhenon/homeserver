@@ -3,7 +3,9 @@ import { connect } from 'react-redux';
 
 
 // == Import : local
-import General from '../../../../components/Components/Hosting/Pages/General';
+import General from '@src/Components/Hosting/Pages/General';
+
+import { controlFormInput } from '@js/store/reducer';
 
 
 /* === State (données) ===
@@ -14,8 +16,9 @@ import General from '../../../../components/Components/Hosting/Pages/General';
 * Pas de data à transmettre ? const mapStateToProps = null;
 */
 const mapStateToProps = (state, ownProps) => ({
-    domainId: state.domainId ?? null,
     domains: state.domains ?? null,
+    currentDomain: state.currentDomain ?? null,
+    inputs: state.inputs ?? null,
 });
 
 
@@ -27,6 +30,7 @@ const mapStateToProps = (state, ownProps) => ({
 * Pas de disptach à transmettre ? const mapDispatchToProps = {};
 */
 const mapDispatchToProps = (dispatch, ownProps) => ({
+    controlFormInput: (key, value) => (dispatch(controlFormInput(key, value))),
 });
 
 

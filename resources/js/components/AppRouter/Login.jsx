@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button, Container, Form, Header } from 'semantic-ui-react';
 
-import Footer from '../Parts/Footer';
-import './scss/AppRouter.scss'
-import client from '../../axiosConfig';
+import Footer from '@src/Parts/Footer';
+import '@sass/AppRouter.scss'
+import client from '@js/axiosConfig';
 
 const Login = (props) => {
 
@@ -56,6 +56,8 @@ const Login = (props) => {
                                 <input
                                     type='email'
                                     name='email'
+                                    autoComplete='username'
+                                    placeholder='E-Mail'
                                 />
                             </Form.Field>
                             <Form.Field>
@@ -63,6 +65,9 @@ const Login = (props) => {
                                 <input
                                     type='password'
                                     name='password'
+                                    autoComplete='current-password'
+                                    title='Password'
+                                    placeholder='Password'
                                 />
                             </Form.Field>
                             <div className='input-field'>

@@ -9,33 +9,38 @@ import {
   Select
 } from 'semantic-ui-react';
 
-import typeList from '../../../../resources/json/dnsTypeList.json';
+import typeList from '@js/resources/json/dnsTypeList.json';
 
 const Zone = (props) => {
 
-  const { currentDomain } = props;
+  const { currentDomain, handleEdit, handleSubmit } = props;
   const { zones } = currentDomain;
 
   return (
-    <Form inverted as={Grid}>
+    <Grid inverted as={Form} onChange={handleEdit} onSubmit={handleSubmit}>
       <Form.Group columns={4} as={GridRow}>
         <Form.Field as={GridColumn}>
           <label>Subdomain</label>
-          <Input type="text" name="sub" />
+          <Input type="text" name="sub">
+            <input data-id="zone" />
+          </Input>
         </Form.Field>
         <Form.Field as={GridColumn}>
           <label>Type</label>
           <Select
             options={typeList}
             name='type'
-            onChange={null}
+            onChange={handleEdit}
             fluid
             placeholder='Select DNS type'
+            data-id="zone"
           />
         </Form.Field>
         <Form.Field as={GridColumn}>
           <label>Ip or FQDN or TXT entry</label>
-          <Input type="text" name="ip_or_fqdn" />
+          <Input type="text" name="ip_or_fqdn">
+            <input data-id="zone" />
+          </Input>
         </Form.Field>
         <Form.Field as={GridColumn}>
           <label>&nbsp;</label>
@@ -47,7 +52,7 @@ const Zone = (props) => {
       ||
         <p>No zone entries</p>
       }
-    </Form>
+    </Grid>
 
   )
 }

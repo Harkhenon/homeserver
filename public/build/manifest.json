@@ -3,13 +3,13 @@
     "file": "assets/flags.94d5c7f1.png",
     "src": "node_modules/semantic-ui-css/themes/default/assets/images/flags.png"
   },
-  "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.eot": {
-    "file": "assets/outline-icons.4537fa06.eot",
-    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.eot"
-  },
   "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.eot": {
     "file": "assets/icons.8b4e1b84.eot",
     "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.eot"
+  },
+  "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.eot": {
+    "file": "assets/outline-icons.4537fa06.eot",
+    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.eot"
   },
   "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.eot": {
     "file": "assets/brand-icons.d023c55f.eot",
@@ -51,6 +51,18 @@
     "file": "assets/brand-icons.42e369dc.ttf",
     "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.ttf"
   },
+  "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.svg": {
+    "file": "assets/outline-icons.ae8fd02a.svg",
+    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.svg"
+  },
+  "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.svg": {
+    "file": "assets/icons.282a64fb.svg",
+    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.svg"
+  },
+  "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.svg": {
+    "file": "assets/brand-icons.6519a15b.svg",
+    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.svg"
+  },
   "storage/app/public/cpu.png": {
     "file": "assets/cpu.ae00f0d5.png",
     "src": "storage/app/public/cpu.png"
@@ -67,24 +79,12 @@
     "file": "assets/celsius.47ccb68b.png",
     "src": "storage/app/public/celsius.png"
   },
-  "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.svg": {
-    "file": "assets/outline-icons.ae8fd02a.svg",
-    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/outline-icons.svg"
-  },
-  "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.svg": {
-    "file": "assets/icons.282a64fb.svg",
-    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/icons.svg"
-  },
-  "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.svg": {
-    "file": "assets/brand-icons.6519a15b.svg",
-    "src": "node_modules/semantic-ui-css/themes/default/assets/fonts/brand-icons.svg"
-  },
   "resources/js/app.jsx": {
-    "file": "assets/app.fe05c9d8.js",
+    "file": "assets/app.59e1c0e1.js",
     "src": "resources/js/app.jsx",
     "isEntry": true,
     "css": [
-      "assets/app.8577ca1a.css",
+      "assets/app.6a189818.css",
       "assets/app.177e0bb2.css"
     ],
     "assets": [
@@ -116,7 +116,7 @@
     "isEntry": true
   },
   "resources/js/app.css": {
-    "file": "assets/app.8577ca1a.css",
+    "file": "assets/app.6a189818.css",
     "src": "resources/js/app.css"
   }
 }

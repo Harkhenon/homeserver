@@ -2,9 +2,9 @@ import React from 'react';
 import { Loader } from 'semantic-ui-react';
 import { toast } from 'react-toastify';
 
-import './scss/Home.scss';
-import client from '../axiosConfig';
-import MainMenu from './MainMenu';
+import '@sass/Home.scss';
+import client from '@js/axiosConfig';
+import MainMenu from '@src/MainMenu';
 
 class Home extends React.Component {
 
@@ -52,7 +52,7 @@ class Home extends React.Component {
                 document.querySelector('.machine-temp .ui.loader').remove();
             }
             
-            const realCPU = (serverCpu ??= cpuUsage);
+            const realCPU = (cpuUsage ? cpuUsage : serverCpu);
             const realRAM = (serverRam ??= ramUsage);
             const realDISK = (serverDisk ??= diskUsage);
             const realTEMP = (serverTemp ??= temp);

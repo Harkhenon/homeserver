@@ -8,9 +8,8 @@
         "php": "^8.0.2",
         "fruitcake/laravel-cors": "^2.0",
         "guzzlehttp/guzzle": "^7.2",
-        "innocenzi/laravel-vite": "0.2.*",
         "laravel/framework": "^9.19",
-        "laravel/passport": "^10.2",
+        "laravel/passport": "^10.3",
         "laravel/sanctum": "^3.0",
         "laravel/tinker": "^2.7"
     },

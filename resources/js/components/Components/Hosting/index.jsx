@@ -11,15 +11,15 @@ import { Link } from 'react-router-dom';
 import HSBreadcrumb from '../../Parts/HSBreadcrumb';
 import DomainsList from './DomainsList';
 
-import '../../../../sass/Hosting.scss';
+import '@sass/Hosting.scss';
 
 const Hosting = (props) => {
 
-  const { domains, getDomains, storeData } = props;
+  const { domains, storeData } = props;
 
   const handleEdit = (e) => {
     const domainId = e.target.dataset.domainid;
-    storeData("domainId", domainId);
+    storeData("currentDomain", domains.find(e => e.id == domainId));
   }
 
   return (

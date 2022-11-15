@@ -3,8 +3,8 @@ import { connect } from 'react-redux';
 
 
 // == Import : local
-import Hosting from '../../../components/Components/Hosting';
-import { getDomains, storeData } from '../../../store/reducer';
+import Hosting from '@src/Components/Hosting';
+import { getDomains, storeData } from '@js/store/reducer';
 
 
 /* === State (données) ===
@@ -27,7 +27,6 @@ const mapStateToProps = (state, ownProps) => ({
 * Pas de disptach à transmettre ? const mapDispatchToProps = {};
 */
 const mapDispatchToProps = (dispatch, ownProps) => ({
-    getDomains: () => (dispatch(getDomains())),
     storeData: (key, value) => (dispatch(storeData(key, value))),
 });
 
