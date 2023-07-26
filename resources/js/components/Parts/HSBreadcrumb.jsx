@@ -1,8 +1,8 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { Breadcrumb, Icon } from 'semantic-ui-react';
+import { Breadcrumb, Icon, Segment } from 'semantic-ui-react';
 
-import '@sass/HSBreadcrumb.scss';
+import '@sass/Parts/HSBreadcrumb.scss';
 
 const HSBreadcrumb = () => {
 
@@ -53,12 +53,14 @@ const HSBreadcrumb = () => {
   }
 
   return (
-    <Breadcrumb>
-      <Breadcrumb.Section link as={Link} to='/'>
-        Home
-      </Breadcrumb.Section>
-      {constructBreadcrumb(locationArray())}
-    </Breadcrumb>
+    <Segment inverted className='hsbreadcrumb' compact>
+      <Breadcrumb>
+        <Breadcrumb.Section link as={Link} to='/'>
+          Home
+        </Breadcrumb.Section>
+        {constructBreadcrumb(locationArray())}
+      </Breadcrumb>
+    </Segment>
   )
 }
 

@@ -1,5 +1,7 @@
 import React from 'react';
 
+import '@sass/Parts/Footer.scss';
+
 import { Grid, GridColumn, GridRow, Icon } from 'semantic-ui-react';
 
 const Footer = () => {

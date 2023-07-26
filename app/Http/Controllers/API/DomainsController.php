@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use App\Http\Resources\Domains as DomainsResource;
 use App\Models\Domains;
 use Illuminate\Support\Facades\Log;
-use Validator;
+use Illuminate\Support\Facades\Validator as Validator;
 
 class DomainsController extends BaseController {
     /**
@@ -15,6 +15,8 @@ class DomainsController extends BaseController {
      *
      * @return \Illuminate\Http\Response
      */
+
+    protected $logFile = 'domains.log';
 
     public function index() {
         $domains = Domains::all();
@@ -42,10 +44,13 @@ class DomainsController extends BaseController {
         }
 
         if($domains = Domains::create($input)) {
-            Log::build([
-                'driver' => 'single',
-                'path' => storage_path('logs/domains.log'),
-              ])->info('insert domains new:'.$input["fqdn"].' ns1:'.$input["ns1"].' ns2:'.$input["ns2"]);
+            $this->sendCommandToService(
+              $this->logFile,
+              json_encode([
+                "command" => "create",
+                ...$domains->toArray()
+              ])
+            );
         }
         return $this->sendResponse(new DomainsResource($domains), 'Domain created successfully.');
 
@@ -77,36 +82,34 @@ class DomainsController extends BaseController {
      *
      * @param  \Illuminate\Http\Request  $request
      * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * 
      */
 
-    public function update($requestDomain, Request $request, Domains $domains) {
+    public function update(int $domainId, Request $request, Domains $domains) {
         $input = $request->all();
+        if(count($input) !== 0):
+          foreach($input as $key => $value):
+            $update[$key] = $value;
+          endforeach;
+        endif;
 
-        $validator = Validator::make($input, [
-            'fqdn' => 'required',
-            'ns1' => 'required',
-            'ns2' => 'required',
-            'zone' => ''
-        ]);
-
-        if($validator->fails()) {
-            return $this->sendError('Validation Error.', $validator->errors());       
+        if(isset($input['host'])) {
+          $domainHost = $domains->select('host')->find($domainId)->toArray()['host'];
+          $update['host'] = array_merge(json_decode($domainHost, true), json_decode($input['host'], true));
         }
 
-        if($domains::where('fqdn', $requestDomain)
-                ->update([
-                    'fqdn' => $input['fqdn'],
-                    'ns1' => $input['ns1'],
-                    'ns2' => $input['ns2']
-                ])) {
-            Log::build([
-                'driver' => 'single',
-                'path' => storage_path('logs/domains.log'),
-                ])->info('update domains from:'.$requestDomain.' to:'.$input["fqdn"].' ns1:'.$input["ns1"].' ns2:'.$input["ns2"]);
+
+        if($domains::where('id', $domainId)->update($update)) {
+          $this->sendCommandToService(
+            $this->logFile,
+            json_encode([
+              "command" => "update",
+              ...$domains::find($domainId)->toArray(),
+            ])
+          );
         }
 
-        return $this->sendResponse($requestDomain, 'Domain updated successfully.');
+        return $this->sendResponse($domainId, 'Domain updated successfully.');
 
     }
 
@@ -119,13 +122,18 @@ class DomainsController extends BaseController {
      * @return \Illuminate\Http\Response
      */
 
-    public function destroy($domain, Domains $domains) {
+    public function destroy($id, Domains $domains) {
 
-        if($domains->where('fqdn', $domain)->delete()) {
-            Log::build([
-                'driver' => 'single',
-                'path' => storage_path('logs/domains.log'),
-                ])->info('delete domains deleted:'.$domain);
+        $domain = $domains::find($id);
+
+        if($domains->where('id', $id)->delete()) {
+            $this->sendCommandToService(
+              $this->logFile,
+              json_encode([
+                "command" => "delete",
+                ...$domain->toArray()
+              ])
+            );
         }
         return $this->sendResponse([], 'Domain deleted successfully.');
     }

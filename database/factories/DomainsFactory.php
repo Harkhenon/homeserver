@@ -18,6 +18,8 @@ class DomainsFactory extends Factory
             'default' => 1,
             'ns1' => 'ns1.isodev.ovh',
             'ns2' => 'ns2.isodev.ovh',
+            'host' => '',
+            'zone' => ''
         ];
     }
 }

@@ -19,15 +19,8 @@ class Domains extends Migration
             $table->string('ns1')->default();
             $table->string('ns2')->default();
             $table->boolean('default')->default(0);
-            $table->timestamps();
-        });
-
-        Schema::create('zones', function(Blueprint $table) {
-            $table->increments('id');
-            $table->integer('domains_id')->unsigned();
-            $table->text('sub');
-            $table->text('type');
-            $table->text('ip_or_fqdn');
+            $table->text('zone');
+            $table->text('host');
             $table->timestamps();
         });
     }
@@ -40,6 +33,5 @@ class Domains extends Migration
     public function down()
     {
         Schema::dropIfExists('domains');
-        Schema::dropIfExists('zones');
     }
 }

@@ -17,6 +17,15 @@ export default defineConfig({
     server: {
         hmr: {
             host: '127.0.0.1',
+            protocol: 'ws'
+        },
+        proxy: {
+          '/api': {
+            target: 'https://isodev.ovh/api',
+            changeOrigin: true,
+            secure: false,
+            ws: true
+          }
         }
     },
     resolve: {
@@ -25,7 +34,7 @@ export default defineConfig({
             '@js': path.join(__dirname, 'resources/js'),
             '@sass': path.join(__dirname, 'resources/sass'),
             '@src': path.join(__dirname, 'resources/js/components'),
-            '@containers': path.join(__dirname, 'resources/js/containers'),
+            '@components': path.join(__dirname, 'resources/js/components'),
         }
     }
 });

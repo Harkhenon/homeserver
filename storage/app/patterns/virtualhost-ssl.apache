@@ -1,4 +1,4 @@
-<VirtualHost *:80>
+<VirtualHost *:443>
 
         ServerName {fqdn}
         ServerAlias www.{fqdn}
@@ -6,7 +6,6 @@
         ErrorLog /var/log/apache2/{fqdn}-error_log
         TransferLog /var/log/apache2/{fqdn}-access_log
         DocumentRoot {root_dir}
-        Redirect permanent / https://www.{fqdn}/
                 
         <Directory "{root_dir}">
                 Options Indexes FollowSymLinks
@@ -17,5 +16,9 @@
         <FilesMatch .php$>
                 SetHandler "proxy:unix:/var/run/php/{fqdn}-fpm.sock|fcgi://localhost/"
         </FilesMatch>
+
+        Include /etc/letsencrypt/options-ssl-apache.conf
+        SSLCertificateFile /etc/letsencrypt/live/{fqdn}/fullchain.pem
+        SSLCertificateKeyFile /etc/letsencrypt/live/{fqdn}/privkey.pem
 
 </VirtualHost>

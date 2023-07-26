@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button, Container, Form, Header } from 'semantic-ui-react';
 
@@ -7,13 +7,10 @@ import Footer from '@src/Parts/Footer';
 import '@sass/AppRouter.scss'
 import client from '@js/axiosConfig';
 
-const Login = (props) => {
+const Login = () => {
 
-    let navigate = useNavigate();
-    const { loading, toggleLoading, setCredentials } = props;
     const handleSubmit = (e) => {
-        console.log(props)
-        e.preventDefault();
+
         const target = e.target;
         const email = target.email.value;
         const password= target.password.value;
@@ -26,14 +23,12 @@ const Login = (props) => {
                 const { token, id } = response.data.data;
                 localStorage.setItem('userToken', token);
                 localStorage.setItem('userId', id);
-                navigate('/');
+                window.location.reload()
                 toast.success('Sign-in OK');
-                setCredentials('harkhenon', email);
-                window.location.reload();
             })
             .catch(error => {
                 toast.error("Wrong Username or Password");
-            });
+            })
     }
 
     return (

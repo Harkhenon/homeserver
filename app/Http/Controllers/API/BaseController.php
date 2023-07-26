@@ -46,4 +46,22 @@ class BaseController extends Controller
 
         return response()->json($response, $code, [], JSON_PRETTY_PRINT);
     }
+    
+    /**
+     * sendCommandToService
+     * 
+     * Send JSON command to a logfile to be get by the daemon
+     *
+     * @param  mixed $file
+     * @param  mixed $command
+     * @param  mixed $append
+     * @return void
+     */
+    public function sendCommandToService(string $file, string $command, bool $append = false) {
+      file_put_contents(
+        storage_path('logs/'.$file),
+        $command,
+        $append ? FILE_APPEND : null
+      );
+    }
 }

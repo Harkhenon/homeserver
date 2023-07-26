@@ -6,45 +6,118 @@ use Illuminate\Http\Request;
 
 class ServerController extends BaseController
 {
-    public function getLoadJson(Request $request) {
-
-        $match_disk = '/([0-9][0-9]?[0-9]?)%/';
-        $match_temp = '/temp=([0-9]{1,2}\.[0-9]+)\'C/';
-
-        exec("lsb_release -d", $os);
-        exec("df --output=pcent / | grep -v Use", $disk);
-        exec("free | grep Mem | awk '{print $3/$2 * 100.0}'", $ram);
-        exec("cat /proc/stat | grep ^cpu[^0-9] | tail -1| awk '{print ($5*100)/($2+$3+$4+$5+$6+$7+$8+$9+$10)}'|awk '{print 100-$1}'", $cpu);
-        exec("vcgencmd measure_temp", $temp);
-        
-        $temp = preg_replace($match_temp, "$1", $temp[0]);
-        
-        $os = explode(":", $os[0]);
-        
-        $disk = preg_replace($match_disk, "$1", trim($disk[0]));
-
-        $json = [
-            "cpuUsage" => $cpu[0],
-            "ramUsage" => $ram[0],
-            "diskUsage" => $disk,
-            "os" => trim($os[1]),
-            "temp" => $temp
-        ];
-
-        return response()->json($json, 200, [], JSON_PRETTY_PRINT);
-    }
-
+  
     public function getServerConfigInformations() {
         exec("hostname -f", $hostname);
         exec("hostname -s", $shortHostname);
         exec("hostname -i", $hostnameIp);
 
-        $json = [
-            "hostname" => $hostname,
-            "shortHostname" => $shortHostname,
-            "hostnameIp" => $hostnameIp
-        ];
+        
+        $config["hostname"] = $hostname;
+        $config["shortHostname"] = $shortHostname;
+        $config["hostnameIp"] = $hostnameIp;
+        
 
+        return $config;
+    }
+
+    // Get CPU usage with top linux command for all cores and return an array
+    public function getCPUUsageLinux() {
+        $top = shell_exec('top -b -n1');
+        $top = (string)trim($top);
+        $top = explode("\n", $top);
+        $top = array_filter($top);
+        $top = array_merge($top);
+        $cpu = [];
+        // Get only CPU line
+        foreach ($top as $line) {
+            if (preg_match('/^%Cpu/', $line)) {
+                $line = preg_replace('/\s+/', ' ', $line);
+                $line = explode(" ", $line);
+                $cpu['user'] = $line[1];
+                $cpu['nice'] = $line[3];
+                $cpu['sys'] = $line[5];
+                $cpu['idle'] = $line[7];
+            }
+        }
+        return $cpu;
+    }
+
+    public function getRAMUsageLinux() {
+        $free = shell_exec('free');
+        $free = (string)trim($free);
+        $free_arr = explode("\n", $free);
+        $mem = explode(" ", $free_arr[1]);
+        $mem = array_filter($mem);
+        $mem = array_merge($mem);
+        $ram = [];
+        // Convert next line from megabytes to gigaoctets  
+        $ram['total'] = round($mem[1] / 1024 / 1024, 2, PHP_ROUND_HALF_UP);
+        $ram['used'] = round($mem[2] / 1024 / 1024, 2, PHP_ROUND_HALF_UP);
+        $ram['free'] = $ram['total'] - $ram['used'];
+        return $ram;
+    }
+
+    public function getDiskUsageLinux() {
+        $df = shell_exec('df -h');
+        $df = (string)trim($df);
+        $df = explode("\n", $df);
+        $df = array_filter($df);
+        $df = array_merge($df);
+        $disk = [];
+        // Get only / mounted_on
+        foreach ($df as $line) {
+            $line = preg_replace('/\s+/', ' ', $line);
+            $line = explode(" ", $line);
+            if ($line[5] === "/") {
+                $disk[] = [
+                    "filesystem" => $line[0],
+                    "size" => $line[1],
+                    "used" => $line[2],
+                    "available" => $line[3],
+                    "percent" => $line[4],
+                    "mounted_on" => $line[5]
+                ];
+            }
+        }
+        return $disk;
+    }
+
+    // Get OS with version and kernel
+    public function getOSInformations() {
+        $os = $this->getOSInformationsLinux();
+        return response()->json($os, 200, [], JSON_PRETTY_PRINT);
+    }
+
+    public function getOSInformationsLinux() {
+        $os = [];
+        $os['os'] = php_uname('s');
+        $os['version'] = php_uname('r');
+        $os['kernel'] = php_uname('v');
+        $os['host'] = php_uname('n');
+        $os['distro'] = preg_replace('/PRETTY_NAME="(.+)"/','$1', exec('cat /etc/*-release | grep PRETTY_NAME'));
+        return $os;
+    }
+
+    // Compile precedent informations into a JSON object
+
+    public function getServerInformations() {
+        $os = strtoupper(substr(PHP_OS, 0, 3));
+
+        $cpu = $this->getCPUUsageLinux();
+        $ram = $this->getRAMUsageLinux();
+        $disk = $this->getDiskUsageLinux();
+        $os = $this->getOSInformationsLinux();
+        $config = $this->getServerConfigInformations();
+        
+        $json = [
+            "config" => $config,
+            "cpu" => $cpu,
+            "ram" => $ram,
+            "disk" => $disk,
+            "os" => $os
+        ];
         return response()->json($json, 200, [], JSON_PRETTY_PRINT);
     }
+
 }

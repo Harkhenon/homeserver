@@ -20,11 +20,9 @@
         "jwt-decode": "^3.1.2",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "react-redux": "^7.2.6",
         "react-router": "^6.3.0",
         "react-router-dom": "^6.3.0",
         "react-toastify": "^9.0.5",
-        "redux": "^4.2.0",
         "semantic-ui-css": "^2.4.1",
         "semantic-ui-react": "^2.1.3"
     }

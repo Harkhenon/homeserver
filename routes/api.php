@@ -51,14 +51,13 @@ Route::get('/create-personal-token', function () {
 
 Route::middleware('auth:api')->group( function () {
     Route::get('check', [RegisterController::class, 'check']);
-    Route::get('/server/informations', [ServerController::class, "getLoadJson"])->name('server.load.json');
+    Route::get('/server/informations', [ServerController::class, "getServerInformations"])->name('server.load.json');
     Route::get('/server/config', [ServerController::class, 'getServerConfigInformations'])->name('server.configInformations');
     Route::resource('bank_accounts', BankAccountController::class);
     Route::resource('user', UserController::class);
     Route::resource('domains', DomainsController::class);
-    Route::resource('zone', ZoneController::class);
 });
-Route::resource('host', HostController::class);
+
 // Route::get('/default-domain', [DomainsController::class, 'getDefaultDomain'])->name('domain.getDefaultDomain');
 // Route::post('register', [RegisterController::class, 'register']);
 

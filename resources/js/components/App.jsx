@@ -1,17 +1,11 @@
 import React from 'react';
 
-import AppRouter from '../containers/AppRouter/AppRouter';
-import Login from '../containers/AppRouter/Login';
+import AppRouter from '../components/AppRouter/AppRouter';
+import Login from '../components/AppRouter/Login';
 
-const App = (props) => {
+const App = () => {
 
-    const { loading, toggleLoading } = props;
-    return localStorage.getItem('userToken') !== null
-            ? <AppRouter />
-            : <Login
-                loading={loading}
-                toggleLoading={toggleLoading}
-            />;
+    return <AppRouter />
 }
 
 export default App;

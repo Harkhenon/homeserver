@@ -1,20 +1,30 @@
 ; {fqdn}
 $TTL 3600
 $ORIGIN {fqdn}. 
-@       IN      SOA     ns1.{fqdn}. admin.{fqdn}. (
+@       IN      SOA     {nsone}. admin.{fqdn}. (
                                 {serial}  ; Serial
-                                14400       ; refresh after 3 hours
-                                1H          ; retry after 1 hour
-                                1W          ; expire after 1 week
-                                1D)         ; minimum TTL of 1 day
+                                86400      ; Refresh
+                                7200      ; Retry
+                                3600000    ; Expire
+                                86400)      ; TTL
 
         ; Name Server
-        IN      NS      {nsone}.
-        IN      NS      {nstwo}.
+        IN NS      {nsone}.
+        IN NS      {nstwo}.
+
+        IN A {ip}
+
 
         ; Mail Exchanger
-        IN      MX      50 mx1.{fqdn}.
+@        IN MX      50 mx.{fqdn}.
+@        IN A       {ip}
 
-{fqdn}.                         IN A            {ip}
-www                             IN CNAME        {fqdn}.
-mx1                             IN A            {ip}
+@        IN TXT     "1|www.{fqdn}"
+@        IN TXT     "v=spf1 include:mx.{fqdn} ~all"
+
+www IN A {ip}
+mx IN A {ip}
+
+mx IN TXT "v=spf1 a mx ~all"
+
+{zoneEntries}

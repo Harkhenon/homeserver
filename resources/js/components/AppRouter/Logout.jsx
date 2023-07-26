@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react'
-import { Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 const Logout = () => {
+
+    const navigate = useNavigate();
 
     useEffect(() => {
         if(
@@ -10,7 +12,7 @@ const Logout = () => {
         ) {
             localStorage.removeItem('userToken');
             localStorage.removeItem('userId');
-            Navigate('/');
+            navigate('/');
             window.location.reload();
         }
     })

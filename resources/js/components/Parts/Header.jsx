@@ -1,70 +1,38 @@
-import React from 'react';
-import './scss/Header.scss';
-import UserBar from './UserBar';
+import React, { useState } from 'react';
+import '@sass/Parts/Header.scss';
+import { Icon, Button, Grid } from 'semantic-ui-react';
+import { Link } from 'react-router-dom';
+import MainMenu from '@src/Parts/MainMenu';
 
-class Header extends React.Component {
+const Header = props => {
 
-    constructor(props) {
-        super(props);
-    }
+    const [ sidebarVisibility, setSidebarVisibility ] = useState(false)
+    const { credentials } = props
 
-    render() {
-        const { username, email, settings, setSidebarVisibility } = this.props;
-        return (
-            <React.Fragment>
-                {/*<Sidebar
-                as={Menu}
-                    animation='scale down'
-                    icon='labeled'
-                    inverted
-                    vertical
-                    visible={settings.sidebarVisibility}
-                    width='wide'
-                    >
-                        <Text to="/user" as={Link} inverted icon>
-                            <Icon name='user' size='tiny' />
-                            {username}
-                        </Text>
-                        <br />
-                        <Text inverted size='tiny'>
-                            <Text.Content>{email}</Text.Content>
-                        </Text>
-                        <br />
-                        <Button
-                            to="/user/logout"
-                            as={Link} color='red'
-                            icon='log out'
-                            content='Log Out'
-                        />
-                        <Menu.Item as={Text} color='grey' onClick={setSidebarVisibility}>
-                            Apache & Bind
-                        </Menu.Item>
-                        <Menu.Item as={Link} to='/domains' onClick={setSidebarVisibility}>
-                            Domain names
-                        </Menu.Item>
-                        <Menu.Item as={Link} to='/hosting' onClick={setSidebarVisibility}>
-                            Hosted domains
-                        </Menu.Item>
-                        <Menu.Item as={Link} to='/security' onClick={setSidebarVisibility}>
-                            Security
-                        </Menu.Item>
-                </Sidebar>*/}
-                <header>
-                    {/* <Button
-                         basic
-                         inverted
-                         floated='right'
-                         icon='bars'
-                         onClick={setSidebarVisibility}
-                         content='Menu'
-                         id='main-menu'
-                    />*/}
-                    <h1>Homeserver</h1>
-                </header>
-                <UserBar />
-            </React.Fragment>
-        )
-    }
+    return (
+      <React.Fragment>
+        <Grid as='header' columns={5} stackable textAlign='right' verticalAlign='middle'>
+          <Grid.Column as="h1" width={10} textAlign='left'>Homeserver</Grid.Column>
+          <Grid.Column
+            floated='right'
+            width={1} as={Button}
+            icon="bars"
+            onClick={() => setSidebarVisibility(!sidebarVisibility)}
+          />
+          <Grid.Column as='span' width={2}>{credentials.username}</Grid.Column>
+          <Grid.Column as='span' width={2}>{credentials.email}</Grid.Column>
+          <Grid.Column as={Link} width={1} to="/user/logout" title='Log out'>
+            <Icon name='log out' />
+          </Grid.Column>
+        </Grid>
+        <nav>
+          <MainMenu
+            sidebarVisibility={sidebarVisibility}
+            setSidebarVisibility={setSidebarVisibility}
+          />
+        </nav>
+      </React.Fragment>
+    )
 }
 
 export default Header;
