@@ -1,31 +1,47 @@
 {
     "private": true,
+    "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "vite build"
     },
     "devDependencies": {
-        "@vitejs/plugin-basic-ssl": "^0.1.2",
-        "@vitejs/plugin-react": "^2.2.0",
-        "axios": "^1.1.2",
-        "laravel-vite-plugin": "^0.7.0",
-        "lodash": "^4.17.19",
-        "postcss": "^8.1.14",
-        "sass": "^1.56.0",
-        "vite": "^3.0.0"
-    },
-    "dependencies": {
-        "browserlist": "^1.0.1",
-        "caniuse-lite": "^1.0.30001429",
-        "jwt-decode": "^3.1.2",
+        "@headlessui/react": "^2.0.0",
+        "@inertiajs/react": "^2.0.0",
+        "@tailwindcss/forms": "^0.5.3",
+        "@types/react": "^19.0.12",
+        "@vitejs/plugin-react": "^4.2.0",
+        "autoprefixer": "^10.4.12",
+        "axios": "^1.8.2",
+        "concurrently": "^9.0.1",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-prettier": "^5.1.3",
+        "eslint-plugin-react": "^7.34.4",
+        "eslint-plugin-react-hooks": "^4.6.2",
+        "laravel-vite-plugin": "^1.2.0",
+        "postcss": "^8.4.31",
+        "prettier": "^3.3.0",
+        "prettier-plugin-organize-imports": "^4.0.0",
+        "prettier-plugin-tailwindcss": "^0.6.5",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "react-redux": "^7.2.6",
-        "react-router": "^6.3.0",
-        "react-router-dom": "^6.3.0",
-        "react-toastify": "^9.0.5",
-        "redux": "^4.2.0",
-        "semantic-ui-css": "^2.4.1",
-        "semantic-ui-react": "^2.1.3"
+        "sass-embedded": "^1.86.0",
+        "typescript": "^5.8.2",
+        "vite": "^6.0.11"
+    },
+    "dependencies": {
+        "@emotion/react": "^11.14.0",
+        "@emotion/styled": "^11.14.0",
+        "@mui/icons-material": "^6.4.8",
+        "@mui/material": "^6.4.8",
+        "@mui/x-data-grid": "^7.28.2",
+        "@types/node": "^22.13.10",
+        "react-toastify": "^11.0.5"
+    },
+    "packageManager": "yarn@4.7.0",
+    "peerDependencies": {
+        "react": "^17.0.0 || ^18.0.0 || ^19.0.0",
+        "react-dom": "^17.0.0 || ^18.0.0 || ^19.0.0"
     }
 }

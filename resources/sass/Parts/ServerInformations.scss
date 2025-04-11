@@ -1,0 +1,65 @@
+#server-informations {
+  color: white;
+
+  & .cat {
+    text-align: center;
+    color: antiquewhite;
+    border: double #f1f3de 12px;
+    border-image-source: url("../../img/border.png");
+    border-image-slice: 17;
+	  border-image-repeat: round;
+    position: relative;
+    padding-top: 2em;
+
+    & .ui.attached.label, .ui[class*="top attached"].label {
+      top: -11px;
+      left: -11px;
+      background: none;
+      border: 4px double rgba(255, 255, 255, 0.2);
+      padding: 0.5em;
+      color: white;
+    }
+
+    & .ui.progress .label {
+      color: white;
+    }
+
+    & .ui.labeled.button {
+      margin-top: 0.5em;
+      margin-bottom: 0.5em;
+    }
+  }
+
+  & .cat.title {
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: white;
+    padding-bottom: 0.8em;
+  }
+
+  & .cat .ui.loader {
+    width: 100%;
+    padding: 8em;
+  }
+
+  & .cat.os {
+    text-align: left;
+  }
+
+  & .cat.cpu {
+    text-align: left;
+  }
+
+  & .cat.ram {
+    text-align: left;
+  }
+
+  & .cat.disk {
+    text-align: left;
+  }
+
+  & .cat.memory {
+    text-align: left;
+  }
+}

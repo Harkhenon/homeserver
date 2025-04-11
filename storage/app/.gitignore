@@ -1,5 +1,4 @@
 *
-!patterns/
-!patterns/*
+!private/
 !public/
 !.gitignore

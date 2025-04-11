@@ -16,18 +16,11 @@ class Domains extends Migration
         Schema::create('domains', function(Blueprint $table) {
             $table->increments('id');
             $table->string('fqdn')->unique();
-            $table->string('ns1')->default();
-            $table->string('ns2')->default();
+            $table->string('ns1')->default(null);
+            $table->string('ns2')->default(null);
+            $table->json('zones')->nullable()->default(null);
+            $table->boolean('ssl_secured')->default(0);
             $table->boolean('default')->default(0);
-            $table->timestamps();
-        });
-
-        Schema::create('zones', function(Blueprint $table) {
-            $table->increments('id');
-            $table->integer('domains_id')->unsigned();
-            $table->text('sub');
-            $table->text('type');
-            $table->text('ip_or_fqdn');
             $table->timestamps();
         });
     }

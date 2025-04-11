@@ -1,151 +1,59 @@
+//@use "tailwindcss";
 // Fonts
 @import url('https://fonts.googleapis.com/css?family=Nunito');
-
 // Variables
-@import 'variables';
+
+.pointer {
+  cursor: pointer;
+}
+
+.arrow {
+  cursor: default;
+}
+
+* {
+  padding: 0;
+  margin: 0;
+}
 
 html {
-    & body {
-        background-color: #202124;
-        & input {
-            color: #eee;
-        }
-        & #root {
-            header .sidenav .user-view {
-                & a:hover {
-                    background-color: #2bbbad;
-                }
+  z-index: -5;
+  max-width: 100vw;
+  min-height: 100vh;
 
-                & .email {
-                    line-height: 2.3em;
-                    cursor: default;
-                }
+  & body {
+    background-color: #161616;
+    background-size: 4.6875rem;
+    background-repeat: repeat;
+    background-attachment: initial;
+    z-index: -5;
+    max-width: 100vw;
+    min-height: 100vh;
 
-                & .btn-small {
-                    padding-left: 8px;
-                    padding-right: 13px;
-                }
-            }
-            & #user-bar {
-                color: white;
-                text-align: right;
-                & span {
-                    display: inline-block;
-                    margin: 0 10px 0 10px;
-                }
-                padding: 1%;
-                background-color:firebrick;
-            }
+    & #app > div > main {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
 
-            & main {
-                min-height: 60vh;
-                margin-top: 4vh;
+      & > .MuiPaper-root {
+        flex-grow: 1;
+        align-self:flex-start;
+      }
 
-                & #main-nav {
-                    display: flex;
-                    flex-direction: row;
-                    flex-flow: row;
-                    justify-content: space-evenly;
-                    flex-wrap: wrap;
+      & > .main-content {
+        flex-grow: 1
+      }
 
-                    & .main-button {
-                        min-height: 125px;
-                        min-width: 375px;
-                        max-width: 100vw;
-                        font-size: 3em;
-                        margin: 10px 0 10px 0;
-                    }
-                }
+      & footer {
+        flex-grow: 0;
+      }
 
-                
-
-                & .breadcrumb {
-                    margin-bottom: 50px;
-                    & .divider {
-                        color: white;
-                    }
-                }
-
-                & #presentation {
-                    & #platform {
-                        font-size: 5em !important;
-                    }
-                }
-
-                & #main-table {
-
-                    width: 100%;
-                    padding: 50px;
-                    display: flex;
-                    flex-direction: row;
-                    flex-wrap: wrap;
-                    justify-content: space-evenly;
-
-                    & .machine-container {
-                        height: 150px;
-                        flex: 1;
-                        color: white;
-                        text-align: center;
-                        margin-bottom: 50px;
-                        display: grid;
-                        place-items: center;
-
-                        & .circle-load {
-                            border-radius: 50%;
-                        }
-
-                        & .load {
-                            height: 100px;
-                            width: 125px;
-                            position: absolute;
-                            font-weight: bold;
-                            font-size: 25px;
-                            line-height: 160px;
-                            vertical-align: middle;
-                        }
-
-                        & div.machine-cpu , div.machine-ram, div.machine-disk, div.os, div.machine-temp {
-                            height: 150px;
-                            width: 150px;
-                            position: relative;
-                            text-align: center;
-                            line-height: 75px;
-                            margin: 0 auto;
-                            font-size: 0.8em;
-                            background-color: greenyellow;
-                            display: grid;
-                            place-items: center;
-                            transition: all 1s ease-in-out;
-                        }
-
-                        & div.os {
-                            border-bottom: 10px black !important;
-                        }
-
-
-                        & div.machine-cpu:before , div.machine-ram:before, div.machine-disk:before, div.os:before, div.machine-temp:before {
-                            content: "";
-                            position: absolute;
-                            height: 84%;
-                            width: 84%;
-                            background-color: #212121;
-                            border-radius: 50%;
-                            display: grid;
-                            place-items: center;
-                        }
-                    }
-
-                }
-            }
-            footer {
-                margin-top: 1em;
-                height: 20vh;
-                padding: 2em;
-                color: white;
-                background-color: #0f2121;
-            }
-        }
+      & .hsbreadcrumb {
+        margin-top: 50px;
+        padding-top: 30px;
+        padding-left: 30px;
+      }
     }
-
-    button { color: black }
+  }
 }

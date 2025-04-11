@@ -1,12 +1,16 @@
 html {
      & body {
-         & #root {
-             main {
-                min-height: 100vh;
-
-                 .login-form {
-                    padding: 15px;
-                 }
+         & #app {
+          min-height: max-content;
+           main {
+             min-height: 100vh;
+              .login-form {
+                & .ui.header {
+                  color: white;
+                }
+                  color: white;
+                  padding: 15px;
+                }
              }
          }
      }

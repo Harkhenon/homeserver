@@ -1,0 +1,18 @@
+html {
+    & body {
+        & #app {
+            & main {
+              & .hsbreadcrumb {
+                height: 3.5em;
+              }
+                & .ui.breadcrumb {
+                    width: 100%;
+                    margin: 0;
+                    & .section:not(a) {
+                        color: white;
+                    }
+                }
+            }
+        }
+    }
+}
