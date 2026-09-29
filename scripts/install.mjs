@@ -85,13 +85,20 @@ async function main() {
     `HS_USER=${user}`,
     `HS_MODULES=${modules.join(',')}`,
   ].join('\n') + '\n';
-  writeFileSync('.env', env);
-  ok('.env généré');
+  const installDir = process.env.HS_INSTALL_DIR || process.cwd();
+  writeFileSync(`${installDir}/.env`, env);
+  execSync(`chown ${user}: ${installDir}/.env && chmod 640 ${installDir}/.env`, { stdio: 'pipe' });
+  ok(`.env généré (${installDir}/.env, propriétaire: ${user}, 640)`);
 
-  log('Installation des dépendances npm...');
-  execSync('npm install --omit=dev', { stdio: 'inherit' });
-  execSync('npm run build', { stdio: 'inherit' });
-  ok('Build terminé');
+  const bootstrapDidBuild = Boolean(process.env.HS_INSTALL_DIR);
+  if (!bootstrapDidBuild) {
+    log('Installation des dépendances npm...');
+    execSync('npm install --omit=dev', { stdio: 'inherit' });
+    execSync('npm run build', { stdio: 'inherit' });
+    ok('Build terminé');
+  } else {
+    ok('Dépendances et build déjà installés par le bootstrap');
+  }
 
   log('Installation des paquets système...');
   if (distro.family === 'debian') {
@@ -109,10 +116,10 @@ After=network.target
 [Service]
 Type=simple
 User=${user}
-WorkingDirectory=${process.cwd()}
-ExecStart=${process.execPath} ${process.cwd()}/server/dist/index.js
+WorkingDirectory=${installDir}
+ExecStart=${process.env.HS_NODE_BIN || process.execPath} ${installDir}/server/dist/index.js
 Restart=on-failure
-EnvironmentFile=${process.cwd()}/.env
+EnvironmentFile=${installDir}/.env
 
 [Install]
 WantedBy=multi-user.target
