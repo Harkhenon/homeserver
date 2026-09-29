@@ -50,7 +50,11 @@ Une seule commande — tout est automatique (nvm + Node LTS inclus si absents) :
 sudo bash scripts/install.sh
 ```
 
-L'installateur interactif : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe les paquets, génère `.env` (secret JWT, identifiants admin), installe et démarre le service systemd.
+L'installateur : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe nvm + Node LTS **pour cet utilisateur**, copie le panel dans `/usr/share/homeserver` (propriété `hs-*`), installe les dépendances et le build en tant que `hs-*`, installe les paquets système, génère `.env` (secret JWT, identifiants admin, `640` propriété `hs-*`), installe et démarre le service systemd.
+
+Chemins d'installation :
+- `/usr/share/homeserver` — code du panel, `node_modules`, build (propriétaire `hs-*`, `750`)
+- `/var/lib/homeserver` — données et nvm de l'utilisateur (`750`)
 
 ## Ajouter un module
 

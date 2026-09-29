@@ -1,30 +1,36 @@
+import { existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { connect } from 'node:net';
 
 const rl = readline.createInterface({ input: stdin, output: stdout });
-
-const BANNER = `
-\x1b[1;36m                                                     
- ▄▄    ▄▄                                  ▄▄▄▄                                                      
- ██    ██                                ▄█▀▀▀▀█                                                     
- ██    ██   ▄████▄   ████▄██▄   ▄████▄   ██▄        ▄████▄    ██▄████  ██▄  ▄██   ▄████▄    ██▄████ 
- ████████  ██▀  ▀██  ██ ██ ██  ██▄▄▄▄██   ▀████▄   ██▄▄▄▄██   ██▀       ██  ██   ██▄▄▄▄██   ██▀     
- ██    ██  ██    ██  ██ ██ ██  ██▀▀▀▀▀▀       ▀██  ██▀▀▀▀▀▀   ██        ▀█▄▄█▀   ██▀▀▀▀▀▀   ██      
- ██    ██  ▀██▄▄██▀  ██ ██ ██  ▀██▄▄▄▄█  █▄▄▄▄▄█▀  ▀██▄▄▄▄█   ██         ████    ▀██▄▄▄▄█   ██      
- ▀▀    ▀▀    ▀▀▀▀    ▀▀ ▀▀ ▀▀    ▀▀▀▀▀    ▀▀▀▀▀      ▀▀▀▀▀    ▀▀          ▀▀       ▀▀▀▀▀    ▀▀      
-                                                     
-\x1b[0m\x1b[2m        Panel de gestion de serveur web/hébergement\x1b[0m\n`;
 
 function log(msg) { console.log(`\x1b[36m→\x1b[0m ${msg}`); }
 function ok(msg) { console.log(`\x1b[32m✓\x1b[0m ${msg}`); }
 function die(msg) { console.error(`\x1b[31m✗ ${msg}\x1b[0m`); process.exit(1); }
 
 const sh = (cmd) => execSync(cmd, { stdio: 'pipe' }).toString().trim();
-const has = (bin) => {
-  try { execSync(`command -v ${bin}`, { stdio: 'pipe' }); return true; } catch { return false; }
-};
+
+const SOCKET = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
+
+async function callHelper(request, timeoutMs = 300_000) {
+  return new Promise((resolve, reject) => {
+    const socket = connect(SOCKET);
+    let buf = '';
+    socket.on('connect', () => socket.write(JSON.stringify(request) + '\n'));
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('utf8');
+      const idx = buf.indexOf('\n');
+      if (idx < 0) return;
+      const res = JSON.parse(buf.slice(0, idx));
+      socket.end();
+      res.ok ? resolve(res.data) : reject(new Error(`[${res.code}] ${res.error}`));
+    });
+    socket.on('error', reject);
+    socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error('Timeout du helper')); });
+  });
+}
 
 function detectDistro() {
   if (!existsSync('/etc/os-release')) return { family: 'unknown', pretty: 'Unknown' };
@@ -38,44 +44,24 @@ function detectDistro() {
   return { family: 'unknown', pretty };
 }
 
-function randomSuffix(len = 12) {
-  const chars = 'abcdefghijklmnopqrstuvwxyz';
-  let out = '';
-  const buf = execSync(`tr -dc a-z < /dev/urandom | head -c ${len}`, { stdio: 'pipe' });
-  for (const ch of buf.toString('utf8')) if (chars.includes(ch)) out += ch;
-  return out || 'fallback' + Math.random().toString(36).slice(2, 2 + len);
-}
-
 async function main() {
-  console.log(BANNER);
-  if (process.getuid?.() !== 0) die("L'installation requiert root (réessaie avec sudo).");
+  console.log('\x1b[1m=== Homeserver — Installation (hs-utilisateur) ===\x1b[0m\n');
+
+  const installDir = process.env.HS_INSTALL_DIR ?? process.cwd();
+  if (!process.env.HS_USER) die('HS_USER manquant : lance via scripts/install.sh.');
+  const user = process.env.HS_USER;
 
   const distro = detectDistro();
-  log(`Distro détectée : ${distro.pretty} (famille: ${distro.family})`);
-  if (distro.family === 'unknown') die('Distro non supportée (Debian/Ubuntu ou Fedora/RHEL requis).');
+  ok(`Distro détectée : ${distro.pretty} (famille: ${distro.family})`);
 
-  const pkgManager = distro.family === 'debian' ? 'apt-get' : 'dnf';
-
-  log('Vérification de Node.js...');
-  if (!has('node')) die('Node.js >= 20 requis. Installe-le puis relance.');
-  ok(`Node ${sh('node --version')}`);
-
-  const user = process.env.HS_USER || `hs-${randomSuffix()}`;
-  if (!process.env.HS_USER) {
-    log(`Création de l'utilisateur système ${user} (nologin, sans mot de passe)...`);
-    execSync(`useradd -r -M -s /usr/sbin/nologin -d /nonexistent ${user}`, { stdio: 'pipe' });
-    ok(`Utilisateur ${user} créé`);
-  } else {
-    ok(`Utilisateur système : ${user} (créé par le bootstrap)`);
-  }
+  log('Test du helper privilégié...');
+  const echo = await callHelper({ action: 'echo' }).catch((e) => die(`Helper inaccessible (${e.message})`));
+  ok(`Helper opérationnel (famille: ${echo.family})`);
 
   const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
   const adminPassword = sh('openssl rand -base64 12');
   const jwtSecret = sh('openssl rand -hex 32');
-  const port = (await rl.question('Port de l\'API [3000]: ')) || '3000';
-
-  const modules = ['system', 'apache'];
-  log(`Modules activés : ${modules.join(', ')}`);
+  const port = (await rl.question("Port de l'API [3000]: ")) || '3000';
 
   const env = [
     `HS_PORT=${port}`,
@@ -83,56 +69,50 @@ async function main() {
     `HS_ADMIN_USER=${adminUser}`,
     `HS_ADMIN_PASSWORD=${adminPassword}`,
     `HS_USER=${user}`,
-    `HS_MODULES=${modules.join(',')}`,
+    `HS_MODULES=system,apache`,
   ].join('\n') + '\n';
-  const installDir = process.env.HS_INSTALL_DIR || process.cwd();
   writeFileSync(`${installDir}/.env`, env);
-  execSync(`chown ${user}: ${installDir}/.env && chmod 640 ${installDir}/.env`, { stdio: 'pipe' });
-  ok(`.env généré (${installDir}/.env, propriétaire: ${user}, 640)`);
+  ok(`.env généré (${installDir}/.env)`);
 
-  const bootstrapDidBuild = Boolean(process.env.HS_INSTALL_DIR);
-  if (!bootstrapDidBuild) {
-    log('Installation des dépendances npm...');
-    execSync('npm install --omit=dev', { stdio: 'inherit' });
-    execSync('npm run build', { stdio: 'inherit' });
-    ok('Build terminé');
-  } else {
-    ok('Dépendances et build déjà installés par le bootstrap');
+  log('Découverte des versions de PHP disponibles...');
+  let phpChoice = 'aucune';
+  try {
+    const discovered = await callHelper({ action: 'discover', kind: 'php' });
+    const available = discovered.versions.filter((v) => v.available);
+    if (available.length > 0) {
+      const labels = available.map((v, i) => `${i + 1}) PHP ${v.version}`).join('  ');
+      const answer = await rl.question(`Versions de PHP disponibles — ${labels} [1]: `);
+      const idx = Math.max(0, Math.min(available.length - 1, parseInt(answer || '1', 10) - 1));
+      phpChoice = available[idx]?.version ?? 'aucune';
+      ok(`PHP sélectionné : ${phpChoice}`);
+    } else {
+      ok('Aucune version de PHP disponible pour le moment');
+    }
+  } catch (e) {
+    console.log(`\x1b[33m! Découverte PHP ignorée: ${e.message}\x1b[0m`);
   }
 
-  log('Installation des paquets système...');
-  if (distro.family === 'debian') {
-    execSync('apt-get update', { stdio: 'inherit' });
-    execSync('apt-get install -y apache2', { stdio: 'inherit' });
-  } else {
-    execSync('dnf install -y httpd', { stdio: 'inherit' });
-  }
-  ok('Paquets installés');
+  log('Installation des paquets système (via helper)...');
+  const family = echo.family;
+  const packages = family === 'debian'
+    ? ['apache2', ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : [])]
+    : ['httpd', ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : [])];
+  await callHelper({ action: 'install_packages', packages });
+  ok(`Paquets installés: ${packages.join(', ')}`);
 
-  const serviceUnit = `[Unit]
-Description=Homeserver panel
-After=network.target
+  log('Activation du service web (via helper)...');
+  await callHelper({ action: 'systemctl', unit: family === 'debian' ? 'apache2' : 'httpd', verb: 'enable' });
+  await callHelper({ action: 'systemctl', unit: family === 'debian' ? 'apache2' : 'httpd', verb: 'start' });
+  ok('Service web activé');
 
-[Service]
-Type=simple
-User=${user}
-WorkingDirectory=${installDir}
-ExecStart=${process.env.HS_NODE_BIN || process.execPath} ${installDir}/server/dist/index.js
-Restart=on-failure
-EnvironmentFile=${installDir}/.env
-
-[Install]
-WantedBy=multi-user.target
-`;
-  writeFileSync('/etc/systemd/system/homeserver.service', serviceUnit);
-  execSync('systemctl daemon-reload', { stdio: 'inherit' });
-  execSync('systemctl enable --now homeserver', { stdio: 'inherit' });
-  ok('Service systemd installé et démarré');
+  log('Démarrage du panel...');
+  execSync('systemctl restart homeserver 2>/dev/null || true', { stdio: 'inherit' });
+  ok('Panel démarré');
 
   console.log(`\n\x1b[32mInstallation terminée !\x1b[0m`);
   console.log(`  Admin      : ${adminUser} / ${adminPassword}`);
   console.log(`  API        : http://localhost:${port}/api`);
-  console.log(`  Utilisateur système : ${user} (accès admin : sudo -u ${user} <cmd>)\n`);
+  console.log(`  Utilisateur système : ${user} (accès admin: sudo -u ${user} <cmd>)\n`);
   rl.close();
 }
 
