@@ -60,10 +60,14 @@ async function main() {
   if (!has('node')) die('Node.js >= 20 requis. Installe-le puis relance.');
   ok(`Node ${sh('node --version')}`);
 
-  const user = `hs-${randomSuffix()}`;
-  log(`Création de l'utilisateur système ${user} (nologin, sans mot de passe)...`);
-  execSync(`useradd -r -M -s /usr/sbin/nologin -d /nonexistent ${user}`, { stdio: 'pipe' });
-  ok(`Utilisateur ${user} créé`);
+  const user = process.env.HS_USER || `hs-${randomSuffix()}`;
+  if (!process.env.HS_USER) {
+    log(`Création de l'utilisateur système ${user} (nologin, sans mot de passe)...`);
+    execSync(`useradd -r -M -s /usr/sbin/nologin -d /nonexistent ${user}`, { stdio: 'pipe' });
+    ok(`Utilisateur ${user} créé`);
+  } else {
+    ok(`Utilisateur système : ${user} (créé par le bootstrap)`);
+  }
 
   const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
   const adminPassword = sh('openssl rand -base64 12');
