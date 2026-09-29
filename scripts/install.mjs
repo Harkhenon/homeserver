@@ -106,7 +106,7 @@ After=network.target
 Type=simple
 User=${user}
 WorkingDirectory=${process.cwd()}
-ExecStart=${process.cwd()}/node_modules/.bin/node ${process.cwd()}/server/dist/index.js
+ExecStart=${process.execPath} ${process.cwd()}/server/dist/index.js
 Restart=on-failure
 EnvironmentFile=${process.cwd()}/.env
 

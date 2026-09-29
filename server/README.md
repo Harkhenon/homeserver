@@ -44,8 +44,10 @@ npm start
 
 ## Installation production
 
+Une seule commande — tout est automatique (nvm + Node LTS inclus si absents) :
+
 ```bash
-sudo npm run install-panel
+sudo bash scripts/install.sh
 ```
 
 L'installateur interactif : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe les paquets, génère `.env` (secret JWT, identifiants admin), installe et démarre le service systemd.
