@@ -6,12 +6,16 @@ import { stdin, stdout } from 'node:process';
 const rl = readline.createInterface({ input: stdin, output: stdout });
 
 const BANNER = `
-\x1b[1;36m ,--.       ,--.                     ,--.
- |  | ,---. |  | ,---. ,--.--. ,---. |  |
- |  || .-- :|  || .-. ||  .--'| .-. :|  |
- |  |\`--.|  |' '-' '|  |   \\   --.|  |
-\x1b[0m\x1b[1m \`--' \`---'\`--' \`---' \`--'    \`----'\`--'\x1b[0m
-\x1b[2m        Panel de gestion de serveur web/hébergement\x1b[0m\n`;
+\x1b[1;36m                                                     
+ ▄▄    ▄▄                                  ▄▄▄▄                                                      
+ ██    ██                                ▄█▀▀▀▀█                                                     
+ ██    ██   ▄████▄   ████▄██▄   ▄████▄   ██▄        ▄████▄    ██▄████  ██▄  ▄██   ▄████▄    ██▄████ 
+ ████████  ██▀  ▀██  ██ ██ ██  ██▄▄▄▄██   ▀████▄   ██▄▄▄▄██   ██▀       ██  ██   ██▄▄▄▄██   ██▀     
+ ██    ██  ██    ██  ██ ██ ██  ██▀▀▀▀▀▀       ▀██  ██▀▀▀▀▀▀   ██        ▀█▄▄█▀   ██▀▀▀▀▀▀   ██      
+ ██    ██  ▀██▄▄██▀  ██ ██ ██  ▀██▄▄▄▄█  █▄▄▄▄▄█▀  ▀██▄▄▄▄█   ██         ████    ▀██▄▄▄▄█   ██      
+ ▀▀    ▀▀    ▀▀▀▀    ▀▀ ▀▀ ▀▀    ▀▀▀▀▀    ▀▀▀▀▀      ▀▀▀▀▀    ▀▀          ▀▀       ▀▀▀▀▀    ▀▀      
+                                                     
+\x1b[0m\x1b[2m        Panel de gestion de serveur web/hébergement\x1b[0m\n`;
 
 function log(msg) { console.log(`\x1b[36m→\x1b[0m ${msg}`); }
 function ok(msg) { console.log(`\x1b[32m✓\x1b[0m ${msg}`); }
