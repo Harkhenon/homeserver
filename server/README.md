@@ -22,6 +22,8 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/system/:action` | `info`, `cpu`, `memory`, `disks`, `network`, `processes`, `updates`, `sensors` |
 | `POST /api/apache/:action` | `vhosts.list/get/create/update/enable/delete`, `service.status/restart/reload` |
 | `POST /api/bind9/:action` | `zones.list/get/create/delete`, `records.add/delete`, `service.status/reload` |
+| `POST /api/users/:action` | `users.list/get/create/delete`, SFTP chrooté `/var/www/<site>` |
+| `POST /api/files/:action` | `files.list/read/write/mkdir/delete/chown` (limité à `/var/www`) |
 
 Exemple :
 ```bash

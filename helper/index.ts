@@ -1,5 +1,6 @@
 import { createServer } from 'node:net';
-import { mkdirSync, existsSync, statSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdirSync, existsSync, statSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, chownSync, chmodSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
@@ -177,6 +178,85 @@ async function handleRequest(raw: unknown): Promise<unknown> {
     }
     case 'pending_updates':
       return handlePendingUpdates(family);
+    case 'user_create': {
+      mkdirSync(req.home === '/dev/null' ? '/var/www' : req.home.replace(/\/[^/]+$/, ''), { recursive: true });
+      const useraddArgs = ['-r', '-d', req.home, '-s', req.shell, req.username];
+      try {
+        await exec('useradd', useraddArgs);
+      } catch (err) {
+        const e = err as { message: string };
+        if (!e.message.includes('already exists')) throw err;
+      }
+      try {
+        execFileSync('chpasswd', [`${req.username}:${req.password}`], { stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+      } catch (err) {
+        const e = err as { message: string };
+        throw new Error(`Définition du mot de passe échouée: ${e.message}`);
+      }
+      if (req.home !== '/dev/null' && existsSync(req.home)) {
+        chownSync(req.home, -1, -1);
+        try { chmodSync(req.home, 0o755); } catch { /* no-op */ }
+      }
+      return { username: req.username, created: true };
+    }
+    case 'user_delete': {
+      const args = req.removeHome ? ['-r', req.username] : [req.username];
+      await exec('userdel', args);
+      return { username: req.username, deleted: true };
+    }
+    case 'user_list': {
+      const out = await exec('getent', ['passwd']);
+      const users = out.trim().split('\n').map((line) => {
+        const [username, , uid, gid, , home, shell] = line.split(':');
+        return { username, uid: Number(uid), gid: Number(gid), home, shell };
+      }).filter((u) => u.home && u.home.startsWith('/var/www'));
+      return { users };
+    }
+    case 'fs_read': {
+      if (!existsSync(req.path)) throw new Error('Fichier introuvable');
+      const st = statSync(req.path);
+      if (st.size > 5_000_000) throw new Error('Fichier trop volumineux');
+      return { content: readFileSync(req.path, 'utf8') };
+    }
+    case 'fs_write': {
+      const st = statSync(req.path, { throwIfNoEntry: false });
+      if (st && !st.isFile()) throw new Error('Cible non supportée');
+      mkdirSync(req.path.replace(/\/[^/]+$/, ''), { recursive: true });
+      writeFileSync(req.path, req.content, { mode: 0o644 });
+      return { written: req.path, bytes: Buffer.byteLength(req.content) };
+    }
+    case 'fs_list': {
+      if (!existsSync(req.path)) return { entries: [] };
+      const entries = readdirSync(req.path).map((name) => {
+        const full = `${req.path}/${name}`;
+        const st = statSync(full, { throwIfNoEntry: false });
+        const type = st?.isDirectory() ? 'dir' : st?.isSymbolicLink() ? 'symlink' : st?.isFile() ? 'file' : 'other';
+        return {
+          name,
+          type,
+          sizeBytes: st?.size ?? 0,
+          mode: st ? (st.mode & 0o777).toString(8).padStart(3, '0') : '',
+          owner: '',
+          group: '',
+          modifiedAt: st ? st.mtime.toISOString() : '',
+        };
+      });
+      return { entries };
+    }
+    case 'fs_mkdir': {
+      mkdirSync(req.path, { recursive: true, mode: 0o755 });
+      return { created: req.path };
+    }
+    case 'fs_delete': {
+      if (!existsSync(req.path)) throw new Error('Cible introuvable');
+      rmSync(req.path, { recursive: true, force: true });
+      return { removed: req.path };
+    }
+    case 'fs_chown': {
+      if (!existsSync(req.path)) throw new Error('Cible introuvable');
+      await exec('chown', [req.recursive ? '-R' : '', req.owner + ':' + req.group, req.path].filter(Boolean));
+      return { path: req.path, owner: req.owner };
+    }
     case 'check_zone': {
       const checker = existsSync('/usr/sbin/named-checkzone') ? '/usr/sbin/named-checkzone' : 'named-checkzone';
       try {

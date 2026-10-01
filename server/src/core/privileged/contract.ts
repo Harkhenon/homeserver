@@ -20,6 +20,15 @@ export type PrivilegedRequest =
   | { action: 'site_enable'; site: string; enable: boolean }
   | { action: 'pending_updates' }
   | { action: 'check_zone'; zone: string; file: string }
+  | { action: 'user_create'; username: string; password: string; home: string; shell: string }
+  | { action: 'user_delete'; username: string; removeHome: boolean }
+  | { action: 'user_list' }
+  | { action: 'fs_read'; path: string }
+  | { action: 'fs_write'; path: string; content: string }
+  | { action: 'fs_list'; path: string }
+  | { action: 'fs_mkdir'; path: string }
+  | { action: 'fs_delete'; path: string }
+  | { action: 'fs_chown'; path: string; owner: string; group: string; recursive: boolean }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -43,8 +52,34 @@ export interface ServiceStatusResult {
   enabled: boolean;
 }
 
+export interface UserInfo {
+  username: string;
+  uid: number;
+  gid: number;
+  home: string;
+  shell: string;
+}
+
+export interface FsEntry {
+  name: string;
+  type: 'file' | 'dir' | 'symlink' | 'other';
+  sizeBytes: number;
+  mode: string;
+  owner: string;
+  group: string;
+  modifiedAt: string;
+}
+
 const PACKAGE_RE = /^[a-z0-9][a-z0-9.+-]{0,99}$/;
 const SITE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
+const UNIX_NAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
+const FS_PATH_RE = /^\/var\/www(\/[A-Za-z0-9._@ -]+)*\/?$/;
+const FS_SUB_RE = /^\/var\/www\/[A-Za-z0-9._@ -][A-Za-z0-9._@ \/-]*$/;
+
+function isSafeFsPath(path: string, re: RegExp): boolean {
+  if (!re.test(path)) return false;
+  return !path.split('/').includes('..');
+}
 const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
 ];
@@ -110,6 +145,40 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.zone !== 'string' || !ZONE_NAME_RE.test(raw.zone)) return null;
       if (typeof raw.file !== 'string' || !ZONE_FILE_RE.test(raw.file)) return null;
       return { action: 'check_zone', zone: raw.zone, file: raw.file };
+    case 'user_create':
+      if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
+      if (typeof raw.password !== 'string' || raw.password.length < 6 || raw.password.length > 200) return null;
+      if (typeof raw.home !== 'string' || !(FS_PATH_RE.test(raw.home) || raw.home === '/dev/null')) return null;
+      if (typeof raw.shell !== 'string' || !['/usr/sbin/nologin', '/bin/false', '/bin/bash'].includes(raw.shell)) return null;
+      return { action: 'user_create', username: raw.username, password: raw.password, home: raw.home, shell: raw.shell };
+    case 'user_delete':
+      if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
+      if (typeof raw.removeHome !== 'boolean') return null;
+      return { action: 'user_delete', username: raw.username, removeHome: raw.removeHome };
+    case 'user_list':
+      return { action: 'user_list' };
+    case 'fs_read':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_SUB_RE)) return null;
+      return { action: 'fs_read', path: raw.path };
+    case 'fs_write':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_SUB_RE)) return null;
+      if (typeof raw.content !== 'string' || raw.content.length > 5_000_000) return null;
+      return { action: 'fs_write', path: raw.path, content: raw.content };
+    case 'fs_list':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_PATH_RE)) return null;
+      return { action: 'fs_list', path: raw.path };
+    case 'fs_mkdir':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_SUB_RE)) return null;
+      return { action: 'fs_mkdir', path: raw.path };
+    case 'fs_delete':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_SUB_RE) || raw.path.replace(/\/+$/, '') === '/var/www') return null;
+      return { action: 'fs_delete', path: raw.path };
+    case 'fs_chown':
+      if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_PATH_RE)) return null;
+      if (typeof raw.owner !== 'string' || !UNIX_NAME_RE.test(raw.owner)) return null;
+      if (typeof raw.group !== 'string' || !UNIX_NAME_RE.test(raw.group)) return null;
+      if (typeof raw.recursive !== 'boolean') return null;
+      return { action: 'fs_chown', path: raw.path, owner: raw.owner, group: raw.group, recursive: raw.recursive };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;
