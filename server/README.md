@@ -19,8 +19,9 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/auth/login` | `{ username, password }` → `{ token }` |
 | `GET /api/health` | État de l'API |
 | `GET /api/modules` | Manifests des modules actifs |
-| `POST /api/system/:action` | `info`, `cpu`, `memory`, `disks` |
-| `POST /api/apache/:action` | `vhosts.list`, `vhosts.get`, `service.status`, `service.restart` (mock) |
+| `POST /api/system/:action` | `info`, `cpu`, `memory`, `disks`, `network`, `processes`, `updates`, `sensors` |
+| `POST /api/apache/:action` | `vhosts.list/get/create/update/enable/delete`, `service.status/restart/reload` |
+| `POST /api/bind9/:action` | `zones.list/get/create/delete`, `records.add/delete`, `service.status/reload` |
 
 Exemple :
 ```bash
