@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 .DS_Store
+front/dist/
+front/node_modules/
