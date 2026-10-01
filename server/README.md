@@ -24,6 +24,8 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/bind9/:action` | `zones.list/get/create/delete`, `records.add/delete`, `service.status/reload` |
 | `POST /api/users/:action` | `users.list/get/create/delete`, SFTP chrooté `/var/www/<site>` |
 | `POST /api/files/:action` | `files.list/read/write/mkdir/delete/chown` (limité à `/var/www`) |
+| `POST /api/php/:action` | `versions.list/install/remove`, `pools.list/get/create/update/delete`, `service.status/restart` |
+| `POST /api/ssl/:action` | `certs.list/info/issue/renew` (certbot --apache) |
 
 Exemple :
 ```bash

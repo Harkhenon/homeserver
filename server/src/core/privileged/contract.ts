@@ -29,6 +29,10 @@ export type PrivilegedRequest =
   | { action: 'fs_mkdir'; path: string }
   | { action: 'fs_delete'; path: string }
   | { action: 'fs_chown'; path: string; owner: string; group: string; recursive: boolean }
+  | { action: 'packages_remove'; packages: string[] }
+  | { action: 'cert_issue'; domain: string; email: string }
+  | { action: 'cert_renew'; domain: string }
+  | { action: 'cert_info'; domain: string }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -84,8 +88,11 @@ const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
 ];
 const CONFIG_PATH_RE =
-  /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|homeserver\/[A-Za-z0-9._-]+)$/;
+  /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|homeserver\/[A-Za-z0-9._-]+)$/;
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,}$/i;
 const DIR_WHITELIST: readonly string[] = [
+  '/etc/php',
+  '/etc/php-fpm.d',
   '/etc/apache2/sites-available',
   '/etc/apache2/sites-enabled',
   '/etc/httpd/conf.d',
@@ -130,7 +137,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.path !== 'string' || !CONFIG_PATH_RE.test(raw.path)) return null;
       return { action: 'read_file', path: raw.path };
     case 'list_dir':
-      if (typeof raw.path !== 'string' || !DIR_WHITELIST.includes(raw.path)) return null;
+      if (typeof raw.path !== 'string') return null;
+      if (!(DIR_WHITELIST.includes(raw.path) || /^\/etc\/php\/\d\.\d\/fpm\/pool\.d$/.test(raw.path))) return null;
       return { action: 'list_dir', path: raw.path };
     case 'unlink':
       if (typeof raw.path !== 'string' || !CONFIG_PATH_RE.test(raw.path)) return null;
@@ -179,6 +187,22 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.group !== 'string' || !UNIX_NAME_RE.test(raw.group)) return null;
       if (typeof raw.recursive !== 'boolean') return null;
       return { action: 'fs_chown', path: raw.path, owner: raw.owner, group: raw.group, recursive: raw.recursive };
+    case 'packages_remove': {
+      const packages = raw.packages;
+      if (!Array.isArray(packages) || packages.length === 0) return null;
+      if (!packages.every((p) => typeof p === 'string' && PACKAGE_RE.test(p) && p.startsWith('php'))) return null;
+      return { action: 'packages_remove', packages: packages as string[] };
+    }
+    case 'cert_issue':
+      if (typeof raw.domain !== 'string' || !ZONE_NAME_RE.test(raw.domain)) return null;
+      if (typeof raw.email !== 'string' || !EMAIL_RE.test(raw.email)) return null;
+      return { action: 'cert_issue', domain: raw.domain, email: raw.email };
+    case 'cert_renew':
+      if (typeof raw.domain !== 'string' || !ZONE_NAME_RE.test(raw.domain)) return null;
+      return { action: 'cert_renew', domain: raw.domain };
+    case 'cert_info':
+      if (typeof raw.domain !== 'string' || !ZONE_NAME_RE.test(raw.domain)) return null;
+      return { action: 'cert_info', domain: raw.domain };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;

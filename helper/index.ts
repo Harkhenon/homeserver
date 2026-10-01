@@ -257,6 +257,36 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       await exec('chown', [req.recursive ? '-R' : '', req.owner + ':' + req.group, req.path].filter(Boolean));
       return { path: req.path, owner: req.owner };
     }
+    case 'packages_remove':
+      if (family === 'debian') await exec('apt-get', ['remove', '-y', ...req.packages]);
+      else await exec('dnf', ['remove', '-y', ...req.packages]);
+      return { family, removed: req.packages };
+    case 'cert_issue': {
+      const args = ['--apache', '-d', req.domain, '--non-interactive', '--agree-tos', '-m', req.email, '--keep-until-expiring', '--redirect'];
+      const out = await exec('certbot', args);
+      return { domain: req.domain, issued: true, output: out.slice(0, 2000) };
+    }
+    case 'cert_renew': {
+      const out = await exec('certbot', ['renew', '--cert-name', req.domain, '--non-interactive']);
+      return { domain: req.domain, renewed: true, output: out.slice(0, 2000) };
+    }
+    case 'cert_info': {
+      const liveDir = `/etc/letsencrypt/live/${req.domain}`;
+      if (!existsSync(`${liveDir}/fullchain.pem`)) throw new Error(`Aucun certificat pour ${req.domain}`);
+      const { stdout } = await run('openssl', ['x509', '-in', `${liveDir}/fullchain.pem`, '-noout', '-enddate', '-subject', '-issuer'], { timeout: 15_000 });
+      const notAfter = stdout.match(/notAfter=(.+)/)?.[1] ?? '';
+      const expiresAt = notAfter ? new Date(notAfter).toISOString() : null;
+      const daysLeft = expiresAt ? Math.ceil((Date.parse(expiresAt) - Date.now()) / 86_400_000) : null;
+      const renewal = `/etc/letsencrypt/renewal/${req.domain}.conf`;
+      return {
+        domain: req.domain,
+        subject: stdout.match(/subject=(.+)/)?.[1] ?? '',
+        issuer: stdout.match(/issuer=(.+)/)?.[1] ?? '',
+        expiresAt,
+        daysLeft,
+        autoRenew: existsSync(renewal),
+      };
+    }
     case 'check_zone': {
       const checker = existsSync('/usr/sbin/named-checkzone') ? '/usr/sbin/named-checkzone' : 'named-checkzone';
       try {
