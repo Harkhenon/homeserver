@@ -35,6 +35,16 @@ export type PrivilegedRequest =
   | { action: 'cert_info'; domain: string }
   | { action: 'db_query'; sql: 'list_databases' | 'db_size' | 'list_users' | 'list_grants'; arg?: string | undefined }
   | { action: 'db_admin'; op: 'create_db' | 'drop_db' | 'create_user' | 'drop_user' | 'grant' | 'revoke' | 'set_password'; database?: string | undefined; username?: string | undefined; password?: string | undefined }
+  | { action: 'firewall_status' }
+  | { action: 'firewall_enable'; enable: boolean }
+  | { action: 'firewall_rule_add'; port: number; proto: 'tcp' | 'udp'; rule: 'allow' | 'deny' }
+  | { action: 'firewall_rule_remove'; port: number; proto: 'tcp' | 'udp'; rule: 'allow' | 'deny' }
+  | { action: 'backup_create'; site: string }
+  | { action: 'backup_list' }
+  | { action: 'backup_delete'; file: string }
+  | { action: 'backup_restore'; file: string; site: string }
+  | { action: 'cron_write'; file: string; content: string }
+  | { action: 'cron_delete'; file: string }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -90,9 +100,17 @@ const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
 ];
 const CONFIG_PATH_RE =
-  /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|homeserver\/[A-Za-z0-9._-]+)$/;
+  /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|cron.d\/homeserver-[A-Za-z0-9_-]{1,50}|homeserver\/[A-Za-z0-9._-]+)$/;
 const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
 const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
+const CRON_FILE_RE = /^homeserver-[A-Za-z0-9_-]{1,50}$/;
+const BACKUP_FILE_RE = /^homeserver-[A-Za-z0-9._-]+\.tar\.gz$/;
+const SITE_RE_BIS = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
+
+function validatePort(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 65535) return null;
+  return v;
+}
 
 function validateDbAdmin(raw: Record<string, unknown>): PrivilegedRequest | null {
   const ops = ['create_db', 'drop_db', 'create_user', 'drop_user', 'grant', 'revoke', 'set_password'];
@@ -241,6 +259,41 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       return { action: 'db_query', sql: raw.sql as 'list_databases' | 'db_size' | 'list_users' | 'list_grants', arg: raw.arg as string | undefined };
     case 'db_admin':
       return validateDbAdmin(raw);
+    case 'firewall_status':
+      return { action: 'firewall_status' };
+    case 'firewall_enable':
+      if (typeof raw.enable !== 'boolean') return null;
+      return { action: 'firewall_enable', enable: raw.enable };
+    case 'firewall_rule_add':
+    case 'firewall_rule_remove': {
+      const port = validatePort(raw.port);
+      if (port === null) return null;
+      if (raw.proto !== 'tcp' && raw.proto !== 'udp') return null;
+      if (raw.rule !== 'allow' && raw.rule !== 'deny') return null;
+      if (port === 22 || port === (Number(process.env.HS_PORT) || 3000)) return null;
+      return raw.action === 'firewall_rule_add'
+        ? { action: 'firewall_rule_add', port, proto: raw.proto as 'tcp' | 'udp', rule: raw.rule as 'allow' }
+        : { action: 'firewall_rule_remove', port, proto: raw.proto as 'tcp' | 'udp', rule: raw.rule as 'deny' };
+    }
+    case 'backup_create':
+      if (typeof raw.site !== 'string' || !SITE_RE_BIS.test(raw.site)) return null;
+      return { action: 'backup_create', site: raw.site };
+    case 'backup_list':
+      return { action: 'backup_list' };
+    case 'backup_delete':
+      if (typeof raw.file !== 'string' || !BACKUP_FILE_RE.test(raw.file)) return null;
+      return { action: 'backup_delete', file: raw.file };
+    case 'backup_restore':
+      if (typeof raw.file !== 'string' || !BACKUP_FILE_RE.test(raw.file)) return null;
+      if (typeof raw.site !== 'string' || !SITE_RE_BIS.test(raw.site)) return null;
+      return { action: 'backup_restore', file: raw.file, site: raw.site };
+    case 'cron_write':
+      if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
+      if (typeof raw.content !== 'string' || raw.content.length > 10_000 || raw.content.includes('\n\n\n')) return null;
+      return { action: 'cron_write', file: raw.file, content: raw.content };
+    case 'cron_delete':
+      if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
+      return { action: 'cron_delete', file: raw.file };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;

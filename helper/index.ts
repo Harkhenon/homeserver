@@ -340,6 +340,105 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       }
       throw Object.assign(new Error('Opération inconnue'), { code: 'UNKNOWN_ACTION' });
     }
+    case 'firewall_status': {
+      const ufw = await tryExec('ufw', ['status']);
+      if (ufw !== null) {
+        return {
+          backend: 'ufw',
+          active: ufw.includes('Status: active'),
+          rules: ufw.split('\n').filter((l) => /\s\d+(\/tcp|\/udp|\s)/.test(l)).map((l) => l.trim()),
+        };
+      }
+      const fwalld = await tryExec('firewall-cmd', ['--list-all']);
+      if (fwalld !== null) {
+        const ports = (fwalld.match(/ports:\s*(.+)/)?.[1] ?? '').trim().split(/\s+/).filter(Boolean);
+        return {
+          backend: 'firewalld',
+          active: fwalld.includes('active'),
+          rules: ports,
+        };
+      }
+      throw new Error('Aucun pare-feu trouvé (ufw ou firewalld requis)');
+    }
+    case 'firewall_enable': {
+      if (req.enable) {
+        const ufw = await tryExec('ufw', ['--version']);
+        if (ufw !== null) {
+          await exec('bash', ['-c', 'echo y | ufw enable']);
+          await exec('ufw', ['default', 'deny', 'incoming']);
+          await exec('ufw', ['default', 'allow', 'outgoing']);
+        } else {
+          await exec('systemctl', ['enable', '--now', 'firewalld']);
+        }
+        return { active: true };
+      }
+      const ufw = await tryExec('ufw', ['--version']);
+      if (ufw !== null) await exec('ufw', ['disable']);
+      else await exec('systemctl', ['stop', 'firewalld']);
+      return { active: false };
+    }
+    case 'firewall_rule_add':
+    case 'firewall_rule_remove': {
+      const ufw = await tryExec('ufw', ['--version']);
+      const spec = `${req.port}/${req.proto}`;
+      const verb = req.action === 'firewall_rule_add' ? (req.rule === 'allow' ? 'allow' : 'deny') : 'delete';
+      if (ufw !== null) {
+        if (req.action === 'firewall_rule_add' && req.rule === 'deny') {
+          throw new Error('ufw ne supporte pas deny par port (politique deny incoming par défaut)');
+        }
+        await exec('ufw', [verb, spec]);
+      } else {
+        if (req.action === 'firewall_rule_add') {
+          await exec('firewall-cmd', ['--add-port=' + spec, '--permanent']);
+        } else {
+          await exec('firewall-cmd', ['--remove-port=' + spec, '--permanent']);
+        }
+        await exec('firewall-cmd', ['--reload']);
+      }
+      return { port: req.port, proto: req.proto, rule: req.rule, applied: true };
+    }
+    case 'backup_create': {
+      mkdirSync('/var/backups/homeserver', { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+      const file = `homeserver-${req.site}-${stamp}.tar.gz`;
+      const target = `/var/backups/homeserver/${file}`;
+      await exec('tar', ['-czf', target, '-C', '/var/www', req.site]);
+      const st = statSync(target);
+      return { file, site: req.site, sizeBytes: st.size, createdAt: new Date().toISOString() };
+    }
+    case 'backup_list': {
+      const dir = '/var/backups/homeserver';
+      if (!existsSync(dir)) return { backups: [] };
+      const backups = readdirSync(dir).filter((f) => /^homeserver-[A-Za-z0-9._-]+\.tar\.gz$/.test(f)).map((f) => {
+        const st = statSync(`${dir}/${f}`);
+        const m = f.match(/^homeserver-(.+?)-\d{4}-\d{2}-\d{2}/);
+        return { file: f, site: m?.[1] ?? 'unknown', sizeBytes: st.size, createdAt: st.mtime.toISOString() };
+      }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return { backups };
+    }
+    case 'backup_delete': {
+      const target = `/var/backups/homeserver/${req.file}`;
+      if (!existsSync(target)) throw new Error('Sauvegarde introuvable');
+      unlinkSync(target);
+      return { file: req.file, deleted: true };
+    }
+    case 'backup_restore': {
+      const target = `/var/backups/homeserver/${req.file}`;
+      if (!existsSync(target)) throw new Error('Sauvegarde introuvable');
+      await exec('tar', ['-xzf', target, '-C', '/var/www']);
+      return { file: req.file, site: req.site, restored: true };
+    }
+    case 'cron_write': {
+      const path = `/etc/cron.d/${req.file}`;
+      writeFileSync(path, req.content.endsWith('\n') ? req.content : req.content + '\n', { mode: 0o644 });
+      return { file: req.file, written: true };
+    }
+    case 'cron_delete': {
+      const path = `/etc/cron.d/${req.file}`;
+      if (!existsSync(path)) throw new Error('Tâche introuvable');
+      unlinkSync(path);
+      return { file: req.file, deleted: true };
+    }
     case 'check_zone': {
       const checker = existsSync('/usr/sbin/named-checkzone') ? '/usr/sbin/named-checkzone' : 'named-checkzone';
       try {

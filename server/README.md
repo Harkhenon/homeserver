@@ -27,6 +27,10 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/php/:action` | `versions.list/install/remove`, `pools.list/get/create/update/delete`, `service.status/restart` |
 | `POST /api/ssl/:action` | `certs.list/info/issue/renew` (certbot --apache) |
 | `POST /api/mariadb/:action` | `dbs.list/size/create/delete`, `users.list/create/delete/setPassword`, `grants.list/grant/revoke`, `service.status/restart` |
+| `POST /api/cron/:action` | `jobs.list/get/create/delete` (limités à /etc/cron.d/homeserver-*) |
+| `POST /api/backups/:action` | `backups.list/create/delete/restore` (tar.gz /var/www/<site>) |
+| `POST /api/firewall/:action` | `status`, `enable`, `rules.add/remove` (ufw/firewalld) |
+| `POST /api/monitor/:action` | `history`, `latest`, `summary` (échantillons 1/min, 12h) |
 
 Exemple :
 ```bash
