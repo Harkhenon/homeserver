@@ -287,6 +287,59 @@ async function handleRequest(raw: unknown): Promise<unknown> {
         autoRenew: existsSync(renewal),
       };
     }
+    case 'db_query': {
+      if (req.sql === 'list_databases') {
+        const out = await exec('mariadb', ['-N', '-B', '-e', 'SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ("mysql","information_schema","performance_schema","sys")']);
+        return { databases: out.trim().split('\n').filter(Boolean) };
+      }
+      if (req.sql === 'db_size') {
+        const out = await exec('mariadb', ['-N', '-B', '-e', `SELECT COALESCE(ROUND(SUM(data_length+index_length)/1024/1024,2),0) FROM information_schema.tables WHERE table_schema='${req.arg}'`]);
+        return { database: req.arg, sizeMb: Number(out.trim()) };
+      }
+      if (req.sql === 'list_users') {
+        const out = await exec('mariadb', ['-N', '-B', '-e', 'SELECT user, host FROM mysql.user WHERE user NOT IN ("root","mysql","mariadb.sys","mariadb")']);
+        const users = out.trim().split('\n').filter(Boolean).map((l) => { const [user, host] = l.split('\t'); return { user, host: host ?? '%' }; });
+        return { users };
+      }
+      const out = await exec('mariadb', ['-N', '-B', '-e', 'SELECT user, host, Db, privilege_type FROM mysql.db WHERE user NOT IN ("root")']);
+      const grants = out.trim().split('\n').filter(Boolean).map((l) => { const [user, host, db, priv] = l.split('\t'); return { user: user ?? '', host: host ?? '', database: db ?? '', privilege: priv ?? '' }; });
+      return { grants };
+    }
+    case 'db_admin': {
+      const sql = (s: string) => exec('mariadb', ['-e', s]);
+      switch (req.op) {
+        case 'create_db':
+          await sql(`CREATE DATABASE IF NOT EXISTS \`${req.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+          return { database: req.database, created: true };
+        case 'drop_db':
+          await sql(`DROP DATABASE IF EXISTS \`${req.database}\`;`);
+          return { database: req.database, dropped: true };
+        case 'create_user': {
+          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'%' IDENTIFIED BY '${req.password}';`);
+          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'localhost' IDENTIFIED BY '${req.password}';`);
+          return { username: req.username, created: true };
+        }
+        case 'drop_user':
+          await sql(`DROP USER IF EXISTS '${req.username}'@'%';`);
+          await sql(`DROP USER IF EXISTS '${req.username}'@'localhost';`);
+          return { username: req.username, dropped: true };
+        case 'grant':
+          await sql(`GRANT ALL PRIVILEGES ON \`${req.database}\`.* TO '${req.username}'@'%';`);
+          await sql(`GRANT ALL PRIVILEGES ON \`${req.database}\`.* TO '${req.username}'@'localhost';`);
+          await sql('FLUSH PRIVILEGES;');
+          return { database: req.database, username: req.username, granted: true };
+        case 'revoke':
+          await sql(`REVOKE ALL PRIVILEGES ON \`${req.database}\`.* FROM '${req.username}'@'%';`);
+          await sql(`REVOKE ALL PRIVILEGES ON \`${req.database}\`.* FROM '${req.username}'@'localhost';`);
+          await sql('FLUSH PRIVILEGES;');
+          return { database: req.database, username: req.username, revoked: true };
+        case 'set_password':
+          await sql(`ALTER USER '${req.username}'@'%' IDENTIFIED BY '${req.password}';`);
+          await sql(`ALTER USER '${req.username}'@'localhost' IDENTIFIED BY '${req.password}';`);
+          return { username: req.username, updated: true };
+      }
+      throw Object.assign(new Error('Opération inconnue'), { code: 'UNKNOWN_ACTION' });
+    }
     case 'check_zone': {
       const checker = existsSync('/usr/sbin/named-checkzone') ? '/usr/sbin/named-checkzone' : 'named-checkzone';
       try {

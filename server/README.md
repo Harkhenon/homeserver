@@ -17,7 +17,7 @@ Panel de gestion de serveur web/hébergement.
 | Route | Description |
 |---|---|
 | `POST /api/auth/login` | `{ username, password }` → `{ token }` |
-| `GET /api/health` | État de l'API |
+| `GET /api/health` | État de l'API + santé par module (`ping` RPC) |
 | `GET /api/modules` | Manifests des modules actifs |
 | `POST /api/system/:action` | `info`, `cpu`, `memory`, `disks`, `network`, `processes`, `updates`, `sensors` |
 | `POST /api/apache/:action` | `vhosts.list/get/create/update/enable/delete`, `service.status/restart/reload` |
@@ -26,6 +26,7 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/files/:action` | `files.list/read/write/mkdir/delete/chown` (limité à `/var/www`) |
 | `POST /api/php/:action` | `versions.list/install/remove`, `pools.list/get/create/update/delete`, `service.status/restart` |
 | `POST /api/ssl/:action` | `certs.list/info/issue/renew` (certbot --apache) |
+| `POST /api/mariadb/:action` | `dbs.list/size/create/delete`, `users.list/create/delete/setPassword`, `grants.list/grant/revoke`, `service.status/restart` |
 
 Exemple :
 ```bash

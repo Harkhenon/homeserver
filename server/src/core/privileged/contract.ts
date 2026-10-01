@@ -33,6 +33,8 @@ export type PrivilegedRequest =
   | { action: 'cert_issue'; domain: string; email: string }
   | { action: 'cert_renew'; domain: string }
   | { action: 'cert_info'; domain: string }
+  | { action: 'db_query'; sql: 'list_databases' | 'db_size' | 'list_users' | 'list_grants'; arg?: string | undefined }
+  | { action: 'db_admin'; op: 'create_db' | 'drop_db' | 'create_user' | 'drop_user' | 'grant' | 'revoke' | 'set_password'; database?: string | undefined; username?: string | undefined; password?: string | undefined }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -89,6 +91,35 @@ const SERVICE_UNITS: readonly ServiceUnitName[] = [
 ];
 const CONFIG_PATH_RE =
   /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|homeserver\/[A-Za-z0-9._-]+)$/;
+const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
+const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
+
+function validateDbAdmin(raw: Record<string, unknown>): PrivilegedRequest | null {
+  const ops = ['create_db', 'drop_db', 'create_user', 'drop_user', 'grant', 'revoke', 'set_password'];
+  if (typeof raw.op !== 'string' || !ops.includes(raw.op)) return null;
+  const op = raw.op as 'create_db' | 'drop_db' | 'create_user' | 'drop_user' | 'grant' | 'revoke' | 'set_password';
+  const needDb = op === 'create_db' || op === 'drop_db' || op === 'grant' || op === 'revoke';
+  const needUser = op === 'create_user' || op === 'drop_user' || op === 'grant' || op === 'revoke' || op === 'set_password';
+  const needPassword = op === 'create_user' || op === 'set_password';
+  let database: string | undefined;
+  let username: string | undefined;
+  let password: string | undefined;
+  if (needDb) {
+    if (typeof raw.database !== 'string' || !DB_NAME_RE.test(raw.database)) return null;
+    database = raw.database;
+  }
+  if (needUser) {
+    if (typeof raw.username !== 'string' || !DB_USER_RE.test(raw.username) || raw.username === 'root') return null;
+    username = raw.username;
+  }
+  if (needPassword) {
+    if (typeof raw.password !== 'string' || raw.password.length < 8 || raw.password.length > 200) return null;
+    password = raw.password;
+  }
+  if (op === 'drop_db' && ['mysql', 'information_schema', 'performance_schema', 'sys'].includes(database ?? '')) return null;
+  return { action: 'db_admin', op, database, username, password };
+}
+
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,}$/i;
 const DIR_WHITELIST: readonly string[] = [
   '/etc/php',
@@ -203,6 +234,13 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'cert_info':
       if (typeof raw.domain !== 'string' || !ZONE_NAME_RE.test(raw.domain)) return null;
       return { action: 'cert_info', domain: raw.domain };
+    case 'db_query':
+      if (typeof raw.sql !== 'string' || !['list_databases', 'db_size', 'list_users', 'list_grants'].includes(raw.sql)) return null;
+      if (raw.arg !== undefined && typeof raw.arg !== 'string') return null;
+      if (raw.sql === 'db_size' && (typeof raw.arg !== 'string' || !DB_NAME_RE.test(raw.arg))) return null;
+      return { action: 'db_query', sql: raw.sql as 'list_databases' | 'db_size' | 'list_users' | 'list_grants', arg: raw.arg as string | undefined };
+    case 'db_admin':
+      return validateDbAdmin(raw);
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;
