@@ -17,7 +17,7 @@ export type PrivilegedRequest =
   | { action: 'read_file'; path: string }
   | { action: 'list_dir'; path: string }
   | { action: 'unlink'; path: string }
-  | { action: 'site_enable'; site: string; enable: boolean }
+  | { action: 'site_enable'; site: string; enable: boolean; web: 'apache' | 'nginx' }
   | { action: 'pending_updates' }
   | { action: 'check_zone'; zone: string; file: string }
   | { action: 'user_create'; username: string; password: string; home: string; shell: string }
@@ -45,6 +45,12 @@ export type PrivilegedRequest =
   | { action: 'backup_restore'; file: string; site: string }
   | { action: 'cron_write'; file: string; content: string }
   | { action: 'cron_delete'; file: string }
+  | { action: 'port_check'; port: number }
+  | { action: 'node_app_create'; name: string; port: number; user: string; entry: string }
+  | { action: 'node_app_delete'; name: string }
+  | { action: 'node_app_list' }
+  | { action: 'node_app_service'; name: string; verb: 'start' | 'stop' | 'restart' | 'status' }
+  | { action: 'web_server_detect' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -88,6 +94,9 @@ export interface FsEntry {
 
 const PACKAGE_RE = /^[a-z0-9][a-z0-9.+-]{0,99}$/;
 const SITE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
+const APP_NAME_RE = /^hs-app-[a-z0-9][a-z0-9-]{0,40}$/;
+const APP_ENTRY_RE = /^(?!\.\.)([A-Za-z0-9._/-]{1,200}\.js)$/;
+const PORT_RE = /^([1-9][0-9]{0,4})$/;
 const UNIX_NAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
 const FS_PATH_RE = /^\/var\/www(\/[A-Za-z0-9._@ -]+)*\/?$/;
 const FS_SUB_RE = /^\/var\/www\/[A-Za-z0-9._@ -][A-Za-z0-9._@ \/-]*$/;
@@ -99,8 +108,7 @@ function isSafeFsPath(path: string, re: RegExp): boolean {
 const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
 ];
-const CONFIG_PATH_RE =
-  /^\/etc\/(apache2\/sites-(available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(conf\.d|sites-(available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|cron.d\/homeserver-[A-Za-z0-9_-]{1,50}|homeserver\/[A-Za-z0-9._-]+)$/;
+const CONFIG_PATH_RE =  /^\/etc\/((apache2|nginx)\/sites-(available|enabled)|httpd\/(conf\.d|sites-(available|enabled)))\/[A-Za-z0-9._-]+\.conf|\/etc\/(bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|cron.d\/homeserver-[A-Za-z0-9_-]{1,50}|homeserver\/[A-Za-z0-9._-]+)$/;
 const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
 const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
 const CRON_FILE_RE = /^homeserver-[A-Za-z0-9_-]{1,50}$/;
@@ -142,6 +150,8 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,}$/i;
 const DIR_WHITELIST: readonly string[] = [
   '/etc/php',
   '/etc/php-fpm.d',
+  '/etc/nginx/sites-available',
+  '/etc/nginx/sites-enabled',
   '/etc/apache2/sites-available',
   '/etc/apache2/sites-enabled',
   '/etc/httpd/conf.d',
@@ -195,7 +205,30 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'site_enable':
       if (typeof raw.site !== 'string' || !SITE_RE.test(raw.site)) return null;
       if (typeof raw.enable !== 'boolean') return null;
-      return { action: 'site_enable', site: raw.site, enable: raw.enable };
+      if (raw.web !== 'apache' && raw.web !== 'nginx') return null;
+      const web = raw.web;
+      return { action: 'site_enable', site: raw.site, enable: raw.enable, web };
+    case 'port_check':
+      if (typeof raw.port !== 'number' || !Number.isInteger(raw.port) || raw.port < 1 || raw.port > 65535) return null;
+      if (raw.port < 1024) return null;
+      return { action: 'port_check', port: raw.port };
+    case 'node_app_create':
+      if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
+      if (typeof raw.port !== 'number' || !Number.isInteger(raw.port) || raw.port < 1024 || raw.port > 65535) return null;
+      if (typeof raw.user !== 'string' || !UNIX_NAME_RE.test(raw.user) || raw.user === 'root') return null;
+      if (typeof raw.entry !== 'string' || !APP_ENTRY_RE.test(raw.entry) || raw.entry.includes('..')) return null;
+      return { action: 'node_app_create', name: raw.name, port: raw.port, user: raw.user, entry: raw.entry };
+    case 'node_app_delete':
+      if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
+      return { action: 'node_app_delete', name: raw.name };
+    case 'node_app_list':
+      return { action: 'node_app_list' };
+    case 'node_app_service':
+      if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
+      if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'status'].includes(raw.verb)) return null;
+      return { action: 'node_app_service', name: raw.name, verb: raw.verb as 'start' | 'stop' | 'restart' | 'status' };
+    case 'web_server_detect':
+      return { action: 'web_server_detect' };
     case 'pending_updates':
       return { action: 'pending_updates' };
     case 'check_zone':

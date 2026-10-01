@@ -31,6 +31,8 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/backups/:action` | `backups.list/create/delete/restore` (tar.gz /var/www/<site>) |
 | `POST /api/firewall/:action` | `status`, `enable`, `rules.add/remove` (ufw/firewalld) |
 | `POST /api/monitor/:action` | `history`, `latest`, `summary` (échantillons 1/min, 12h) |
+| `POST /api/node/:action` | `apps.list/create/delete/service`, `ports.check` — apps Node SSR en systemd `hs-app-*`, port dédié, proxy Apache/Nginx |
+| `POST /api/nginx/:action` | `vhosts.list/get/create/delete`, `service.status/reload` — alternative à Apache, PHP-FPM ou proxy Node |
 
 Exemple :
 ```bash

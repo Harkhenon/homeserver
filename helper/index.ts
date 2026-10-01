@@ -166,15 +166,99 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       return { removed: req.path };
     }
     case 'site_enable': {
-      const paths = siteEnablePaths(req.site);
-      if (!paths) throw new Error('Layout Apache inconnu');
-      if (!existsSync(paths.available)) throw new Error(`Site introuvable: ${req.site}`);
+      const base = req.web === 'nginx' ? '/etc/nginx' : (existsSync('/etc/apache2/sites-available') ? '/etc/apache2' : '/etc/httpd');
+      const sub = existsSync(`${base}/sites-available`) ? 'sites-available' : 'conf.d';
+      const available = `${base}/${sub}/${req.site}`;
+      const enabledDir = existsSync(`${base}/sites-enabled`) ? `${base}/sites-enabled` : `${base}/conf.d`;
+      const enabled = `${enabledDir}/${req.site}`;
+      if (!existsSync(available)) throw new Error(`Site introuvable: ${req.site}`);
       if (req.enable) {
-        if (!existsSync(paths.enabled)) symlinkSync(paths.available, paths.enabled);
+        if (!existsSync(enabledDir)) mkdirSync(enabledDir, { recursive: true });
+        if (!existsSync(enabled)) symlinkSync(available, enabled);
       } else {
-        if (existsSync(paths.enabled)) unlinkSync(paths.enabled);
+        if (existsSync(enabled)) unlinkSync(enabled);
       }
-      return { site: req.site, enabled: req.enable };
+      return { site: req.site, enabled: req.enable, web: req.web };
+    }
+    case 'port_check': {
+      const { execFileSync } = await import('node:child_process');
+      try {
+        execFileSync('ss', ['-tln'], { timeout: 10_000 });
+      } catch {
+        return { port: req.port, free: true, checked: false };
+      }
+      const { stdout } = await run('ss', ['-tln', `-Sport = :${req.port}`], { timeout: 10_000 });
+      return { port: req.port, free: !stdout.includes(`:${req.port} `) };
+    }
+    case 'node_app_create': {
+      const unit = `/etc/systemd/system/${req.name}.service`;
+      if (existsSync(unit)) throw new Error(`L'application ${req.name} existe déjà`);
+      const appDir = `/var/www/apps/${req.name}`;
+      if (!existsSync(appDir)) throw new Error(`Dossier applicatif manquant: ${appDir} (créez-le via files.mkdir et déposez le code)`);
+      const entry = `${appDir}/${req.entry}`;
+      if (!existsSync(entry)) throw new Error(`Point d'entrée introuvable: ${entry}`);
+      const unitContent = `[Unit]
+Description=Homeserver Node app ${req.name}
+After=network.target
+
+[Service]
+Type=simple
+User=${req.user}
+WorkingDirectory=${appDir}
+ExecStart=/usr/bin/env node ${entry}
+Environment=PORT=${req.port}
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`;
+      writeFileSync(unit, unitContent, { mode: 0o644 });
+      await exec('systemctl', ['daemon-reload']);
+      await exec('systemctl', ['enable', '--now', req.name]);
+      return { name: req.name, port: req.port, created: true };
+    }
+    case 'node_app_delete': {
+      const unit = `/etc/systemd/system/${req.name}.service`;
+      if (!existsSync(unit)) throw new Error(`Application introuvable: ${req.name}`);
+      await exec('systemctl', ['stop', req.name]);
+      await exec('systemctl', ['disable', req.name]);
+      unlinkSync(unit);
+      await exec('systemctl', ['daemon-reload']);
+      return { name: req.name, deleted: true };
+    }
+    case 'node_app_list': {
+      if (!existsSync('/etc/systemd/system')) return { apps: [] };
+      const apps = readdirSync('/etc/systemd/system')
+        .filter((f) => f.startsWith('hs-app-') && f.endsWith('.service'))
+        .map((f) => f.replace(/\.service$/, ''));
+      const result = await Promise.all(apps.map(async (name) => {
+        const content = readFileSync(`/etc/systemd/system/${name}.service`, 'utf8');
+        const port = Number(content.match(/Environment=PORT=(\d+)/)?.[1] ?? 0);
+        const user = content.match(/User=(.+)/)?.[1] ?? '';
+        const active = (await tryExec('systemctl', ['is-active', name]) ?? '').trim() === 'active';
+        return { name, port, user, active };
+      }));
+      return { apps: result };
+    }
+    case 'node_app_service': {
+      if (req.verb === 'status') {
+        const active = (await tryExec('systemctl', ['is-active', req.name]) ?? '').trim() === 'active';
+        const enabled = (await tryExec('systemctl', ['is-enabled', req.name]) ?? '').trim() === 'enabled';
+        return { name: req.name, active, enabled };
+      }
+      await exec('systemctl', [req.verb, req.name]);
+      return { name: req.name, verb: req.verb };
+    }
+    case 'web_server_detect': {
+      const servers: Array<{ name: 'apache' | 'nginx'; unit: string; installed: boolean; active: boolean }> = [];
+      for (const [name, unit] of [['apache', 'apache2'], ['nginx', 'nginx']] as const) {
+        const installed = (await tryExec('sh', ['-c', `command -v ${unit} || command -v httpd`])) !== null;
+        const active = installed ? (await tryExec('systemctl', ['is-active', unit]) ?? '').trim() === 'active' : false;
+        servers.push({ name, unit: (await tryExec('sh', ['-c', `command -v ${unit}`])) ? unit : unit, installed, active });
+      }
+      return { servers };
     }
     case 'pending_updates':
       return handlePendingUpdates(family);

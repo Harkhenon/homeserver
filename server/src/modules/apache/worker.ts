@@ -14,6 +14,7 @@ interface Vhost {
   ssl: boolean;
   phpVersion: string | null;
   serverAdmin: string | null;
+  nodePort: number | null;
   confFile: string | null;
 }
 
@@ -43,6 +44,7 @@ function parseVhostConf(site: string, content: string, enabled: boolean): Vhost 
     ...(content.matchAll(/ServerAlias\s+(.+)/gi) ?? []),
   ].flatMap((m) => String(m[1]).trim().split(/\s+/));
   const ssl = /<VirtualHost[^>]*:443>/i.test(content) || /SSLEngine\s+on/i.test(content);
+  const nodePort = Number(content.match(/ProxyPass\s+\/\s+http:\/\/127\.0\.0\.1:(\d+)/i)?.[1] ?? 0) || null;
   const phpMatch = content.match(/php(\d)\.(\d)-fpm\.sock/i) ?? content.match(/proxy:unix\/run\/php\/php(\d)\.(\d)-fpm/);
   const phpVersion = phpMatch ? `${phpMatch[1]}.${phpMatch[2]}` : null;
   return {
@@ -53,6 +55,7 @@ function parseVhostConf(site: string, content: string, enabled: boolean): Vhost 
     aliases,
     ssl,
     phpVersion,
+    nodePort,
     serverAdmin,
     confFile: site,
   };
@@ -79,6 +82,7 @@ function renderVhostConf(input: {
   docroot: string;
   serverAdmin: string | null;
   phpVersion: string | null;
+  nodePort: number | null;
   ssl: boolean;
 }): string {
   const serverAlias = input.aliases.length > 0 ? `  ServerAlias ${input.aliases.join(' ')}\n` : '';
@@ -92,16 +96,27 @@ function renderVhostConf(input: {
   </FilesMatch>
 `
     : '';
-  const base = `<VirtualHost *:80>
-  ServerName ${input.domain}
-${serverAlias}${admin}  DocumentRoot ${input.docroot}
+  const proxyBlock = input.nodePort
+    ? `
+  ProxyPreserveHost On
+  ProxyPass / http://127.0.0.1:${input.nodePort}/
+  ProxyPassReverse / http://127.0.0.1:${input.nodePort}/
+`
+    : '';
+  const dirBlock = input.docroot
+    ? `
+  DocumentRoot ${input.docroot}
 
   <Directory ${input.docroot}>
     Options -Indexes +FollowSymLinks
     AllowOverride All
     Require all granted
   </Directory>
-${phpBlock}
+`
+    : '';
+  const base = `<VirtualHost *:80>
+  ServerName ${input.domain}
+${serverAlias}${admin}${dirBlock}${phpBlock}${proxyBlock}
   ErrorLog \${APACHE_LOG_DIR}/error.log
   CustomLog \${APACHE_LOG_DIR}/access.log combined
 </VirtualHost>
@@ -139,7 +154,7 @@ async function listVhosts(): Promise<Vhost[]> {
   return vhosts;
 }
 
-function validateVhostInput(payload: unknown): { domain: string; aliases: string[]; docroot: string; serverAdmin: string | null; phpVersion: string | null; ssl: boolean } {
+function validateVhostInput(payload: unknown): { domain: string; aliases: string[]; docroot: string; serverAdmin: string | null; phpVersion: string | null; nodePort: number | null; ssl: boolean } {
   const p = (payload ?? {}) as Record<string, unknown>;
   const domain = typeof p.domain === 'string' ? p.domain.trim().toLowerCase() : '';
   if (!DOMAIN_RE.test(domain)) throw new Error('Domaine invalide');
@@ -151,7 +166,9 @@ function validateVhostInput(payload: unknown): { domain: string; aliases: string
   const serverAdmin = typeof p.serverAdmin === 'string' && p.serverAdmin.includes('@') ? p.serverAdmin.trim() : null;
   const phpVersion = typeof p.phpVersion === 'string' && /^\d\.\d$/.test(p.phpVersion) ? p.phpVersion : null;
   const ssl = p.ssl === true;
-  return { domain, aliases, docroot, serverAdmin, phpVersion, ssl };
+  const nodePort = typeof p.nodePort === 'number' && Number.isInteger(p.nodePort) && p.nodePort >= 1024 && p.nodePort <= 65535 ? p.nodePort : null;
+  if (nodePort !== null && !docroot) throw new Error('Proxy Node : docroot requis en secours ou omis, mais domain valide obligatoire');
+  return { domain, aliases, docroot, serverAdmin, phpVersion, nodePort, ssl };
 }
 
 async function serviceStatus(): Promise<ServiceStatusResult> {
@@ -186,7 +203,7 @@ const definition: ModuleDefinition = {
         if (existsSync(confPath(site))) throw new Error(`Un virtualhost ${input.domain} existe déjà`);
         const content = renderVhostConf(input);
         await callHelper({ action: 'write_config', path: confPath(site), content });
-        if (enable) await callHelper({ action: 'site_enable', site, enable: true });
+        if (enable) await callHelper({ action: 'site_enable', site, enable: true, web: 'apache' as const });
         return { id: input.domain, enabled: enable, confFile: site };
       },
     },
@@ -200,7 +217,7 @@ const definition: ModuleDefinition = {
         const enabled = await listEnabledSites();
         const oldContent = await readSite(site);
         const old = parseVhostConf(site, oldContent, enabled.has(site));
-        const input = validateVhostInput({ domain: p.domain ?? old.domain, aliases: p.aliases ?? old.aliases, docroot: p.docroot ?? old.docroot, serverAdmin: p.serverAdmin ?? old.serverAdmin, phpVersion: p.phpVersion ?? old.phpVersion, ssl: p.ssl ?? old.ssl });
+        const input = validateVhostInput({ domain: p.domain ?? old.domain, aliases: p.aliases ?? old.aliases, docroot: p.docroot ?? old.docroot, serverAdmin: p.serverAdmin ?? old.serverAdmin, phpVersion: p.phpVersion ?? old.phpVersion, nodePort: p.nodePort ?? old.nodePort, ssl: p.ssl ?? old.ssl });
         const content = renderVhostConf(input);
         await callHelper({ action: 'write_config', path: confPath(site), content });
         return { id: old.id, updated: true };
@@ -214,7 +231,7 @@ const definition: ModuleDefinition = {
         if (!id) throw new Error('id requis');
         const site = id.endsWith('.conf') ? id : `${id}.conf`;
         const enabled = p.enabled !== false;
-        await callHelper({ action: 'site_enable', site, enable: enabled });
+        await callHelper({ action: 'site_enable', site, enable: enabled, web: 'apache' as const });
         return { id, enabled };
       },
     },
@@ -226,7 +243,7 @@ const definition: ModuleDefinition = {
         if (!id) throw new Error('id requis');
         const site = id.endsWith('.conf') ? id : `${id}.conf`;
         if (!SITE_FILE_RE.test(site)) throw new Error('Nom de fichier invalide');
-        await callHelper({ action: 'site_enable', site, enable: false });
+        await callHelper({ action: 'site_enable', site, enable: false, web: 'apache' as const });
         await callHelper({ action: 'unlink', path: confPath(site) });
         return { id, deleted: true };
       },
