@@ -59,12 +59,22 @@ async function main() {
   ok(`Helper opérationnel (famille: ${echo.family})`);
 
   const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
-  const adminPassword = sh('openssl rand -base64 12');
-  const jwtSecret = sh('openssl rand -hex 32');
-  const port = (await rl.question("Port de l'API [3000]: ")) || '3000';
-  const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
-  const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
-  const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
+  const envPath = `${installDir}/.env`;
+  let adminPassword = sh('openssl rand -base64 12');
+  if (existsSync(envPath)) {
+    const existing = readFileSync(envPath, 'utf8');
+    const getUser = (re) => existing.match(re)?.[1] ?? null;
+    const existingUser = getUser(/^HS_ADMIN_USER=(.+)$/m);
+    const existingPassword = getUser(/^HS_ADMIN_PASSWORD=(.+)$/m);
+    const existingJwt = getUser(/^HS_JWT_SECRET=(.+)$/m);
+    if (existingPassword) {
+      adminPassword = existingPassword;
+      ok(`.env existant conservé (identifiants inchangés: ${existingUser ?? adminUser})`);
+    }
+    var jwtSecret = existingJwt ?? sh('openssl rand -hex 32');
+  } else {
+    var jwtSecret = sh('openssl rand -hex 32');
+  }
 
   const env = [
     `HS_PORT=${port}`,
