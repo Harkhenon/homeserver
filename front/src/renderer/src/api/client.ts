@@ -45,6 +45,7 @@ export async function login(username: string, password: string): Promise<{ token
   });
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new ApiError(res.status, (json.error as string) ?? 'Identifiants invalides');
+  localStorage.setItem('hs_username', username);
   return json as { token: string };
 }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Paper, TextInput, PasswordInput, Button, Title, Stack, Text } from '@mantine/core';
+import { Paper, TextInput, PasswordInput, Button, Title, Stack, Text, ThemeIcon } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { IconServer2 } from '@tabler/icons-react';
 import { login, setToken } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,12 +29,17 @@ export function LoginPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Paper w={{ base: '90%', sm: 380 }} p="xl" withBorder>
-        <Title order={2} ta="center" mb="md">Homeserver</Title>
-        <Text c="dimmed" size="sm" ta="center" mb="xl">
-          Panneau d'administration
-        </Text>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <Paper w={{ base: '100%', sm: 400 }} p="xl" radius="lg" withBorder>
+        <Stack align="center" mb="xl" gap="xs">
+          <ThemeIcon size={48} radius="xl" variant="light">
+            <IconServer2 size={26} stroke={1.5} />
+          </ThemeIcon>
+          <Title order={2} ta="center">Homeserver</Title>
+          <Text c="dimmed" size="sm" ta="center">
+            Panneau d'administration
+          </Text>
+        </Stack>
         <Stack>
           <TextInput
             label="Utilisateur"

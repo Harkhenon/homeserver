@@ -10,19 +10,44 @@ export interface NavItem {
   icon: typeof IconDashboard;
 }
 
-export const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Tableau de bord', icon: IconDashboard },
-  { to: '/sites', label: 'Sites (Apache)', icon: IconWorld },
-  { to: '/sites-nginx', label: 'Sites (Nginx)', icon: IconWorld },
-  { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
-  { to: '/dns', label: 'DNS', icon: IconBinaryTree },
-  { to: '/databases', label: 'Bases de données', icon: IconDatabase },
-  { to: '/ssl', label: 'SSL', icon: IconLock },
-  { to: '/users', label: 'Utilisateurs SFTP', icon: IconUsers },
-  { to: '/files', label: 'Fichiers', icon: IconFileDescription },
-  { to: '/cron', label: 'Tâches cron', icon: IconClock },
-  { to: '/backups', label: 'Sauvegardes', icon: IconDatabaseImport },
-  { to: '/firewall', label: 'Pare-feu', icon: IconFlame },
-  { to: '/monitor', label: 'Supervision', icon: IconActivity },
-  { to: '/server', label: 'Serveur', icon: IconServer },
+export interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
+  {
+    label: 'Général',
+    items: [
+      { to: '/', label: 'Tableau de bord', icon: IconDashboard },
+      { to: '/monitor', label: 'Supervision', icon: IconActivity },
+      { to: '/server', label: 'Serveur', icon: IconServer },
+    ],
+  },
+  {
+    label: 'Hébergement',
+    items: [
+      { to: '/sites', label: 'Sites (Apache)', icon: IconWorld },
+      { to: '/sites-nginx', label: 'Sites (Nginx)', icon: IconWorld },
+      { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
+      { to: '/dns', label: 'DNS', icon: IconBinaryTree },
+      { to: '/ssl', label: 'SSL', icon: IconLock },
+    ],
+  },
+  {
+    label: 'Gestion',
+    items: [
+      { to: '/databases', label: 'Bases de données', icon: IconDatabase },
+      { to: '/users', label: 'Utilisateurs SFTP', icon: IconUsers },
+      { to: '/files', label: 'Fichiers', icon: IconFileDescription },
+    ],
+  },
+  {
+    label: 'Système',
+    items: [
+      { to: '/cron', label: 'Tâches cron', icon: IconClock },
+      { to: '/backups', label: 'Sauvegardes', icon: IconDatabaseImport },
+      { to: '/firewall', label: 'Pare-feu', icon: IconFlame },
+    ],
+  },
 ];
