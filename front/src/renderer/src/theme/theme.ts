@@ -47,9 +47,11 @@ export function buildTheme(accent: string) {
           root: {
             background: 'var(--mantine-color-dark-7)',
             borderColor: 'var(--mantine-color-dark-4)',
-            transition: 'border-color 150ms ease',
+            transition: 'border-color 150ms ease, box-shadow 150ms ease',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
             '&:hover': {
               borderColor: 'color-mix(in srgb, var(--mantine-primary-color-filled) 35%, var(--mantine-color-dark-4))',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
             },
           },
         },
@@ -128,6 +130,7 @@ export function buildTheme(accent: string) {
           content: {
             backgroundColor: 'var(--mantine-color-dark-7)',
             border: '1px solid var(--mantine-color-dark-4)',
+            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
           },
           header: { backgroundColor: 'transparent' },
         },

@@ -1,6 +1,7 @@
 import { Table, Badge, Card, SimpleGrid, Text, Group, Button } from '@mantine/core';
 import { useModuleQuery } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconServer } from '@tabler/icons-react';
 import type { ServiceStatus } from '../types';
 
 interface SysInfo {
@@ -40,7 +41,7 @@ export function ServerPage() {
 
   return (
     <div>
-      <PageHeader title="Serveur" description={i ? `${i.hostname} — ${i.distro}` : undefined} />
+      <PageHeader icon={IconServer} title="Serveur" description={i ? `${i.hostname} — ${i.distro}` : undefined} />
       <SimpleGrid cols={{ base: 1, lg: 2 }} mb="md">
         <Card withBorder p="md">
           <Text fw={600} mb="sm">Informations</Text>

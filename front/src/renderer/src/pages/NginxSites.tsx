@@ -3,6 +3,7 @@ import { Table, Badge, Button, Modal, TextInput, Switch, Stack, Select, Text } f
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconWorld } from '@tabler/icons-react';
 import type { NginxVhost } from '../types';
 
 export function NginxSitesPage() {
@@ -26,7 +27,7 @@ export function NginxSitesPage() {
   return (
     <div>
       <PageHeader
-        title="Sites Nginx"
+icon={IconWorld}         title="Sites Nginx"
         description={`${vhosts.data?.length ?? 0} virtualhost(s)`}
         actions={<Button onClick={() => setCreateOpen(true)}>Nouveau site</Button>}
       />

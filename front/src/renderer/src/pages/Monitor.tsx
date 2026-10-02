@@ -2,6 +2,7 @@ import { AreaChart } from '@mantine/charts';
 import { Card, SimpleGrid, Text, Badge } from '@mantine/core';
 import { useModuleQuery } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconActivity } from '@tabler/icons-react';
 import type { MonitorSample } from '../types';
 
 export function MonitorPage() {
@@ -21,7 +22,7 @@ export function MonitorPage() {
 
   return (
     <div>
-      <PageHeader title="Supervision" description="60 dernières minutes" />
+      <PageHeader icon={IconActivity} title="Supervision" description="60 dernières minutes" />
       <SimpleGrid cols={{ base: 1, lg: 2 }}>
         <Card withBorder p="md">
           <Text mb="sm" fw={600}>Charge CPU {last && <Badge variant="light" ml="xs">{last.cpuLoad[0]?.toFixed(2)}</Badge>}</Text>

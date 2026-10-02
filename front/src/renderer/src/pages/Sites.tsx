@@ -5,6 +5,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconWorld } from '@tabler/icons-react';
 import type { Vhost } from '../types';
 
 const PAGE_SIZE = 10;
@@ -43,7 +44,7 @@ export function SitesPage() {
   return (
     <div>
       <PageHeader
-        title="Sites Apache"
+icon={IconWorld}         title="Sites Apache"
         description={`${list.length} virtualhost(s)`}
         actions={<Button onClick={() => setCreateOpen(true)}>Nouveau site</Button>}
       />

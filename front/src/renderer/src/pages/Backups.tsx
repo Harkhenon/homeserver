@@ -3,6 +3,7 @@ import { Table, Button, Modal, TextInput, Stack, Badge } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconDatabaseImport } from '@tabler/icons-react';
 import type { BackupInfo } from '../types';
 
 export function BackupsPage() {
@@ -35,7 +36,7 @@ export function BackupsPage() {
   return (
     <div>
       <PageHeader
-        title="Sauvegardes"
+icon={IconDatabaseImport}         title="Sauvegardes"
         description="/var/backups/homeserver"
         actions={<Button onClick={() => setCreateOpen(true)}>Sauvegarder un site</Button>}
       />

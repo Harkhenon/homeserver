@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { IconDatabase } from '@tabler/icons-react';
 import { Table, Button, Modal, TextInput, Stack, Group, Badge, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
@@ -29,6 +30,7 @@ export function DatabasesPage() {
     <Group align="flex-start" grow gap="md" wrap="wrap">
       <div style={{ flex: 1, minWidth: 320 }}>
         <PageHeader
+icon={IconDatabase}
           title="Bases de données"
           actions={<Button size="xs" onClick={() => setDbOpen(true)}>Nouvelle base</Button>}
         />
@@ -49,6 +51,7 @@ export function DatabasesPage() {
 
       <div style={{ flex: 1, minWidth: 320 }}>
         <PageHeader
+icon={IconDatabase}
           title="Utilisateurs SQL"
           actions={<Button size="xs" onClick={() => setUserOpen(true)}>Nouvel utilisateur</Button>}
         />

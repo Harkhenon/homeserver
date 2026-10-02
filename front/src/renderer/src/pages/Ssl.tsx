@@ -3,6 +3,7 @@ import { Table, Button, Modal, TextInput, Stack, Badge, Group, Text } from '@man
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconLock } from '@tabler/icons-react';
 import type { CertInfo } from '../types';
 
 export function SslPage() {
@@ -27,7 +28,7 @@ export function SslPage() {
   return (
     <div>
       <PageHeader
-        title="Certificats SSL"
+icon={IconLock}         title="Certificats SSL"
         description="Let's Encrypt — renouvellement automatique"
         actions={<Button onClick={() => setIssueOpen(true)}>Émettre un certificat</Button>}
       />

@@ -3,6 +3,7 @@ import { Group, Badge, Button, Modal, NumberInput, Select, Stack, Switch, Table,
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconFlame } from '@tabler/icons-react';
 import type { FirewallStatus } from '../types';
 
 export function FirewallPage() {
@@ -38,7 +39,7 @@ export function FirewallPage() {
   return (
     <div>
       <PageHeader
-        title="Pare-feu"
+icon={IconFlame}         title="Pare-feu"
         description={data ? `Backend : ${data.backend}` : undefined}
         actions={
           <Group>

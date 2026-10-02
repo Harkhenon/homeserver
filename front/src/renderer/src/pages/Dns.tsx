@@ -3,6 +3,7 @@ import { Table, Badge, Button, Modal, TextInput, Stack, Select, Accordion, Group
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconBinaryTree } from '@tabler/icons-react';
 import type { Zone, DnsRecord } from '../types';
 
 export function DnsPage() {
@@ -16,7 +17,7 @@ export function DnsPage() {
   return (
     <div>
       <PageHeader
-        title="Zones DNS"
+icon={IconBinaryTree}         title="Zones DNS"
         description={`${zones.data?.length ?? 0} zone(s) Bind9`}
         actions={<Button onClick={() => setCreateOpen(true)}>Nouvelle zone</Button>}
       />

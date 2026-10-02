@@ -48,7 +48,7 @@ function AuthGate({ accent, onAccentChange, username, avatarSeed, onAvatarChange
 
 function Shell() {
   const [accent, setAccentState] = useState<AccentColor>(
-    (localStorage.getItem('hs_accent') as AccentColor) ?? 'blue',
+    (localStorage.getItem('hs_accent') as AccentColor) ?? 'green',
   );
   const [avatarSeed, setAvatarSeed] = useState<string>(
     localStorage.getItem('hs_avatar') ?? '',

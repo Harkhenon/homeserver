@@ -3,6 +3,7 @@ import { Table, Badge, Button, Modal, TextInput, Select, Stack, Group } from '@m
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconBrandNodejs } from '@tabler/icons-react';
 import type { NodeApp } from '../types';
 
 export function NodeAppsPage() {
@@ -36,7 +37,7 @@ export function NodeAppsPage() {
   return (
     <div>
       <PageHeader
-        title="Applications Node"
+icon={IconBrandNodejs}         title="Applications Node"
         description="Services systemd hs-app-* avec port dédié"
         actions={<Button onClick={() => setCreateOpen(true)}>Nouvelle app</Button>}
       />

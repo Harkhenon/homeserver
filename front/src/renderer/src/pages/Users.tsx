@@ -3,6 +3,7 @@ import { Table, Button, Modal, TextInput, PasswordInput, Stack, Text } from '@ma
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconUsers } from '@tabler/icons-react';
 import type { SftpUser } from '../types';
 
 export function UsersPage() {
@@ -26,7 +27,7 @@ export function UsersPage() {
   return (
     <div>
       <PageHeader
-        title="Utilisateurs SFTP"
+icon={IconUsers}         title="Utilisateurs SFTP"
         description={`${users.data?.length ?? 0} compte(s) chrooté(s) dans /var/www`}
         actions={<Button onClick={() => setCreateOpen(true)}>Nouvel utilisateur</Button>}
       />

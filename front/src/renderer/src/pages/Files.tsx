@@ -4,6 +4,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder, IconFile, IconArrowUp, IconPlus } from '@tabler/icons-react';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconFileDescription } from '@tabler/icons-react';
 import type { FsEntry } from '../types';
 
 export function FilesPage() {
@@ -31,7 +32,7 @@ export function FilesPage() {
   return (
     <div>
       <PageHeader
-        title="Fichiers"
+icon={IconFileDescription}         title="Fichiers"
         description="Explorateur /var/www"
         actions={<Button size="xs" onClick={() => setMkdirOpen(true)}>Nouveau dossier</Button>}
       />

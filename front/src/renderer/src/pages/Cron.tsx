@@ -3,6 +3,7 @@ import { Table, Button, Modal, TextInput, Stack, Select, Badge, Text } from '@ma
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { IconClock } from '@tabler/icons-react';
 import type { CronJob } from '../types';
 
 export function CronPage() {
@@ -26,7 +27,7 @@ export function CronPage() {
   return (
     <div>
       <PageHeader
-        title="Tâches cron"
+icon={IconClock}         title="Tâches cron"
         description="/etc/cron.d/homeserver-*"
         actions={<Button onClick={() => setCreateOpen(true)}>Nouvelle tâche</Button>}
       />
