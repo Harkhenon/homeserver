@@ -89,9 +89,13 @@ function CreateAppModal({ opened, onClose, onCreated }: { opened: boolean; onClo
 
   const submit = async () => {
     const appName = name.startsWith('hs-app-') ? name : `hs-app-${name}`;
-    const res = await action.run('apps.create', { name: appName, port: Number(port), user, entry });
+    const res = await action.run<{ warning?: string }>('apps.create', { name: appName, port: Number(port), user, entry });
     if (res !== null) {
-      notifications.show({ message: `App ${appName} créée`, color: 'green' });
+      if (res.warning) {
+        notifications.show({ message: `App ${appName} créée — ${res.warning}`, color: 'orange' });
+      } else {
+        notifications.show({ message: `App ${appName} créée et démarrée`, color: 'green' });
+      }
       onCreated();
     } else if (action.error) {
       notifications.show({ message: action.error, color: 'red' });

@@ -44,7 +44,7 @@ const definition: ModuleDefinition = {
         if (!ENTRY_RE.test(entry)) throw new Error('Point d\'entrée invalide (chemin .js relatif)');
         const check = await callHelper<{ port: number; free: boolean; checked?: boolean }>({ action: 'port_check', port });
         if (check.checked !== false && !check.free) throw new Error(`Port ${port} déjà utilisé`);
-        return callHelper<{ name: string; port: number; created: boolean }>({ action: 'node_app_create', name, port, user, entry });
+        return callHelper<{ name: string; port: number; created: boolean; started?: boolean; warning?: string }>({ action: 'node_app_create', name, port, user, entry });
       },
     },
     'apps.delete': {

@@ -213,7 +213,7 @@ async function handleRequest(raw: unknown): Promise<unknown> {
         if (uid !== undefined) chownSync(appDir, uid, -1);
       }
       const entry = `${appDir}/${req.entry}`;
-      if (!existsSync(entry)) throw new Error(`Point d'entrée introuvable: ${entry} (déposez votre code dans ${appDir})`);
+      const codePresent = existsSync(entry);
       const unitContent = `[Unit]
 Description=Homeserver Node app ${req.name}
 After=network.target
@@ -233,8 +233,15 @@ WantedBy=multi-user.target
 `;
       writeFileSync(unit, unitContent, { mode: 0o644 });
       await exec('systemctl', ['daemon-reload']);
-      await exec('systemctl', ['enable', '--now', req.name]);
-      return { name: req.name, port: req.port, created: true };
+      await exec('systemctl', ['enable', req.name]);
+      if (codePresent) {
+        await exec('systemctl', ['start', req.name]);
+      }
+      return {
+        name: req.name, port: req.port, created: true,
+        started: codePresent,
+        warning: codePresent ? undefined : `Code absent: déposez votre code dans ${appDir} puis démarrez l'application`,
+      };
     }
     case 'node_app_delete': {
       const unit = `/etc/systemd/system/${req.name}.service`;
