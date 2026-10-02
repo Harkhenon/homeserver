@@ -20,7 +20,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Général',
     items: [
       { to: '/', label: 'Tableau de bord', icon: IconDashboard },
-      { to: '/server', label: 'Serveur', icon: IconServer },
+      { to: '/server', label: 'Supervision', icon: IconServer },
     ],
   },
   {

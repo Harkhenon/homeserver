@@ -80,7 +80,7 @@ export function ServerPage() {
     <div>
       <PageHeader
         icon={IconServer}
-        title="Serveur"
+        title="Supervision"
         description={i ? `${i.hostname} — ${i.distro} — en ligne depuis ${fmtUptime(i.uptimeSeconds)}` : undefined}
       />
 
