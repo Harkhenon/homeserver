@@ -37,7 +37,10 @@ export function SitesPage() {
   const [filter, setFilter] = useState<'all' | ServerKind>('all');
 
   const loading = apache.loading || nginx.loading;
-  const error = apache.error ?? nginx.error;
+  const unavailable: string[] = [];
+  if (apache.error) unavailable.push('Apache');
+  if (nginx.error) unavailable.push('Nginx');
+  const error = unavailable.length === 2 ? (apache.error ?? nginx.error) : null;
 
   const rows = useMemo<SiteRow[]>(() => {
     const apacheRows = (apache.data ?? []).map((vh) => ({
@@ -86,6 +89,11 @@ export function SitesPage() {
 
   return (
     <div>
+      {unavailable.length > 0 && (
+        <Text c="dimmed" size="sm" mb="md">
+          Module{unavailable.length > 1 ? 's' : ''} {unavailable.join(' et ')} non actif — liste partielle
+        </Text>
+      )}
       <PageHeader
         icon={IconWorld}
         title="Sites"
