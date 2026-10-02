@@ -162,7 +162,7 @@ echo -e "${BOLD}→${RESET} Préparation de l'environnement (dépendances + buil
 run_step "Installation des dépendances du back" as_hs "cd '$INSTALL_DIR' && '$HS_NPM_BIN' ci --no-audit --no-fund"
 run_step "Build du back (server/dist, helper inclus)" as_hs "cd '$INSTALL_DIR' && '$HS_NPM_BIN' run build"
 test -f "$HELPER_DIR/index.js" || fail "$HELPER_DIR/index.js introuvable après build."
-test -f "$INSTALL_DIR/server/dist/src/index.js" || fail "server/dist/src/index.js introuvable après build."
+test -f "$INSTALL_DIR/server/dist/server/src/index.js" || fail "server/dist/server/src/index.js introuvable après build."
 run_step "Installation des dépendances du front" as_hs "cd '$INSTALL_DIR/front' && '$HS_NPM_BIN' ci --no-audit --no-fund"
 run_step "Build du front" as_hs "cd '$INSTALL_DIR/front' && '$HS_NPM_BIN' run build"
 test -f "$INSTALL_DIR/front/dist/index.html" || fail "front/dist/index.html introuvable après build."
@@ -195,7 +195,7 @@ Requires=hs-helper.service
 Type=simple
 User=$HS_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$HS_NODE_BIN $INSTALL_DIR/server/dist/src/index.js
+ExecStart=$HS_NODE_BIN $INSTALL_DIR/server/dist/server/src/index.js
 Restart=on-failure
 EnvironmentFile=$INSTALL_DIR/.env
 

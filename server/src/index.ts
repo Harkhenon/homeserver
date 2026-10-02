@@ -13,7 +13,7 @@ import { platform } from './core/platform/index.js';
 config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDev = __dirname.includes(`${path.sep}src`);
+const isDev = !__dirname.includes(`${path.sep}dist${path.sep}`);
 const workerDir = path.join(__dirname, 'modules');
 const workerExt = isDev ? '.ts' : '.js';
 const workerExecArgv = isDev ? ['--import', 'tsx'] : [];

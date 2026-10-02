@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch server/src/index.ts",
     "build": "tsc -p server/tsconfig.json",
-    "start": "node server/dist/index.js",
+    "start": "node server/dist/server/src/index.js",
     "typecheck": "tsc -p server/tsconfig.json --noEmit",
     "install-panel": "node scripts/install.mjs"
   },
