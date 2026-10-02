@@ -110,8 +110,9 @@ async function main() {
   ok(`Service web activé (${webUnit})`);
 
   log('Démarrage du panel...');
-  execSync('systemctl restart homeserver 2>/dev/null || true', { stdio: 'inherit' });
-  ok('Panel démarré');
+  await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'restart' });
+  await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'enable' });
+  ok('Panel démarré et activé au boot');
 
   console.log(`\n\x1b[32mInstallation terminée !\x1b[0m`);
   console.log(`  Admin      : ${adminUser} / ${adminPassword}`);

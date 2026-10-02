@@ -7,7 +7,8 @@ export type DiscoverKind = 'php';
 export type ServiceUnitName =
   | 'apache2' | 'httpd' | 'nginx'
   | 'bind9' | 'named'
-  | 'php-fpm' | 'mariadb' | 'mysqld';
+  | 'php-fpm' | 'mariadb' | 'mysqld'
+  | 'homeserver' | 'hs-helper';
 
 export type PrivilegedRequest =
   | { action: 'echo' }
@@ -107,6 +108,7 @@ function isSafeFsPath(path: string, re: RegExp): boolean {
 }
 const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
+  'homeserver', 'hs-helper',
 ];
 const CONFIG_PATH_RE =  /^\/etc\/((apache2|nginx)\/sites-(available|enabled)|httpd\/(conf\.d|sites-(available|enabled)))\/[A-Za-z0-9._-]+\.conf|\/etc\/(bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|cron.d\/homeserver-[A-Za-z0-9_-]{1,50}|homeserver\/[A-Za-z0-9._-]+)$/;
 const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
