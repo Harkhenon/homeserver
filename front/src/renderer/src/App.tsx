@@ -8,7 +8,8 @@ import { DashboardPage } from './pages/Dashboard';
 import { SitesPage } from './pages/Sites';
 import { NginxSitesPage } from './pages/NginxSites';
 import { NodeAppsPage } from './pages/NodeApps';
-import { DnsPage } from './pages/Dns';
+import { DomainsPage } from './pages/Domains';
+import { DomainDetailPage } from './pages/DomainDetail';
 import { DatabasesPage } from './pages/Databases';
 import { SslPage } from './pages/Ssl';
 import { UsersPage } from './pages/Users';
@@ -83,7 +84,8 @@ function Shell() {
             <Route path="/sites" element={<SitesPage />} />
             <Route path="/sites-nginx" element={<NginxSitesPage />} />
             <Route path="/node" element={<NodeAppsPage />} />
-            <Route path="/dns" element={<DnsPage />} />
+            <Route path="/domains" element={<DomainsPage />} />
+            <Route path="/domains/:id" element={<DomainDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />
             <Route path="/ssl" element={<SslPage />} />
             <Route path="/users" element={<UsersPage />} />

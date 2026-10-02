@@ -1,7 +1,7 @@
 import {
   IconDashboard, IconServer, IconWorld, IconBrandNodejs,
   IconDatabase, IconLock, IconUsers, IconFileDescription,
-  IconClock, IconDatabaseImport, IconFlame, IconActivity, IconBinaryTree,
+  IconClock, IconDatabaseImport, IconFlame, IconActivity,
 } from '@tabler/icons-react';
 
 export interface NavItem {
@@ -30,7 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/sites', label: 'Sites (Apache)', icon: IconWorld },
       { to: '/sites-nginx', label: 'Sites (Nginx)', icon: IconWorld },
       { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
-      { to: '/dns', label: 'DNS', icon: IconBinaryTree },
+      { to: '/domains', label: 'Domaines', icon: IconWorld },
       { to: '/ssl', label: 'SSL', icon: IconLock },
     ],
   },
