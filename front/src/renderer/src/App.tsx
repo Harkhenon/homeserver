@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { AppLayout } from './layout/AppLayout';
@@ -22,12 +22,25 @@ import type { AccentColor } from './theme/colors';
 import { buildTheme } from './theme/theme';
 import { getToken } from './api/client';
 
+interface ShellProps {
+  accent: AccentColor;
+  onAccentChange: (color: AccentColor) => void;
+}
+
+function LoginRoute() {
+  if (getToken() !== null) return <Navigate to="/" replace />;
+  return <LoginPage />;
+}
+
+function AuthGate({ accent, onAccentChange }: ShellProps) {
+  if (getToken() === null) return <Navigate to="/login" replace />;
+  return <AppLayout accent={accent} onAccentChange={onAccentChange} />;
+}
+
 function Shell() {
   const [accent, setAccentState] = useState<AccentColor>(
     (localStorage.getItem('hs_accent') as AccentColor) ?? 'blue',
   );
-  const authed = getToken() !== null;
-
   const changeAccent = (color: AccentColor) => {
     setAccentState(color);
     localStorage.setItem('hs_accent', color);
@@ -38,10 +51,8 @@ function Shell() {
       <Notifications />
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={authed ? <Navigate to="/" /> : <LoginPage />} />
-          <Route
-            element={authed ? <AppLayout accent={accent} onAccentChange={changeAccent} /> : <Navigate to="/login" />}
-          >
+          <Route path="/login" element={<LoginRoute />} />
+          <Route element={<AuthGate accent={accent} onAccentChange={changeAccent} />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/sites" element={<SitesPage />} />
             <Route path="/sites-nginx" element={<NginxSitesPage />} />
