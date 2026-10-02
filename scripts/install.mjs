@@ -62,6 +62,9 @@ async function main() {
   const adminPassword = sh('openssl rand -base64 12');
   const jwtSecret = sh('openssl rand -hex 32');
   const port = (await rl.question("Port de l'API [3000]: ")) || '3000';
+  const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
+  const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
+  const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
 
   const env = [
     `HS_PORT=${port}`,
@@ -69,7 +72,7 @@ async function main() {
     `HS_ADMIN_USER=${adminUser}`,
     `HS_ADMIN_PASSWORD=${adminPassword}`,
     `HS_USER=${user}`,
-    `HS_MODULES=system,apache`,
+    `HS_MODULES=system,${webServer},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
   ].join('\n') + '\n';
   writeFileSync(`${installDir}/.env`, env);
   ok(`.env généré (${installDir}/.env)`);
@@ -94,16 +97,17 @@ async function main() {
 
   log('Installation des paquets système (via helper)...');
   const family = echo.family;
+  const webUnit = family === 'debian' ? (webServer === 'nginx' ? 'nginx' : 'apache2') : (webServer === 'nginx' ? 'nginx' : 'httpd');
   const packages = family === 'debian'
-    ? ['apache2', ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : [])]
-    : ['httpd', ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : [])];
+    ? [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : []), ...(extras ? ['mariadb-server', 'bind9', 'certbot', 'cron'] : [])]
+    : [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : []), ...(extras ? ['mariadb-server', 'bind', 'certbot', 'cronie'] : [])];
   await callHelper({ action: 'install_packages', packages });
   ok(`Paquets installés: ${packages.join(', ')}`);
 
   log('Activation du service web (via helper)...');
-  await callHelper({ action: 'systemctl', unit: family === 'debian' ? 'apache2' : 'httpd', verb: 'enable' });
-  await callHelper({ action: 'systemctl', unit: family === 'debian' ? 'apache2' : 'httpd', verb: 'start' });
-  ok('Service web activé');
+  await callHelper({ action: 'systemctl', unit: webUnit, verb: 'enable' });
+  await callHelper({ action: 'systemctl', unit: webUnit, verb: 'start' });
+  ok(`Service web activé (${webUnit})`);
 
   log('Démarrage du panel...');
   execSync('systemctl restart homeserver 2>/dev/null || true', { stdio: 'inherit' });

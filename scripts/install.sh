@@ -37,7 +37,7 @@ INSTALL_DIR=/usr/share/homeserver
 HELPER_DIR="$INSTALL_DIR/server/dist/helper"
 
 # --- 1. Utilisateur système hs-* -------------------------------------------------
-random_name() { tr -dc 'a-z' </dev/urandom | head -c 12; }
+random_name() { head -c 256 /dev/urandom | tr -dc 'a-z' | head -c 12 || true; }
 
 HS_USER="hs-$(random_name)"
 if ! id "$HS_USER" >/dev/null 2>&1; then
@@ -101,7 +101,27 @@ case "$HS_NODE_VER" in
 esac
 echo -e "${GREEN}✓${RESET} nvm: $(as_hs '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm --version') | Node: $HS_NODE_VER ($(as_hs 'which node' || echo "$HS_NODE_BIN"))"
 
-# --- 5. Services systemd ----------------------------------------------------------
+HS_NPM_BIN="$(dirname "$HS_NODE_BIN")/npm"
+
+# --- 5. Build du panel (back + front, en tant que hs-*) ---------------------------
+echo -e "${BOLD}→${RESET} Installation des dépendances du back..."
+as_hs "'$HS_NPM_BIN' ci --no-audit --no-fund"
+echo -e "${GREEN}✓${RESET} Dépendances du back installées"
+
+echo -e "${BOLD}→${RESET} Build du back (server/dist, helper inclus)..."
+as_hs "'$HS_NPM_BIN' run build"
+test -f "$HELPER_DIR/index.js" || { echo -e "${RED}✗ $HELPER_DIR/index.js introuvable après build.${RESET}"; exit 1; }
+test -f "$INSTALL_DIR/server/dist/src/index.js" || { echo -e "${RED}✗ server/dist/src/index.js introuvable après build.${RESET}"; exit 1; }
+echo -e "${GREEN}✓${RESET} Back buildé"
+
+echo -e "${BOLD}→${RESET} Installation des dépendances du front..."
+as_hs "cd front && '$HS_NPM_BIN' ci --no-audit --no-fund"
+echo -e "${BOLD}→${RESET} Build du front..."
+as_hs "cd front && '$HS_NPM_BIN' run build"
+test -f "$INSTALL_DIR/front/dist/index.html" || { echo -e "${RED}✗ front/dist/index.html introuvable après build.${RESET}"; exit 1; }
+echo -e "${GREEN}✓${RESET} Front buildé"
+
+# --- 6. Services systemd ----------------------------------------------------------
 echo -e "${BOLD}→${RESET} Installation des services systemd..."
 
 cat > /etc/systemd/system/hs-helper.service <<UNIT
@@ -131,7 +151,7 @@ Requires=hs-helper.service
 Type=simple
 User=$HS_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$HS_NODE_BIN $INSTALL_DIR/server/dist/index.js
+ExecStart=$HS_NODE_BIN $INSTALL_DIR/server/dist/src/index.js
 Restart=on-failure
 EnvironmentFile=$INSTALL_DIR/.env
 
@@ -143,7 +163,7 @@ systemctl daemon-reload
 systemctl enable --now hs-helper
 echo -e "${GREEN}✓${RESET} Services systemd installés (hs-helper démarré)."
 
-# --- 6. Installateur interactif (en tant que hs-*) --------------------------------
+# --- 7. Installateur interactif (en tant que hs-*) --------------------------------
 echo -e "${BOLD}→${RESET} Lancement de l'installateur interactif en tant que ${HS_USER}..."
 echo
 cd "$INSTALL_DIR"
