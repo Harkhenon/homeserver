@@ -58,7 +58,7 @@ export function AppLayout({ accent, onAccentChange, username, avatarSeed, onAvat
       </AppShell.Header>
 
       <AppShell.Navbar p="xs">
-        <ScrollArea h="100%" type="hover" scrollbarSize={6}>
+        <ScrollArea h="100%" type="always" scrollbarSize={5} offsetScrollbars>
           {NAV_SECTIONS.map((section) => (
             <Box key={section.label} mb="sm">
               {!desktopCollapsed && (
