@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
 # Homeserver — bootstrap d'installation (rôle: root uniquement)
-# 1. Crée l'utilisateur système hs-* (nologin, sans mot de passe) + home
-# 2. Installe nvm + Node.js LTS en tant que hs-* dans son répertoire
-# 3. Crée /usr/share/homeserver, droits hs-* (chmod/chown)
-# 4. Vérifie les installations (en tant que hs-*)
-# 5. Installe les services systemd (hs-helper en root, homeserver en hs-*)
-# 6. Lance install.mjs en tant que hs-*
-# Usage: sudo bash scripts/install.sh
+# Usage:
+#   sudo bash scripts/install.sh                # installation
+#   sudo bash scripts/install.sh --verbose      # installation bavarde
+#   sudo bash scripts/install.sh -u|--uninstall # désinstallation complète
 set -euo pipefail
 
 BOLD='\033[1m'; CYAN='\033[1;36m'; GREEN='\033[32m'; RED='\033[31m'; DIM='\033[2m'; RESET='\033[0m'
+
+VERBOSE=false
+UNINSTALL=false
+for arg in "$@"; do
+  case "$arg" in
+    -u|--uninstall) UNINSTALL=true ;;
+    --verbose|-v) VERBOSE=true ;;
+    *) echo -e "${RED}✗ Option inconnue: $arg${RESET}"; exit 1 ;;
+  esac
+done
 
 echo -e "${CYAN}"
 cat <<'BANNER'
@@ -25,9 +32,37 @@ echo -e "${RESET}${DIM}        Panel de gestion de serveur web/hébergement${RES
 echo
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo -e "${RED}✗ L'installation requiert root (relance avec sudo).${RESET}"
+  echo -e "${RED}✗ Cette opération requiert root (relance avec sudo).${RESET}"
   exit 1
 fi
+
+fail() { echo -e "${RED}✗ $1${RESET}"; exit 1; }
+
+# --- Exécution d'une étape : verbose = sortie brute, sinon spinner ----------------
+run_step() {
+  local msg="$1"; shift
+  if $VERBOSE; then
+    echo -e "${BOLD}→${RESET} $msg"
+    "$@"
+    echo -e "${GREEN}✓${RESET} $msg"
+    return
+  fi
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏') i=0 pid
+  printf '%s  ' "$msg"
+  "$@" >/dev/null 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\b%s' "${frames[$((i % 10))]}"
+    i=$((i + 1))
+    sleep 0.1
+  done
+  if wait "$pid"; then
+    printf '\b\033[32m✓\033[0m\n'
+  else
+    printf '\b\033[31m✗\033[0m\n'
+    return 1
+  fi
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_TARGET=22
@@ -36,27 +71,49 @@ HS_HOME=/var/lib/homeserver
 INSTALL_DIR=/usr/share/homeserver
 HELPER_DIR="$INSTALL_DIR/server/dist/helper"
 
-# --- 1. Utilisateur système hs-* -------------------------------------------------
-random_name() { head -c 256 /dev/urandom | tr -dc 'a-z' | head -c 12 || true; }
+# --- Désinstallation ----------------------------------------------------------------
+if $UNINSTALL; then
+  echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
+  echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${HS_HOME}, utilisateur hs-*${RESET}"
+  read -r -p "  Continuer ? [y/N] " confirm
+  case "$confirm" in
+    y|Y|yes|oui|o) : ;;
+    *) echo "Annulé."; exit 0 ;;
+  esac
 
-HS_USER="hs-$(random_name)"
-if ! id "$HS_USER" >/dev/null 2>&1; then
-  echo -e "${BOLD}→${RESET} Création de l'utilisateur système ${HS_USER} (nologin, sans mot de passe)..."
-  useradd -r -M -s /usr/sbin/nologin -d "$HS_HOME" "$HS_USER"
+  systemctl stop homeserver hs-helper 2>/dev/null || true
+  systemctl disable homeserver hs-helper 2>/dev/null || true
+  rm -f /etc/systemd/system/homeserver.service /etc/systemd/system/hs-helper.service
+  systemctl daemon-reload
+
+  for u in $(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1}'); do
+    run_step "Suppression de l'utilisateur $u" userdel -r -f "$u" || true
+  done
+  rm -rf "$INSTALL_DIR" "$HS_HOME" /run/homeserver
+  echo -e "${GREEN}✓ Homeserver désinstallé.${RESET}"
+  exit 0
+fi
+
+# --- 1. Utilisateur système hs-* ----------------------------------------------------
+HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
+if [ -n "$HS_USER" ]; then
+  echo -e "${GREEN}✓${RESET} Utilisateur existant réutilisé: ${HS_USER} (aucun doublon créé)"
 else
-  echo -e "${GREEN}✓${RESET} Utilisateur ${HS_USER} déjà présent."
+  random_name() { head -c 256 /dev/urandom | tr -dc 'a-z' | head -c 12 || true; }
+  HS_USER="hs-$(random_name)"
+  run_step "Création de l'utilisateur système $HS_USER (nologin)" useradd -r -M -s /usr/sbin/nologin -d "$HS_HOME" "$HS_USER"
 fi
 mkdir -p "$HS_HOME"
 chown "$HS_USER":"$HS_USER" "$HS_HOME"
 chmod 750 "$HS_HOME"
-echo -e "${GREEN}✓${RESET} Utilisateur: ${HS_USER} (répertoire: $HS_HOME, accès admin: sudo -u $HS_USER <cmd>)"
+echo -e "${DIM}  répertoire: $HS_HOME — accès admin: sudo -u $HS_USER <cmd>${RESET}"
 
 NVM_DIR="$HS_HOME/.nvm"
 export NVM_DIR
-as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "cd '$HS_HOME' && $*"; }
 HS_NODE_BIN_DIR=""
+as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "cd '$HS_HOME' && $*"; }
 
-# --- 2. Node.js (nvm, en tant que hs-*) -------------------------------------------
+# --- 2. Node.js (nvm, en tant que hs-*) ---------------------------------------------
 if as_hs 'command -v node >/dev/null 2>&1'; then
   HS_NODE_MAJOR="$(as_hs 'node -e "console.log(process.versions.node.split(\".\")[0])"')"
 else
@@ -69,64 +126,48 @@ if [ "$HS_NODE_MAJOR" -ge "$NODE_MAJOR_MIN" ]; then
   echo -e "${GREEN}✓${RESET} Node.js $(as_hs 'node --version') déjà présent pour ${HS_USER}."
 else
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    echo -e "${BOLD}→${RESET} Installation de nvm pour ${HS_USER}..."
-    as_hs 'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash'
-    echo -e "${GREEN}✓${RESET} nvm installé dans $NVM_DIR"
-  else
-    echo -e "${GREEN}✓${RESET} nvm déjà présent pour ${HS_USER}."
+    run_step "Installation de nvm pour ${HS_USER}" as_hs 'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash'
   fi
-  echo -e "${BOLD}→${RESET} Installation de Node.js $NODE_TARGET (LTS) via nvm pour ${HS_USER}..."
-  as_hs '. "$NVM_DIR/nvm.sh" && nvm install '"$NODE_TARGET"' && nvm alias default '"$NODE_TARGET"
+  run_step "Installation de Node.js ${NODE_TARGET} (LTS) via nvm" as_hs '. "$NVM_DIR/nvm.sh" && nvm install '"$NODE_TARGET"' && nvm alias default '"$NODE_TARGET"
   HS_NODE_BIN="$(as_hs '. "$NVM_DIR/nvm.sh" >/dev/null && nvm which '"$NODE_TARGET")"
   HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
 fi
 
-# --- 3. Copie du panel vers /usr/share/homeserver ---------------------------------
-echo -e "${BOLD}→${RESET} Copie du panel vers ${INSTALL_DIR}..."
-mkdir -p "$INSTALL_DIR"
-tar -C "$SCRIPT_DIR" \
-  --exclude='./node_modules' \
-  --exclude='./server/dist' \
-  --exclude='./.git' \
-  --exclude='./.env' \
-  -cf - . | tar -C "$INSTALL_DIR" -xf -
-chown -R "$HS_USER":"$HS_USER" "$INSTALL_DIR"
-chmod 750 "$INSTALL_DIR"
-echo -e "${GREEN}✓${RESET} Panel copié dans ${INSTALL_DIR} (propriétaire: ${HS_USER})."
+# --- 3. Copie du panel vers /usr/share/homeserver -----------------------------------
+run_step "Copie du panel vers ${INSTALL_DIR}" bash -c "
+  mkdir -p '$INSTALL_DIR'
+  tar -C '$SCRIPT_DIR' \
+    --exclude='./node_modules' \
+    --exclude='./server/dist' \
+    --exclude='./.git' \
+    --exclude='./.env' \
+    --exclude='./front/dist' \
+    -cf - . | tar -C '$INSTALL_DIR' -xf -
+  chown -R '$HS_USER:$HS_USER' '$INSTALL_DIR'
+  chmod 750 '$INSTALL_DIR'
+"
 
-# --- 4. Vérifications (en tant que hs-*) ------------------------------------------
-echo -e "${BOLD}→${RESET} Vérification des installations (en tant que ${HS_USER})..."
-as_hs 'test -s "$NVM_DIR/nvm.sh"' || { echo -e "${RED}✗ nvm introuvable pour ${HS_USER}.${RESET}"; exit 1; }
+# --- 4. Vérifications (en tant que hs-*) ----------------------------------------------
+as_hs 'test -s "$NVM_DIR/nvm.sh"' || fail "nvm introuvable pour ${HS_USER}."
 HS_NODE_VER="$(as_hs "'$HS_NODE_BIN' --version")"
 case "$HS_NODE_VER" in
   v2[0-9].*|v[3-9][0-9].*) : ;;
-  *) echo -e "${RED}✗ Node $HS_NODE_VER insuffisant (>= $NODE_MAJOR_MIN requis).${RESET}"; exit 1 ;;
+  *) fail "Node $HS_NODE_VER insuffisant (>= $NODE_MAJOR_MIN requis)." ;;
 esac
-echo -e "${GREEN}✓${RESET} nvm: $(as_hs '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm --version') | Node: $HS_NODE_VER ($(as_hs 'which node' || echo "$HS_NODE_BIN"))"
 
 HS_NPM_BIN="$(dirname "$HS_NODE_BIN")/npm"
 
-# --- 5. Build du panel (back + front, en tant que hs-*) ---------------------------
-echo -e "${BOLD}→${RESET} Installation des dépendances du back..."
-as_hs "'$HS_NPM_BIN' ci --no-audit --no-fund"
-echo -e "${GREEN}✓${RESET} Dépendances du back installées"
+# --- 5. Build du panel (back + front, en tant que hs-*) -------------------------------
+echo -e "${BOLD}→${RESET} Préparation de l'environnement (dépendances + builds)"
+run_step "Installation des dépendances du back" as_hs "cd '$INSTALL_DIR' && '$HS_NPM_BIN' ci --no-audit --no-fund"
+run_step "Build du back (server/dist, helper inclus)" as_hs "cd '$INSTALL_DIR' && '$HS_NPM_BIN' run build"
+test -f "$HELPER_DIR/index.js" || fail "$HELPER_DIR/index.js introuvable après build."
+test -f "$INSTALL_DIR/server/dist/src/index.js" || fail "server/dist/src/index.js introuvable après build."
+run_step "Installation des dépendances du front" as_hs "cd '$INSTALL_DIR/front' && '$HS_NPM_BIN' ci --no-audit --no-fund"
+run_step "Build du front" as_hs "cd '$INSTALL_DIR/front' && '$HS_NPM_BIN' run build"
+test -f "$INSTALL_DIR/front/dist/index.html" || fail "front/dist/index.html introuvable après build."
 
-echo -e "${BOLD}→${RESET} Build du back (server/dist, helper inclus)..."
-as_hs "'$HS_NPM_BIN' run build"
-test -f "$HELPER_DIR/index.js" || { echo -e "${RED}✗ $HELPER_DIR/index.js introuvable après build.${RESET}"; exit 1; }
-test -f "$INSTALL_DIR/server/dist/src/index.js" || { echo -e "${RED}✗ server/dist/src/index.js introuvable après build.${RESET}"; exit 1; }
-echo -e "${GREEN}✓${RESET} Back buildé"
-
-echo -e "${BOLD}→${RESET} Installation des dépendances du front..."
-as_hs "cd front && '$HS_NPM_BIN' ci --no-audit --no-fund"
-echo -e "${BOLD}→${RESET} Build du front..."
-as_hs "cd front && '$HS_NPM_BIN' run build"
-test -f "$INSTALL_DIR/front/dist/index.html" || { echo -e "${RED}✗ front/dist/index.html introuvable après build.${RESET}"; exit 1; }
-echo -e "${GREEN}✓${RESET} Front buildé"
-
-# --- 6. Services systemd ----------------------------------------------------------
-echo -e "${BOLD}→${RESET} Installation des services systemd..."
-
+# --- 6. Services systemd ---------------------------------------------------------------
 cat > /etc/systemd/system/hs-helper.service <<UNIT
 [Unit]
 Description=Homeserver helper privilégié
@@ -163,11 +204,11 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now hs-helper
-echo -e "${GREEN}✓${RESET} Services systemd installés (hs-helper démarré)."
+run_step "Activation du service hs-helper" systemctl enable --now hs-helper
+echo -e "${GREEN}✓${RESET} Services systemd installés"
 
-# --- 7. Installateur interactif (en tant que hs-*) --------------------------------
-echo -e "${BOLD}→${RESET} Lancement de l'installateur interactif en tant que ${HS_USER}..."
+# --- 7. Installateur interactif (en tant que hs-*) --------------------------------------
+echo -e "${BOLD}→${RESET} Configuration interactive (${HS_USER})"
 echo
 cd "$INSTALL_DIR"
 exec runuser -u "$HS_USER" -- env \
