@@ -1,5 +1,15 @@
 import { createServer } from 'node:net';
 import { mkdirSync, existsSync, statSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, chownSync, chmodSync } from 'node:fs';
+import { userInfo } from 'node:os';
+
+function uidOf(user: string): number | undefined {
+  const passwd = readFileSync('/etc/passwd', 'utf8');
+  for (const line of passwd.split('\n')) {
+    const [name, , uid] = line.split(':');
+    if (name === user) return Number(uid);
+  }
+  return undefined;
+}
 import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -197,9 +207,13 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       const unit = `/etc/systemd/system/${req.name}.service`;
       if (existsSync(unit)) throw new Error(`L'application ${req.name} existe déjà`);
       const appDir = `/var/www/apps/${req.name}`;
-      if (!existsSync(appDir)) throw new Error(`Dossier applicatif manquant: ${appDir} (créez-le via files.mkdir et déposez le code)`);
+      if (!existsSync(appDir)) {
+        mkdirSync(appDir, { recursive: true, mode: 0o755 });
+        const uid = req.user === 'root' ? 0 : uidOf(req.user);
+        if (uid !== undefined) chownSync(appDir, uid, -1);
+      }
       const entry = `${appDir}/${req.entry}`;
-      if (!existsSync(entry)) throw new Error(`Point d'entrée introuvable: ${entry}`);
+      if (!existsSync(entry)) throw new Error(`Point d'entrée introuvable: ${entry} (déposez votre code dans ${appDir})`);
       const unitContent = `[Unit]
 Description=Homeserver Node app ${req.name}
 After=network.target
