@@ -29,10 +29,13 @@ async function tryExec(cmd: string, args: string[]): Promise<string | null> {
   }
 }
 
-async function detectFamily(): Promise<'debian' | 'rhel'> {
+function detectFamily(): 'debian' | 'rhel' {
   try {
-    await exec('command', ['-v', 'apt-get']);
-    return 'debian';
+    const os = readFileSync('/etc/os-release', 'utf8');
+    const id = os.match(/^ID="?([^"\n]+)"?/m)?.[1] ?? '';
+    const like = os.match(/^ID_LIKE="?([^"\n]+)"?/m)?.[1] ?? '';
+    if (/debian|ubuntu/.test(`${id} ${like}`)) return 'debian';
+    return 'rhel';
   } catch {
     return 'rhel';
   }
@@ -127,7 +130,7 @@ async function handlePendingUpdates(family: 'debian' | 'rhel'): Promise<unknown>
 async function handleRequest(raw: unknown): Promise<unknown> {
   const req = validateRequest(raw);
   if (!req) throw Object.assign(new Error('Requête invalide'), { code: 'VALIDATION' });
-  const family = await detectFamily();
+  const family = detectFamily();
   switch (req.action) {
     case 'echo':
       return { echo: true, family };
