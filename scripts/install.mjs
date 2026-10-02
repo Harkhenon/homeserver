@@ -114,9 +114,10 @@ async function main() {
   log('Installation des paquets système (via helper)...');
   const family = echo.family;
   const webUnit = family === 'debian' ? (webServer === 'nginx' ? 'nginx' : 'apache2') : (webServer === 'nginx' ? 'nginx' : 'httpd');
+  const certbotPlugin = webUnit === 'nginx' ? 'python3-certbot-nginx' : 'python3-certbot-apache';
   const packages = family === 'debian'
-    ? [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : []), ...(extras ? ['mariadb-server', 'bind9', 'certbot', 'cron'] : [])]
-    : [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : []), ...(extras ? ['mariadb-server', 'bind', 'certbot', 'cronie'] : [])];
+    ? [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : []), ...(extras ? ['mariadb-server', 'bind9', 'certbot', certbotPlugin, 'cron'] : [])]
+    : [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : []), ...(extras ? ['mariadb-server', 'bind', 'certbot', certbotPlugin, 'cronie'] : [])];
   await callHelper({ action: 'install_packages', packages });
   ok(`Paquets installés: ${packages.join(', ')}`);
 
