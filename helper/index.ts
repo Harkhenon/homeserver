@@ -190,8 +190,8 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       } catch {
         return { port: req.port, free: true, checked: false };
       }
-      const { stdout } = await run('ss', ['-tln', `-Sport = :${req.port}`], { timeout: 10_000 });
-      return { port: req.port, free: !stdout.includes(`:${req.port} `) };
+      const { stdout } = await run('ss', ['-tlnH', `sport = :${req.port}`], { timeout: 10_000 });
+      return { port: req.port, free: stdout.trim() === '' };
     }
     case 'node_app_create': {
       const unit = `/etc/systemd/system/${req.name}.service`;
