@@ -1,82 +1,146 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip,
+  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip, SegmentedControl,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
 import { IconWorld } from '@tabler/icons-react';
-import type { Vhost } from '../types';
+import type { Vhost, NginxVhost } from '../types';
 
 const PAGE_SIZE = 10;
+type ServerKind = 'apache' | 'nginx';
+
+interface SiteRow {
+  id: string;
+  server: ServerKind;
+  domain: string;
+  docroot: string;
+  phpVersion?: string | null;
+  nodePort?: number | null;
+  ssl: boolean;
+  enabled: boolean;
+}
+
+const SERVER_BADGE: Record<ServerKind, { label: string; color: string }> = {
+  apache: { label: 'Apache', color: 'red' },
+  nginx: { label: 'Nginx', color: 'green' },
+};
 
 export function SitesPage() {
-  const vhosts = useModuleQuery<Vhost[]>('apache', 'vhosts.list');
-  const action = useModuleAction('apache');
+  const apache = useModuleQuery<Vhost[]>('apache', 'vhosts.list');
+  const nginx = useModuleQuery<NginxVhost[]>('nginx', 'vhosts.list');
+  const apacheAction = useModuleAction('apache');
+  const nginxAction = useModuleAction('nginx');
   const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<'all' | ServerKind>('all');
 
-  const remove = async (id: string) => {
-    const res = await action.run('vhosts.delete', { id });
+  const loading = apache.loading || nginx.loading;
+  const error = apache.error ?? nginx.error;
+
+  const rows = useMemo<SiteRow[]>(() => {
+    const apacheRows = (apache.data ?? []).map((vh) => ({
+      id: vh.id, server: 'apache' as const, domain: vh.domain, docroot: vh.docroot,
+      phpVersion: vh.phpVersion, nodePort: null, ssl: vh.ssl, enabled: vh.enabled,
+    }));
+    const nginxRows = (nginx.data ?? []).map((vh) => ({
+      id: vh.id, server: 'nginx' as const, domain: vh.domain, docroot: vh.docroot,
+      phpVersion: vh.phpVersion, nodePort: vh.nodePort, ssl: vh.ssl, enabled: vh.enabled,
+    }));
+    return [...apacheRows, ...nginxRows];
+  }, [apache.data, nginx.data]);
+
+  const list = filter === 'all' ? rows : rows.filter((r) => r.server === filter);
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = list.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const reload = () => {
+    void apache.reload();
+    void nginx.reload();
+  };
+
+  const remove = async (row: SiteRow) => {
+    const action = row.server === 'apache' ? apacheAction : nginxAction;
+    const res = await action.run('vhosts.delete', { id: row.id });
     if (res !== null) {
-      notifications.show({ message: `Site ${id} supprimé`, color: 'green' });
-      void vhosts.reload();
+      notifications.show({ message: `Site ${row.domain} supprimé`, color: 'green' });
+      reload();
     } else if (action.error) {
       notifications.show({ message: action.error, color: 'red' });
     }
   };
 
-  const toggle = async (id: string, enabled: boolean) => {
-    const res = await action.run('vhosts.enable', { id, enabled });
+  const toggle = async (row: SiteRow, enabled: boolean) => {
+    const action = row.server === 'apache' ? apacheAction : nginxAction;
+    const res = await action.run('vhosts.enable', { id: row.id, enabled });
     if (res !== null) {
-      notifications.show({ message: enabled ? `Site ${id} activé` : `Site ${id} désactivé`, color: 'green' });
-      void vhosts.reload();
+      notifications.show({ message: enabled ? `Site ${row.domain} activé` : `Site ${row.domain} désactivé`, color: 'green' });
+      reload();
     }
   };
 
-  if (vhosts.loading) return <LoadingBlock />;
-  if (vhosts.error) return <ErrorBlock error={vhosts.error} />;
-
-  const list = vhosts.data ?? [];
-  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
-  const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  if (loading) return <LoadingBlock />;
+  if (error) return <ErrorBlock error={error} />;
 
   return (
     <div>
       <PageHeader
-icon={IconWorld}         title="Sites Apache"
-        description={`${list.length} virtualhost(s)`}
+        icon={IconWorld}
+        title="Sites"
+        description={`${rows.length} virtualhost(s)`}
         actions={<Button onClick={() => setCreateOpen(true)}>Nouveau site</Button>}
       />
+      <Group justify="space-between" mb="md">
+        <SegmentedControl
+          value={filter}
+          onChange={(v) => { setFilter(v as 'all' | ServerKind); setPage(1); }}
+          data={[
+            { label: `Tous (${rows.length})`, value: 'all' },
+            { label: `Apache (${rows.filter((r) => r.server === 'apache').length})`, value: 'apache' },
+            { label: `Nginx (${rows.filter((r) => r.server === 'nginx').length})`, value: 'nginx' },
+          ]}
+        />
+      </Group>
       <Table.ScrollContainer minWidth={700}>
         <Table>
           <Table.Thead>
             <Table.Tr>
+              <Table.Th>Serveur</Table.Th>
               <Table.Th>Domaine</Table.Th>
               <Table.Th>DocumentRoot</Table.Th>
               <Table.Th>PHP</Table.Th>
+              <Table.Th>Port Node</Table.Th>
               <Table.Th>SSL</Table.Th>
               <Table.Th>Actif</Table.Th>
-              <Table.Th /></Table.Tr>
-            </Table.Thead>
+              <Table.Th />
+            </Table.Tr>
+          </Table.Thead>
           <Table.Tbody>
-            {paged.map((vh) => (
-              <Table.Tr key={vh.id}>
-                <Table.Td fw={600}>{vh.domain}</Table.Td>
-                <Table.Td c="dimmed">{vh.docroot}</Table.Td>
-                <Table.Td>{vh.phpVersion ?? <Text c="dimmed">—</Text>}</Table.Td>
+            {paged.map((row) => (
+              <Table.Tr key={`${row.server}:${row.id}`}>
                 <Table.Td>
-                  {vh.ssl ? <Badge color="green" variant="light">SSL</Badge> : <Badge variant="light">—</Badge>}
+                  <Badge color={SERVER_BADGE[row.server].color} variant="light">
+                    {SERVER_BADGE[row.server].label}
+                  </Badge>
+                </Table.Td>
+                <Table.Td fw={600}>{row.domain}</Table.Td>
+                <Table.Td c="dimmed">{row.docroot || <Text c="dimmed">proxy</Text>}</Table.Td>
+                <Table.Td>{row.phpVersion ?? <Text c="dimmed">—</Text>}</Table.Td>
+                <Table.Td>{row.nodePort ?? <Text c="dimmed">—</Text>}</Table.Td>
+                <Table.Td>
+                  {row.ssl ? <Badge color="green" variant="light">SSL</Badge> : <Badge variant="light">—</Badge>}
                 </Table.Td>
                 <Table.Td>
                   <Switch
-                    checked={vh.enabled}
-                    onChange={(e) => void toggle(vh.id, e.currentTarget.checked)}
+                    checked={row.enabled}
+                    onChange={(e) => void toggle(row, e.currentTarget.checked)}
                   />
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs" justify="flex-end">
-                    <Button size="compact-xs" variant="light" color="red" onClick={() => void remove(vh.id)}>
+                    <Button size="compact-xs" variant="light" color="red" onClick={() => void remove(row)}>
                       Supprimer
                     </Button>
                   </Group>
@@ -88,7 +152,7 @@ icon={IconWorld}         title="Sites Apache"
       </Table.ScrollContainer>
       {totalPages > 1 && (
         <Group justify="center" mt="md">
-          <Pagination total={totalPages} value={page} onChange={setPage} />
+          <Pagination total={totalPages} value={safePage} onChange={setPage} />
         </Group>
       )}
       <CreateSiteModal
@@ -96,7 +160,7 @@ icon={IconWorld}         title="Sites Apache"
         onClose={() => setCreateOpen(false)}
         onCreated={() => {
           setCreateOpen(false);
-          void vhosts.reload();
+          reload();
         }}
       />
     </div>
@@ -108,7 +172,8 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const action = useModuleAction('apache');
+  const [server, setServer] = useState<ServerKind>('apache');
+  const action = useModuleAction(server);
   const [domain, setDomain] = useState('');
   const [docroot, setDocroot] = useState('');
   const [phpVersion, setPhpVersion] = useState<string | null>(null);
@@ -132,8 +197,17 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Nouveau site Apache">
+    <Modal opened={opened} onClose={onClose} title={`Nouveau site ${SERVER_BADGE[server].label}`}>
       <Stack>
+        <SegmentedControl
+          fullWidth
+          value={server}
+          onChange={(v) => setServer(v as ServerKind)}
+          data={[
+            { label: 'Apache', value: 'apache' },
+            { label: 'Nginx', value: 'nginx' },
+          ]}
+        />
         <TextInput label="Domaine" placeholder="exemple.com" value={domain} onChange={(e) => setDomain(e.currentTarget.value)} required />
         <TextInput label="DocumentRoot" placeholder={`/var/www/${domain || 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
         <Select

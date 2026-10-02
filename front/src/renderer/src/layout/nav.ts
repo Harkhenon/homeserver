@@ -26,8 +26,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Hébergement',
     items: [
-      { to: '/sites', label: 'Sites (Apache)', icon: IconWorld },
-      { to: '/sites-nginx', label: 'Sites (Nginx)', icon: IconWorld },
+      { to: '/sites', label: 'Sites', icon: IconWorld },
       { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
       { to: '/domains', label: 'Domaines', icon: IconWorld },
       { to: '/ssl', label: 'SSL', icon: IconLock },

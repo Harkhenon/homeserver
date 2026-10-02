@@ -6,7 +6,6 @@ import { AppLayout } from './layout/AppLayout';
 import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { SitesPage } from './pages/Sites';
-import { NginxSitesPage } from './pages/NginxSites';
 import { NodeAppsPage } from './pages/NodeApps';
 import { DomainsPage } from './pages/Domains';
 import { DomainDetailPage } from './pages/DomainDetail';
@@ -81,7 +80,6 @@ function Shell() {
           >
             <Route path="/" element={<DashboardPage />} />
             <Route path="/sites" element={<SitesPage />} />
-            <Route path="/sites-nginx" element={<NginxSitesPage />} />
             <Route path="/node" element={<NodeAppsPage />} />
             <Route path="/domains" element={<DomainsPage />} />
             <Route path="/domains/:id" element={<DomainDetailPage />} />
