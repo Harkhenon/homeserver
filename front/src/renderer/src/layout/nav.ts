@@ -1,7 +1,7 @@
 import {
   IconDashboard, IconServer, IconWorld, IconBrandNodejs,
   IconDatabase, IconLock, IconUsers, IconFileDescription,
-  IconClock, IconDatabaseImport, IconFlame, IconActivity,
+  IconClock, IconDatabaseImport, IconFlame,
 } from '@tabler/icons-react';
 
 export interface NavItem {
@@ -20,7 +20,6 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Général',
     items: [
       { to: '/', label: 'Tableau de bord', icon: IconDashboard },
-      { to: '/monitor', label: 'Supervision', icon: IconActivity },
       { to: '/server', label: 'Serveur', icon: IconServer },
     ],
   },

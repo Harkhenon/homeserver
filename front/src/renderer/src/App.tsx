@@ -17,7 +17,6 @@ import { FilesPage } from './pages/Files';
 import { CronPage } from './pages/Cron';
 import { BackupsPage } from './pages/Backups';
 import { FirewallPage } from './pages/Firewall';
-import { MonitorPage } from './pages/Monitor';
 import { ServerPage } from './pages/Server';
 import type { AccentColor } from './theme/colors';
 import { buildTheme } from './theme/theme';
@@ -93,7 +92,6 @@ function Shell() {
             <Route path="/cron" element={<CronPage />} />
             <Route path="/backups" element={<BackupsPage />} />
             <Route path="/firewall" element={<FirewallPage />} />
-            <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/server" element={<ServerPage />} />
           </Route>
         </Routes>
