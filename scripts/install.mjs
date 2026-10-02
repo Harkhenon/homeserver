@@ -59,22 +59,28 @@ async function main() {
   ok(`Helper opérationnel (famille: ${echo.family})`);
 
   const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
+
   const envPath = `${installDir}/.env`;
+  const existingEnv = existsSync(envPath) ? readFileSync(envPath, 'utf8') : null;
+  const existingPort = existingEnv?.match(/^HS_PORT=(.+)$/m)?.[1] ?? null;
+  const existingPassword = existingEnv?.match(/^HS_ADMIN_PASSWORD=(.+)$/m)?.[1] ?? null;
+  const existingJwt = existingEnv?.match(/^HS_JWT_SECRET=(.+)$/m)?.[1] ?? null;
+  const existingModules = existingEnv?.match(/^HS_MODULES=(.+)$/m)?.[1] ?? null;
+
+  const port = existingPort ?? (await rl.question("Port de l'API [3000]: ")) ?? '3000';
+  const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
+  const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
+  const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
+
   let adminPassword = sh('openssl rand -base64 12');
-  if (existsSync(envPath)) {
-    const existing = readFileSync(envPath, 'utf8');
-    const getUser = (re) => existing.match(re)?.[1] ?? null;
-    const existingUser = getUser(/^HS_ADMIN_USER=(.+)$/m);
-    const existingPassword = getUser(/^HS_ADMIN_PASSWORD=(.+)$/m);
-    const existingJwt = getUser(/^HS_JWT_SECRET=(.+)$/m);
-    if (existingPassword) {
-      adminPassword = existingPassword;
-      ok(`.env existant conservé (identifiants inchangés: ${existingUser ?? adminUser})`);
-    }
-    var jwtSecret = existingJwt ?? sh('openssl rand -hex 32');
-  } else {
-    var jwtSecret = sh('openssl rand -hex 32');
+  if (existingPassword) {
+    adminPassword = existingPassword;
+    ok(`.env existant conservé (identifiants inchangés: ${adminUser})`);
   }
+  const jwtSecret = existingJwt ?? sh('openssl rand -hex 32');
+
+  const existingWeb = existingModules?.match(/,(apache|nginx),/)?.[1] ?? null;
+  const modulesList = existingWeb ?? webServer;
 
   const env = [
     `HS_PORT=${port}`,
@@ -82,7 +88,7 @@ async function main() {
     `HS_ADMIN_USER=${adminUser}`,
     `HS_ADMIN_PASSWORD=${adminPassword}`,
     `HS_USER=${user}`,
-    `HS_MODULES=system,${webServer},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
+    `HS_MODULES=system,${modulesList},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
   ].join('\n') + '\n';
   writeFileSync(`${installDir}/.env`, env);
   ok(`.env généré (${installDir}/.env)`);
