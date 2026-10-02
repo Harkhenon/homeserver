@@ -577,5 +577,6 @@ const server = createServer((socket) => {
 mkdirSync(SOCKET_PATH.replace(/\/[^/]+$/, ''), { recursive: true });
 if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
 server.listen(SOCKET_PATH, () => {
+  chmodSync(SOCKET_PATH, 0o660);
   log(`helper à l'écoute sur ${SOCKET_PATH}`);
 });

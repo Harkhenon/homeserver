@@ -95,13 +95,20 @@ if $UNINSTALL; then
 fi
 
 # --- 1. Utilisateur système hs-* ----------------------------------------------------
+HS_GROUP="homeserver"
+if ! getent group "$HS_GROUP" >/dev/null; then
+  run_step "Création du groupe $HS_GROUP" groupadd "$HS_GROUP"
+fi
 HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
 if [ -n "$HS_USER" ]; then
   echo -e "${GREEN}✓${RESET} Utilisateur existant réutilisé: ${HS_USER} (aucun doublon créé)"
 else
   random_name() { head -c 256 /dev/urandom | tr -dc 'a-z' | head -c 12 || true; }
   HS_USER="hs-$(random_name)"
-  run_step "Création de l'utilisateur système $HS_USER (nologin)" useradd -r -M -s /usr/sbin/nologin -d "$HS_HOME" "$HS_USER"
+  run_step "Création de l'utilisateur système $HS_USER (nologin)" useradd -r -M -s /usr/sbin/nologin -d "$HS_HOME" -G "$HS_GROUP" "$HS_USER"
+fi
+if ! id -nG "$HS_USER" | grep -qw "$HS_GROUP"; then
+  run_step "Ajout de $HS_USER au groupe $HS_GROUP" usermod -aG "$HS_GROUP" "$HS_USER"
 fi
 mkdir -p "$HS_HOME"
 chown "$HS_USER":"$HS_USER" "$HS_HOME"
@@ -176,10 +183,11 @@ After=network.target
 [Service]
 Type=simple
 User=root
+Group=$HS_GROUP
 ExecStart=$HS_NODE_BIN $HELPER_DIR/index.js
 Restart=on-failure
 RuntimeDirectory=homeserver
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0770
 
 [Install]
 WantedBy=multi-user.target
