@@ -1,8 +1,10 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import fastifyStatic from '@fastify/static';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { config } from 'dotenv';
 import { ModuleWorker } from './core/broker.js';
 import { registerModuleRoutes } from './core/router.js';
@@ -71,6 +73,7 @@ async function main(): Promise<void> {
   await app.register(jwt, { secret: jwtSecret });
 
   app.addHook('onRequest', async (request, reply) => {
+    if (!request.url.startsWith('/api/')) return;
     if (request.url === '/api/auth/login' || request.url === '/api/health') return;
     try {
       await request.jwtVerify();
@@ -96,6 +99,18 @@ async function main(): Promise<void> {
   registerAuthRoutes(app, adminUser, adminPassword);
   const started = await startWorkers();
   registerModuleRoutes(app, started);
+
+  const frontDir = path.resolve(__dirname, isDev ? '../../../front/dist' : '../../../../front/dist');
+  const hasFront = existsSync(frontDir);
+  if (hasFront) {
+    await app.register(fastifyStatic, { root: frontDir, wildcard: false });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        return reply.code(404).send({ error: 'Route inconnue' });
+      }
+      return reply.sendFile('index.html');
+    });
+  }
 
   await app.listen({ port, host: '0.0.0.0' });
   logger.info(`API Homeserver à l'écoute sur :${port}`);
