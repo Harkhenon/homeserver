@@ -124,9 +124,9 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const phpVersions = useModuleQuery<PhpVersionInfo[]>('php', 'versions.list');
+  const phpVersions = useModuleQuery<{ versions: PhpVersionInfo[] }>('php', 'versions.list');
   const nodeApps = useModuleQuery<{ apps: NodeAppInfo[] }>('node', 'apps.list');
-  const installedVersions = (phpVersions.data ?? []).filter((v) => v.installed);
+  const installedVersions = (phpVersions.data?.versions ?? []).filter((v) => v.installed);
   const poolsQueries = installedVersions.map((v) => v.version);
   const [poolsByUser, setPoolsByUser] = useState<FpmPool[]>([]);
 
@@ -246,9 +246,9 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
             ) : (
               <Text size="sm" c="dimmed">Aucun pool FPM dédié à cet utilisateur.</Text>
             )}
-            {phpVersions.data && (
+            {(phpVersions.data?.versions ?? []).length > 0 && (
               <Text size="xs" c="dimmed">
-                Versions PHP installées sur le serveur : {phpVersions.data.filter((v) => v.installed).map((v) => v.version).join(', ') || 'aucune'}
+                Versions PHP installées sur le serveur : {(phpVersions.data?.versions ?? []).filter((v) => v.installed).map((v) => v.version).join(', ') || 'aucune'}
               </Text>
             )}
             <Divider my="xs" />

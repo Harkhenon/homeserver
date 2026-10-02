@@ -38,7 +38,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Gestion',
     items: [
       { to: '/databases', label: 'Bases de données', icon: IconDatabase },
-      { to: '/users', label: 'Utilisateurs SFTP', icon: IconUsers },
+      { to: '/users', label: 'Utilisateurs', icon: IconUsers },
       { to: '/files', label: 'Fichiers', icon: IconFileDescription },
     ],
   },
