@@ -1,9 +1,11 @@
-import { SimpleGrid, Card, Group, Text, ThemeIcon, Badge, RingProgress, Stack } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { SimpleGrid, Card, Group, Text, ThemeIcon, Stack, Table } from '@mantine/core';
 import {
-  IconCpu, IconDatabase, IconClockBolt, IconServer2,
+  IconCpu, IconDatabase, IconClockBolt, IconServer2, IconActivity,
 } from '@tabler/icons-react';
 import { useModuleQuery } from '../api/hooks';
-import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { health as fetchHealth } from '../api/client';
+import { PageHeader, LoadingBlock, ErrorBlock, StatCard, WelcomeCard, StatusBadge } from '../components';
 
 interface SysInfo {
   hostname: string;
@@ -62,6 +64,10 @@ export function DashboardPage() {
   const mem = useModuleQuery<Memory>('system', 'memory');
   const cpu = useModuleQuery<Cpu>('system', 'cpu');
   const disks = useModuleQuery<Disk[]>('system', 'disks');
+  const [health, setHealth] = useState<Health | null>(null);
+  useEffect(() => {
+    fetchHealth().then(setHealth).catch(() => setHealth(null));
+  }, []);
 
   if (info.loading || mem.loading || cpu.loading) return <LoadingBlock />;
   if (info.error || mem.error || cpu.error) {
@@ -72,6 +78,8 @@ export function DashboardPage() {
   const cpuData = cpu.data;
   const infoData = info.data;
   const rootDisk = disks.data?.[0];
+  const modules = health?.modules ?? [];
+  const healthyCount = modules.filter((m) => m.healthy).length;
 
   return (
     <div>
@@ -79,63 +87,86 @@ export function DashboardPage() {
         title="Tableau de bord"
         description={infoData ? `${infoData.hostname} — ${infoData.distro}` : undefined}
       />
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed" tt="uppercase">CPU</Text>
-            <ThemeIcon variant="light"><IconCpu size={18} /></ThemeIcon>
-          </Group>
-          <Text fz="xl" fw={600} mt="xs">{cpuData?.cores} cœurs</Text>
-          <Text size="sm" c="dimmed">Charge : {cpuData?.load?.[0]?.toFixed(2)} / {cpuData?.load?.[1]?.toFixed(2)} / {cpuData?.load?.[2]?.toFixed(2)}</Text>
-        </Card>
 
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed" tt="uppercase">Mémoire</Text>
-            <ThemeIcon variant="light"><IconServer2 size={18} /></ThemeIcon>
-          </Group>
-          <Group mt="xs" gap="md" align="center">
-            <RingProgress
-              size={70}
-              thickness={7}
-              sections={[{ value: memData?.usagePercent ?? 0, color: 'blue' }]}
-              label={<Text ta="center" fz="sm" fw={600}>{memData?.usagePercent}%</Text>}
-            />
-            <Stack gap={2}>
-              <Text size="sm">{fmtBytes(memData?.usedBytes ?? 0)} utilisés</Text>
-              <Text size="sm" c="dimmed">{fmtBytes(memData?.totalBytes ?? 0)} total</Text>
-            </Stack>
-          </Group>
-        </Card>
+      <Stack gap="md">
+        <WelcomeCard
+          title={`Bienvenue, ${localStorage.getItem('hs_username') ?? 'admin'}`}
+          description={`Système en ligne depuis ${fmtUptime(infoData?.uptimeSeconds ?? 0)} — noyau ${infoData?.kernel} (${infoData?.arch}).`}
+          icon={IconServer2}
+          stats={modules.length > 0 ? [
+            { label: 'Modules actifs', value: `${healthyCount}/${modules.length}` },
+            { label: 'Cœur', value: `${cpuData?.cores ?? '?'}` },
+            { label: 'Mémoire', value: fmtBytes(memData?.totalBytes ?? 0) },
+          ] : undefined}
+        />
 
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed" tt="uppercase">Disque</Text>
-            <ThemeIcon variant="light"><IconDatabase size={18} /></ThemeIcon>
-          </Group>
-          <Group mt="xs" gap="md" align="center">
-            <RingProgress
-              size={70}
-              thickness={7}
-              sections={[{ value: rootDisk?.usagePercent ?? 0, color: 'teal' }]}
-              label={<Text ta="center" fz="sm" fw={600}>{rootDisk?.usagePercent}%</Text>}
-            />
-            <Stack gap={2}>
-              <Text size="sm">{rootDisk?.mount}</Text>
-              <Text size="sm" c="dimmed">{fmtBytes(rootDisk?.totalBytes ?? 0)}</Text>
-            </Stack>
-          </Group>
-        </Card>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+          <StatCard
+            title="CPU"
+            icon={IconCpu}
+            color="blue"
+            value={`${(cpuData?.load?.[0] ?? 0).toFixed(2)}`}
+            sub={`Charge 1/5/15 min — ${cpuData?.cores ?? '?'} cœurs`}
+            progress={{ value: Math.min(100, ((cpuData?.load?.[0] ?? 0) / (cpuData?.cores ?? 1)) * 100) }}
+          />
+          <StatCard
+            title="Mémoire"
+            icon={IconDatabase}
+            color="violet"
+            value={`${memData?.usagePercent ?? 0}%`}
+            sub={`${fmtBytes(memData?.usedBytes ?? 0)} / ${fmtBytes(memData?.totalBytes ?? 0)}`}
+            progress={{ value: memData?.usagePercent ?? 0, color: (memData?.usagePercent ?? 0) > 85 ? 'red' : 'violet' }}
+          />
+          <StatCard
+            title="Disque"
+            icon={IconDatabase}
+            color="teal"
+            value={`${rootDisk?.usagePercent ?? 0}%`}
+            sub={`${rootDisk?.mount ?? '/'} — ${fmtBytes(rootDisk?.totalBytes ?? 0)}`}
+            progress={{ value: rootDisk?.usagePercent ?? 0, color: (rootDisk?.usagePercent ?? 0) > 85 ? 'red' : 'teal' }}
+          />
+          <StatCard
+            title="Uptime"
+            icon={IconClockBolt}
+            color="orange"
+            value={fmtUptime(infoData?.uptimeSeconds ?? 0)}
+            sub={`Noyau ${infoData?.kernel}`}
+          />
+        </SimpleGrid>
 
-        <Card withBorder p="md">
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed" tt="uppercase">Uptime</Text>
-            <ThemeIcon variant="light"><IconClockBolt size={18} /></ThemeIcon>
-          </Group>
-          <Text fz="xl" fw={600} mt="xs">{fmtUptime(infoData?.uptimeSeconds ?? 0)}</Text>
-          <Text size="sm" c="dimmed">Noyau {infoData?.kernel}</Text>
-        </Card>
-      </SimpleGrid>
+        {modules.length > 0 && (
+          <Card withBorder p="md">
+            <Group justify="space-between" mb="sm">
+              <Group gap="sm">
+                <ThemeIcon variant="light" size={30} radius="md">
+                  <IconActivity size={16} stroke={1.5} />
+                </ThemeIcon>
+                <Text fw={600}>Santé des modules</Text>
+              </Group>
+              <StatusBadge
+                status={healthyCount === modules.length ? 'ok' : 'error'}
+                labels={{ ok: `${healthyCount}/${modules.length} sains`, error: 'Modules défaillants' }}
+              />
+            </Group>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Module</Table.Th>
+                  <Table.Th fz="xs" c="dimmed">État</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {modules.map((m) => (
+                  <Table.Tr key={m.module}>
+                    <Table.Td fw={500}>{m.module}</Table.Td>
+                    <Table.Td><StatusBadge status={m.healthy} /></Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Card>
+        )}
+      </Stack>
     </div>
   );
 }
