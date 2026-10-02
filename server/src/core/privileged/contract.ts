@@ -22,6 +22,7 @@ export type PrivilegedRequest =
   | { action: 'pending_updates' }
   | { action: 'check_zone'; zone: string; file: string }
   | { action: 'user_create'; username: string; password: string; home: string; shell: string }
+  | { action: 'user_set_password'; username: string; password: string }
   | { action: 'user_delete'; username: string; removeHome: boolean }
   | { action: 'user_list' }
   | { action: 'fs_read'; path: string }
@@ -243,6 +244,10 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.home !== 'string' || !(FS_PATH_RE.test(raw.home) || raw.home === '/dev/null')) return null;
       if (typeof raw.shell !== 'string' || !['/usr/sbin/nologin', '/bin/false', '/bin/bash'].includes(raw.shell)) return null;
       return { action: 'user_create', username: raw.username, password: raw.password, home: raw.home, shell: raw.shell };
+    case 'user_set_password':
+      if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
+      if (typeof raw.password !== 'string' || raw.password.length < 8 || raw.password.length > 200) return null;
+      return { action: 'user_set_password', username: raw.username, password: raw.password };
     case 'user_delete':
       if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
       if (typeof raw.removeHome !== 'boolean') return null;

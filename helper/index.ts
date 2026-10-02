@@ -286,6 +286,10 @@ WantedBy=multi-user.target
       }
       return { username: req.username, created: true };
     }
+    case 'user_set_password': {
+      execFileSync('chpasswd', [`${req.username}:${req.password}`], { stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+      return { username: req.username, updated: true };
+    }
     case 'user_delete': {
       const args = req.removeHome ? ['-r', req.username] : [req.username];
       await exec('userdel', args);

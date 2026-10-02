@@ -76,6 +76,18 @@ const definition: ModuleDefinition = {
         return { username, deleted: true, homeRemoved: removeHome };
       },
     },
+    'users.setPassword': {
+      summary: 'Changer le mot de passe d\'un utilisateur (payload: { username, password })',
+      handler: async (payload) => {
+        const username = validateUsername(payload);
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const password = typeof p.password === 'string' ? p.password : '';
+        if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
+        const users = await listUsers();
+        if (!users.some((u) => u.username === username)) throw new Error(`Utilisateur introuvable: ${username}`);
+        return callHelper({ action: 'user_set_password', username, password });
+      },
+    },
     'users.setSite': {
       summary: 'Changer le site (chroot) d\'un utilisateur (payload: { username, site })',
       handler: async (payload) => {
