@@ -212,7 +212,8 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-run_step "Activation du service hs-helper" systemctl enable --now hs-helper
+systemctl enable hs-helper >/dev/null 2>&1
+run_step "(Re)démarrage du service hs-helper (nouveau build)" systemctl restart hs-helper
 echo -e "${GREEN}✓${RESET} Services systemd installés"
 
 # --- 7. Installateur interactif (en tant que hs-*) --------------------------------------
