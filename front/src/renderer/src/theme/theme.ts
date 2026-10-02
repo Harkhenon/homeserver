@@ -47,6 +47,10 @@ export function buildTheme(accent: string) {
           root: {
             background: 'var(--mantine-color-dark-7)',
             borderColor: 'var(--mantine-color-dark-4)',
+            transition: 'border-color 150ms ease',
+            '&:hover': {
+              borderColor: 'color-mix(in srgb, var(--mantine-primary-color-filled) 35%, var(--mantine-color-dark-4))',
+            },
           },
         },
       },
@@ -61,7 +65,7 @@ export function buildTheme(accent: string) {
             borderBottom: '1px solid var(--mantine-color-dark-4)',
           },
           navbar: {
-            backgroundColor: 'var(--mantine-color-dark-8)',
+            background: 'linear-gradient(180deg, color-mix(in srgb, var(--mantine-primary-color-filled) 14%, var(--mantine-color-dark-8)) 0%, var(--mantine-color-dark-8) 40%)',
             borderRight: '1px solid var(--mantine-color-dark-4)',
           },
           main: { background: 'transparent' },
@@ -72,10 +76,16 @@ export function buildTheme(accent: string) {
           root: {
             borderRadius: 'var(--mantine-radius-md)',
             marginTop: '2px',
+            color: 'var(--mantine-color-dark-1)',
             '&[data-active]': {
-              '&:not(:hover)': { backgroundColor: 'var(--mantine-color-dark-5)' },
+              '&:not(:hover)': {
+                backgroundColor: 'var(--mantine-primary-color-filled)',
+                color: 'white',
+              },
             },
-            '&:hover': { backgroundColor: 'var(--mantine-color-dark-6)' },
+            '&:hover': {
+              backgroundColor: 'color-mix(in srgb, var(--mantine-primary-color-filled) 10%, var(--mantine-color-dark-6))',
+            },
           },
         },
       },

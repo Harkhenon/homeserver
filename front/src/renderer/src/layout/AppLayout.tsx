@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useDisclosure } from '@mantine/hooks';
-import { AppShell, Burger, Group, Title, Box, Text, ScrollArea } from '@mantine/core';
+import { AppShell, Burger, Group, Title, Box, Text, ScrollArea, ThemeIcon } from '@mantine/core';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { IconServer2 } from '@tabler/icons-react';
 import { NAV_SECTIONS } from './nav';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
@@ -30,6 +31,9 @@ export function AppLayout({ accent, onAccentChange, username, avatarSeed, onAvat
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            <ThemeIcon size={32} radius="md" variant="filled">
+              <IconServer2 size={18} stroke={1.5} />
+            </ThemeIcon>
             <Title order={4}>Homeserver</Title>
             <Text size="xs" c="dimmed" visibleFrom="sm">v0.5.0</Text>
           </Group>
@@ -41,9 +45,12 @@ export function AppLayout({ accent, onAccentChange, username, avatarSeed, onAvat
         <ScrollArea h="100%" type="hover" scrollbarSize={6}>
           {NAV_SECTIONS.map((section) => (
             <Box key={section.label} mb="sm">
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700} lts={0.5} mb={4} px="sm">
-                {section.label}
-              </Text>
+              <Group gap={6} mb={4} px="sm">
+                <Box w={5} h={5} bg="var(--mantine-primary-color-filled)" style={{ borderRadius: '50%', flexShrink: 0 }} />
+                <Text size="xs" c="dimmed" tt="uppercase" fw={700} lts={0.5}>
+                  {section.label}
+                </Text>
+              </Group>
               {section.items.map((item) => (
                 <NavLink
                   key={item.to}
