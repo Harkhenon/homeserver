@@ -53,7 +53,8 @@ echo -e "${GREEN}✓${RESET} Utilisateur: ${HS_USER} (répertoire: $HS_HOME, acc
 
 NVM_DIR="$HS_HOME/.nvm"
 export NVM_DIR
-as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" bash -c "$*"; }
+as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "cd '$HS_HOME' && $*"; }
+HS_NODE_BIN_DIR=""
 
 # --- 2. Node.js (nvm, en tant que hs-*) -------------------------------------------
 if as_hs 'command -v node >/dev/null 2>&1'; then
@@ -64,6 +65,7 @@ fi
 
 if [ "$HS_NODE_MAJOR" -ge "$NODE_MAJOR_MIN" ]; then
   HS_NODE_BIN="$(as_hs 'command -v node')"
+  HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
   echo -e "${GREEN}✓${RESET} Node.js $(as_hs 'node --version') déjà présent pour ${HS_USER}."
 else
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -76,6 +78,7 @@ else
   echo -e "${BOLD}→${RESET} Installation de Node.js $NODE_TARGET (LTS) via nvm pour ${HS_USER}..."
   as_hs '. "$NVM_DIR/nvm.sh" && nvm install '"$NODE_TARGET"' && nvm alias default '"$NODE_TARGET"
   HS_NODE_BIN="$(as_hs '. "$NVM_DIR/nvm.sh" >/dev/null && nvm which '"$NODE_TARGET")"
+  HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
 fi
 
 # --- 3. Copie du panel vers /usr/share/homeserver ---------------------------------
