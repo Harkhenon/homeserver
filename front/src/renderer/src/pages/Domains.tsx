@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconBinaryTree, IconWorld, IconChevronRight, IconPlus } from '@tabler/icons-react';
-import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
+import { PageHeader, LoadingBlock, ErrorBlock, SslToggle } from '../components';
 import type { Zone } from '../types';
 
 export function DomainsPage() {
@@ -65,6 +65,10 @@ export function DomainsPage() {
               </div>
             </Group>
             <Group gap="sm" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+              <Group gap={4} wrap="nowrap">
+                <Text size="xs" c="dimmed">SSL</Text>
+                <SslToggle domain={zone.domain} onChanged={() => void zones.reload()} />
+              </Group>
               <Badge variant="light" size="sm">{zone.serial}</Badge>
               <Button size="compact-xs" variant="light" color="red" onClick={() => void remove(zone.id)}>
                 Supprimer
