@@ -354,6 +354,9 @@ WantedBy=multi-user.target
       return { username: req.username, updated: true };
     }
     case 'user_delete': {
+      // tuer toutes les sessions/processus de l'utilisateur avant suppression
+      try { await exec('pkill', ['-STOP', '-u', req.username]); } catch { /* aucun processus */ }
+      try { await exec('pkill', ['-KILL', '-u', req.username]); } catch { /* aucun processus */ }
       const args = req.removeHome ? ['-r', req.username] : [req.username];
       await exec('userdel', args);
       return { username: req.username, deleted: true };
