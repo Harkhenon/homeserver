@@ -1,10 +1,11 @@
 import { AreaChart } from '@mantine/charts';
 import { Table, Badge, Card, SimpleGrid, Text, Group, Stack, Divider } from '@mantine/core';
-import { useModuleQuery } from '../api/hooks';
+import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock, StatCard } from '../components';
 import { IconServer } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { health as fetchHealth } from '../api/client';
+import { notifications } from '@mantine/notifications';
 import type { ServiceStatus, MonitorSample } from '../types';
 
 interface SysInfo {
@@ -48,7 +49,7 @@ function fmtUptime(seconds: number): string {
 export function ServerPage() {
   const info = useModuleQuery<SysInfo>('system', 'info');
   const mem = useModuleQuery<{ totalBytes: number; usedBytes: number; usagePercent: number }>('system', 'memory', undefined, { refetchInterval: 5000 });
-  const cpu = useModuleQuery<{ cores: number; load: [number, number, number] }>('system', 'cpu', undefined, { refetchInterval: 5000 });
+  const cpu = useModuleQuery<{ cores: number; load: [number, number, number]; usagePercent: number }>('system', 'cpu', undefined, { refetchInterval: 5000 });
   const procs = useModuleQuery<ProcInfo[]>('system', 'processes', { limit: 15 });
   const updates = useModuleQuery<UpdatesInfo>('system', 'updates');
   const history = useModuleQuery<{ samples: MonitorSample[] }>('monitor', 'history', { minutes: 60 });
@@ -58,6 +59,22 @@ export function ServerPage() {
   useEffect(() => {
     fetchHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
+  const upgradeAction = useModuleAction('system');
+  const [upgrading, setUpgrading] = useState(false);
+
+  const runUpgrade = async () => {
+    const confirmed = window.confirm('Appliquer toutes les mises à jour système ?');
+    if (!confirmed) return;
+    setUpgrading(true);
+    const res = await upgradeAction.run('upgrade');
+    setUpgrading(false);
+    if (res !== null) {
+      notifications.show({ message: 'Mises à jour appliquées', color: 'green' });
+      void updates.reload();
+    } else if (upgradeAction.error) {
+      notifications.show({ message: upgradeAction.error, color: 'red' });
+    }
+  };
 
   const apache = useModuleQuery<ServiceStatus>('apache', 'service.status');
   const mariadb = useModuleQuery<ServiceStatus>('mariadb', 'service.status');
@@ -90,9 +107,9 @@ export function ServerPage() {
             title="CPU"
             icon={IconServer}
             color="blue"
-            value={`${(cpu.data?.load?.[0] ?? 0).toFixed(2)}`}
-            sub={`Charge 1/5/15 — ${cpu.data?.cores ?? '?'} cœurs`}
-            progress={{ value: Math.min(100, ((cpu.data?.load?.[0] ?? 0) / (cpu.data?.cores ?? 1)) * 100) }}
+            value={`${cpu.data?.usagePercent ?? 0}%`}
+            sub={`Charge 1/5/15 : ${cpu.data?.load?.[0]?.toFixed(2) ?? '0'} / ${cpu.data?.load?.[1]?.toFixed(2) ?? '0'} / ${cpu.data?.load?.[2]?.toFixed(2) ?? '0'} — ${cpu.data?.cores ?? '?'} cœurs`}
+            progress={{ value: cpu.data?.usagePercent ?? 0, color: (cpu.data?.usagePercent ?? 0) > 85 ? 'red' : 'blue' }}
           />
           <StatCard
             title="Mémoire"
@@ -108,6 +125,7 @@ export function ServerPage() {
             color={updates.data && updates.data.count > 0 ? 'orange' : 'teal'}
             value={updates.data ? `${updates.data.count}` : '…'}
             sub={updates.data && updates.data.count > 0 ? 'paquets en attente' : 'système à jour'}
+            action={updates.data && updates.data.count > 0 ? { label: 'Mettre à jour', onClick: () => void runUpgrade(), loading: upgrading } : null}
           />
           <StatCard
             title="Modules"

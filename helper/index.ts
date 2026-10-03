@@ -302,6 +302,14 @@ WantedBy=multi-user.target
     }
     case 'pending_updates':
       return handlePendingUpdates(family);
+    case 'packages_upgrade': {
+      if (family === 'debian') {
+        await run('apt-get', ['-y', 'upgrade'], { timeout: 1_800_000 });
+        return { family, upgraded: true };
+      }
+      await run('dnf', ['-y', 'upgrade'], { timeout: 1_800_000 });
+      return { family, upgraded: true };
+    }
     case 'user_create': {
       mkdirSync(req.home === '/dev/null' ? '/var/www' : req.home.replace(/\/[^/]+$/, ''), { recursive: true });
       const useraddArgs = ['-r', '-d', req.home, '-s', req.shell, req.username];

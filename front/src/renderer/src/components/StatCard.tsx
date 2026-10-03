@@ -1,4 +1,4 @@
-import { Card, Group, Text, ThemeIcon, Box, Progress } from '@mantine/core';
+import { Card, Group, Text, ThemeIcon, Box, Progress, Button } from '@mantine/core';
 import { IconDashboard } from "@tabler/icons-react";
 
 interface StatCardProps {
@@ -8,9 +8,10 @@ interface StatCardProps {
   value: string;
   sub?: string;
   progress?: { value: number; color?: string } | null;
+  action?: { label: string; onClick: () => void; loading?: boolean } | null;
 }
 
-export function StatCard({ title, icon: IconCmp, color = 'blue', value, sub, progress }: StatCardProps) {
+export function StatCard({ title, icon: IconCmp, color = 'blue', value, sub, progress, action }: StatCardProps) {
   return (
     <Card withBorder p="md" h="100%">
       <Group justify="space-between" wrap="nowrap">
@@ -26,6 +27,18 @@ export function StatCard({ title, icon: IconCmp, color = 'blue', value, sub, pro
         </Box>
       ) : null}
       {sub && <Text size="sm" c="dimmed" mt="xs">{sub}</Text>}
+      {action && (
+        <Button
+          size="compact-sm"
+          variant="light"
+          color={color}
+          mt="sm"
+          loading={action.loading}
+          onClick={action.onClick}
+        >
+          {action.label}
+        </Button>
+      )}
     </Card>
   );
 }

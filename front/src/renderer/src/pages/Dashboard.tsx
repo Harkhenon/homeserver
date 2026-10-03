@@ -25,6 +25,7 @@ interface Cpu {
   model: string;
   cores: number;
   load: [number, number, number];
+  usagePercent: number;
 }
 
 interface Disk {
@@ -105,9 +106,9 @@ export function DashboardPage() {
             title="CPU"
             icon={IconCpu}
             color="blue"
-            value={`${(cpuData?.load?.[0] ?? 0).toFixed(2)}`}
-            sub={`Charge 1/5/15 min — ${cpuData?.cores ?? '?'} cœurs`}
-            progress={{ value: Math.min(100, ((cpuData?.load?.[0] ?? 0) / (cpuData?.cores ?? 1)) * 100) }}
+            value={`${cpuData?.usagePercent ?? 0}%`}
+            sub={`Charge 1/5/15 min : ${cpuData?.load?.[0]?.toFixed(2) ?? '0'} / ${cpuData?.load?.[1]?.toFixed(2) ?? '0'} / ${cpuData?.load?.[2]?.toFixed(2) ?? '0'}`}
+            progress={{ value: cpuData?.usagePercent ?? 0, color: (cpuData?.usagePercent ?? 0) > 85 ? 'red' : 'blue' }}
           />
           <StatCard
             title="Mémoire"

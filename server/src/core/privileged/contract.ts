@@ -20,6 +20,7 @@ export type PrivilegedRequest =
   | { action: 'unlink'; path: string }
   | { action: 'site_enable'; site: string; enable: boolean; web: 'apache' | 'nginx' }
   | { action: 'pending_updates' }
+  | { action: 'packages_upgrade' }
   | { action: 'check_zone'; zone: string; file: string }
   | { action: 'user_create'; username: string; password: string; home: string; shell: string }
   | { action: 'user_set_password'; username: string; password: string }
@@ -237,6 +238,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       return { action: 'web_server_detect' };
     case 'pending_updates':
       return { action: 'pending_updates' };
+    case 'packages_upgrade':
+      return { action: 'packages_upgrade' };
     case 'check_zone':
       if (typeof raw.zone !== 'string' || !ZONE_NAME_RE.test(raw.zone)) return null;
       if (typeof raw.file !== 'string' || !ZONE_FILE_RE.test(raw.file)) return null;

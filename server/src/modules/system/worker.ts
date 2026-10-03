@@ -140,8 +140,16 @@ const definition: ModuleDefinition = {
       }),
     },
     cpu: {
-      summary: 'CPU : modèle, cœurs, charge',
-      handler: () => ({ ...readCpuInfo(), load: readLoadAverages() }),
+      summary: 'CPU : modèle, cœurs, charge, utilisation',
+      handler: () => {
+        const load = readLoadAverages();
+        const cores = readCpuInfo().cores;
+        return {
+          ...readCpuInfo(),
+          load,
+          usagePercent: Number(Math.min(100, (load[0] / Math.max(1, cores)) * 100).toFixed(1)),
+        };
+      },
     },
     memory: {
       summary: 'Mémoire : total, utilisé, libre',
@@ -162,6 +170,13 @@ const definition: ModuleDefinition = {
         const sort = p.sort === 'mem' ? 'mem' : 'cpu';
         const limit = typeof p.limit === 'number' && p.limit > 0 && p.limit <= 100 ? Math.floor(p.limit) : 20;
         return readProcesses(sort, limit);
+      },
+    },
+    upgrade: {
+      summary: 'Appliquer les mises à jour système (apt-get / dnf upgrade)',
+      handler: async () => {
+        const res = await callHelper<{ family: string; upgraded: boolean }>({ action: 'packages_upgrade' });
+        return res;
       },
     },
     updates: {
