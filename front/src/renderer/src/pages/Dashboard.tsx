@@ -61,8 +61,8 @@ function fmtUptime(seconds: number): string {
 
 export function DashboardPage() {
   const info = useModuleQuery<SysInfo>('system', 'info');
-  const mem = useModuleQuery<Memory>('system', 'memory');
-  const cpu = useModuleQuery<Cpu>('system', 'cpu');
+  const mem = useModuleQuery<Memory>('system', 'memory', undefined, { refetchInterval: 5000 });
+  const cpu = useModuleQuery<Cpu>('system', 'cpu', undefined, { refetchInterval: 5000 });
   const disks = useModuleQuery<Disk[]>('system', 'disks');
   const [health, setHealth] = useState<Health | null>(null);
   useEffect(() => {

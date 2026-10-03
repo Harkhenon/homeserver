@@ -7,11 +7,15 @@ interface QueryState<T> {
   error: string | null;
 }
 
-export function useModuleQuery<T>(prefix: string, action: string, payload?: unknown) {
+interface QueryOptions {
+  refetchInterval?: number;
+}
+
+export function useModuleQuery<T>(prefix: string, action: string, payload?: unknown, options?: QueryOptions) {
   const [state, setState] = useState<QueryState<T>>({ data: null, loading: true, error: null });
 
-  const reload = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true, error: null }));
+  const reload = useCallback(async (silent = false) => {
+    setState((s) => ({ ...s, loading: silent ? false : true, error: silent ? s.error : null }));
     try {
       const data = await call<T>(prefix, action, payload);
       setState({ data, loading: false, error: null });
@@ -23,6 +27,14 @@ export function useModuleQuery<T>(prefix: string, action: string, payload?: unkn
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!options?.refetchInterval) return;
+    const id = setInterval(() => {
+      void reload(true);
+    }, options.refetchInterval);
+    return () => clearInterval(id);
+  }, [reload, options?.refetchInterval]);
 
   return { ...state, reload };
 }
