@@ -68,8 +68,15 @@ const definition: ModuleDefinition = {
           if (sshKey.length < 50 || sshKey.includes('\n')) throw new Error('Clé SSH invalide');
           await callHelper({ action: 'user_ssh_keys_add', username, key: sshKey });
         }
-        void callHelper<{ configured: boolean }>({ action: 'sftp_configure' }).catch(() => undefined);
-        return { ...created, home, sftpOnly: shell === SFTP_SHELL, sshKeyInstalled: Boolean(sshKey) };
+        const sftp = await callHelper<{ configured: boolean; reloaded?: boolean }>({ action: 'sftp_configure' });
+        return {
+          ...created,
+          home,
+          sftpOnly: shell === SFTP_SHELL,
+          sshKeyInstalled: Boolean(sshKey),
+          sftpConfigured: sftp.configured,
+          sshReloaded: sftp.reloaded !== false,
+        };
       },
     },
     'users.sshKeys': {
