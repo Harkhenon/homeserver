@@ -54,6 +54,7 @@ const definition: ModuleDefinition = {
         if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
         const site = typeof p.site === 'string' ? p.site.trim().toLowerCase() : '';
         if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(site)) throw new Error('Site invalide');
+        const shell = p.shell === '/bin/bash' ? '/bin/bash' : SFTP_SHELL;
         const users = await listUsers();
         if (users.some((u) => u.username === username)) throw new Error(`L'utilisateur ${username} existe déjà`);
         const home = `/var/www/${site}`;
@@ -63,10 +64,10 @@ const definition: ModuleDefinition = {
           username,
           password,
           home,
-          shell: SFTP_SHELL,
+          shell,
         });
         await callHelper({ action: 'fs_chown', path: home, owner: username, group: username, recursive: true });
-        return { ...created, home, sftpOnly: true };
+        return { ...created, home, sftpOnly: shell === SFTP_SHELL };
       },
     },
     'users.sshKeys': {

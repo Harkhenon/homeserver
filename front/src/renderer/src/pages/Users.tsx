@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { call } from '../api/client';
 import {
   Drawer, Table, Badge, Button, Modal, TextInput, PasswordInput, Stack,
-  Text, Group, ThemeIcon, Divider, Tabs, Textarea,
+  Text, Group, ThemeIcon, Divider, Tabs, Textarea, Select,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
@@ -296,9 +296,13 @@ function CreateUserModal({ opened, onClose, onCreated }: {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [site, setSite] = useState('');
+  const [shell, setShell] = useState<string | null>('nologin');
 
   const submit = async () => {
-    const res = await action.run('users.create', { username, password, site });
+    const res = await action.run('users.create', {
+      username, password, site,
+      shell: shell === 'bash' ? '/bin/bash' : undefined,
+    });
     if (res !== null) {
       notifications.show({ message: `Utilisateur ${username} créé`, color: 'green' });
       onCreated();
@@ -308,11 +312,21 @@ function CreateUserModal({ opened, onClose, onCreated }: {
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Nouvel utilisateur SFTP">
+    <Modal opened={opened} onClose={onClose} title="Nouvel utilisateur">
       <Stack>
         <TextInput label="Nom d'utilisateur" placeholder="web-alice" value={username} onChange={(e) => setUsername(e.currentTarget.value)} required />
         <PasswordInput label="Mot de passe (8 min.)" value={password} onChange={(e) => setPassword(e.currentTarget.value)} required />
         <TextInput label="Site (chroot)" placeholder="exemple.com" value={site} onChange={(e) => setSite(e.currentTarget.value)} required />
+        <Select
+          label="Shell"
+          description="nologin = SFTP uniquement ; bash = accès shell complet"
+          data={[
+            { label: 'nologin (SFTP uniquement)', value: 'nologin' },
+            { label: 'bash (SFTP + shell)', value: 'bash' },
+          ]}
+          value={shell}
+          onChange={setShell}
+        />
         <Button loading={action.loading} onClick={() => void submit()}>Créer</Button>
       </Stack>
     </Modal>
