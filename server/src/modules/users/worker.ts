@@ -67,7 +67,8 @@ const definition: ModuleDefinition = {
           shell,
         });
         await callHelper({ action: 'fs_chown', path: home, owner: username, group: username, recursive: true });
-        return { ...created, home, sftpOnly: shell === SFTP_SHELL };
+        const sftp = await callHelper<{ configured: boolean }>({ action: 'sftp_configure' });
+        return { ...created, home, sftpOnly: shell === SFTP_SHELL, sftpConfigured: sftp.configured };
       },
     },
     'users.sshKeys': {

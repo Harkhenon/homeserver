@@ -28,6 +28,7 @@ export type PrivilegedRequest =
   | { action: 'user_ssh_keys_list'; username: string }
   | { action: 'user_ssh_keys_add'; username: string; key: string }
   | { action: 'user_ssh_keys_remove'; username: string; index: number }
+  | { action: 'sftp_configure' }
   | { action: 'user_list' }
   | { action: 'fs_read'; path: string }
   | { action: 'fs_write'; path: string; content: string }
@@ -271,6 +272,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
       if (typeof raw.index !== 'number' || !Number.isInteger(raw.index) || raw.index < 0) return null;
       return { action: 'user_ssh_keys_remove', username: raw.username, index: raw.index };
+    case 'sftp_configure':
+      return { action: 'sftp_configure' };
     case 'fs_read':
       if (typeof raw.path !== 'string' || !isSafeFsPath(raw.path, FS_SUB_RE)) return null;
       return { action: 'fs_read', path: raw.path };

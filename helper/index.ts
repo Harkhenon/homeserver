@@ -312,7 +312,7 @@ WantedBy=multi-user.target
     }
     case 'user_create': {
       mkdirSync(req.home === '/dev/null' ? '/var/www' : req.home.replace(/\/[^/]+$/, ''), { recursive: true });
-      const useraddArgs = ['-r', '-d', req.home, '-s', req.shell, req.username];
+      const useraddArgs = ['-r', '-d', req.home, '-s', req.shell, '-G', 'homeserver-web', req.username];
       try {
         await exec('useradd', useraddArgs);
       } catch (err) {
@@ -388,6 +388,28 @@ WantedBy=multi-user.target
         if (uid !== undefined && gid !== undefined) chownSync(file, uid, gid);
       }
       return { username: req.username, removed: true, count: existing.length };
+    }
+    case 'sftp_configure': {
+      const confPath = '/etc/ssh/sshd_config.d/homeserver-sftp.conf';
+      const dir = '/etc/ssh/sshd_config.d';
+      const content = [
+        '# managed by homeserver — SFTP chrooté pour les utilisateurs web',
+        'Match Group homeserver-web',
+        '    ChrootDirectory /var/www',
+        '    ForceCommand internal-sftp',
+        '    AllowTcpForwarding no',
+        '    X11Forwarding no',
+      ].join('\n') + '\n';
+      try {
+        await exec('groupadd', ['-f', 'homeserver-web']);
+      } catch { /* groupe existant */ }
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const existing = existsSync(confPath) ? readFileSync(confPath, 'utf8') : '';
+      if (existing !== content) writeFileSync(confPath, content, { mode: 0o644 });
+      const test = await tryExec('sshd', ['-t']);
+      if (test !== null) throw new Error(`Configuration sshd invalide: ${test}`);
+      await exec('systemctl', ['reload', 'ssh']);
+      return { configured: true, confPath };
     }
     case 'user_list': {
       const out = await exec('getent', ['passwd']);
