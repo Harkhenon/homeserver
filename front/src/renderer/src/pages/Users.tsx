@@ -295,12 +295,11 @@ function CreateUserModal({ opened, onClose, onCreated }: {
   const action = useModuleAction('users');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [site, setSite] = useState('');
   const [shell, setShell] = useState<string | null>('nologin');
 
   const submit = async () => {
     const res = await action.run('users.create', {
-      username, password, site,
+      username, password,
       shell: shell === 'bash' ? '/bin/bash' : undefined,
     });
     if (res !== null) {
@@ -316,7 +315,6 @@ function CreateUserModal({ opened, onClose, onCreated }: {
       <Stack>
         <TextInput label="Nom d'utilisateur" placeholder="web-alice" value={username} onChange={(e) => setUsername(e.currentTarget.value)} required />
         <PasswordInput label="Mot de passe (8 min.)" value={password} onChange={(e) => setPassword(e.currentTarget.value)} required />
-        <TextInput label="Site (chroot)" placeholder="exemple.com" value={site} onChange={(e) => setSite(e.currentTarget.value)} required />
         <Select
           label="Shell"
           description="nologin = SFTP uniquement ; bash = accès shell complet"

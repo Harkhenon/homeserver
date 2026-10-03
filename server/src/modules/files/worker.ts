@@ -3,13 +3,14 @@ import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js
 import { callHelper } from '../../core/privileged/client.js';
 import type { FsEntry } from '../../core/privileged/contract.js';
 
-const ROOT = '/var/www';
-const PATH_RE = /^\/var\/www(\/[A-Za-z0-9._@ -]+)*\/?$/;
+const ROOTS = ['/home', '/var/www'];
+const PATH_RE = /^(\/home|\/var\/www)(\/[A-Za-z0-9._@ -]+)*\/?$/;
+const ROOT = '/home';
 
 function validatePath(input: unknown): string {
   const p = typeof input === 'string' ? input : '';
   const path = p.replace(/\/+$/, '') || ROOT;
-  if (path !== ROOT && !PATH_RE.test(path)) throw new Error('Chemin invalide (limité à /var/www)');
+  if (!ROOTS.includes(path) && !PATH_RE.test(path)) throw new Error('Chemin invalide (limité à /home et /var/www)');
   if (path.includes('..')) throw new Error('Chemin interdit');
   return path;
 }
@@ -19,7 +20,7 @@ const definition: ModuleDefinition = {
   prefix: 'files',
   actions: {
     'files.list': {
-      summary: 'Lister un répertoire sous /var/www (payload: { path })',
+      summary: 'Lister un répertoire sous /home ou /var/www (payload: { path })',
       handler: async (payload) => {
         const p = (payload ?? {}) as Record<string, unknown>;
         const path = validatePath(p.path);
@@ -28,7 +29,7 @@ const definition: ModuleDefinition = {
       },
     },
     'files.read': {
-      summary: 'Lire un fichier texte sous /var/www (payload: { path })',
+      summary: 'Lire un fichier texte (payload: { path })',
       handler: async (payload) => {
         const p = (payload ?? {}) as Record<string, unknown>;
         const path = validatePath(p.path);
@@ -38,7 +39,7 @@ const definition: ModuleDefinition = {
       },
     },
     'files.write': {
-      summary: 'Écrire un fichier texte sous /var/www (payload: { path, content })',
+      summary: 'Écrire un fichier texte (payload: { path, content })',
       handler: async (payload) => {
         const p = (payload ?? {}) as Record<string, unknown>;
         const path = validatePath(p.path);
@@ -48,7 +49,7 @@ const definition: ModuleDefinition = {
       },
     },
     'files.mkdir': {
-      summary: 'Créer un répertoire sous /var/www (payload: { path })',
+      summary: 'Créer un répertoire (payload: { path })',
       handler: async (payload) => {
         const p = (payload ?? {}) as Record<string, unknown>;
         const path = validatePath(p.path);
@@ -57,11 +58,11 @@ const definition: ModuleDefinition = {
       },
     },
     'files.delete': {
-      summary: 'Supprimer un fichier ou répertoire sous /var/www (payload: { path })',
+      summary: 'Supprimer un fichier ou répertoire (payload: { path })',
       handler: async (payload) => {
         const p = (payload ?? {}) as Record<string, unknown>;
         const path = validatePath(p.path);
-        if (path === ROOT) throw new Error('Interdit de supprimer /var/www');
+        if (ROOTS.includes(path)) throw new Error('Interdit de supprimer une racine');
         return callHelper({ action: 'fs_delete', path });
       },
     },

@@ -222,7 +222,8 @@ async function handleRequest(raw: unknown): Promise<unknown> {
     case 'node_app_create': {
       const unit = `/etc/systemd/system/${req.name}.service`;
       if (existsSync(unit)) throw new Error(`L'application ${req.name} existe déjà`);
-      const appDir = `/var/www/apps/${req.name}`;
+      const home = homeOf(req.user) ?? `/home/${req.user}`;
+      const appDir = `${home}/nodeApps/${req.name.replace(/^hs-app-/, '')}`;
       if (!existsSync(appDir)) {
         mkdirSync(appDir, { recursive: true, mode: 0o755 });
         const uid = req.user === 'root' ? 0 : uidOf(req.user);
@@ -311,8 +312,13 @@ WantedBy=multi-user.target
       return { family, upgraded: true };
     }
     case 'user_create': {
-      mkdirSync(req.home === '/dev/null' ? '/var/www' : req.home.replace(/\/[^/]+$/, ''), { recursive: true });
-      const useraddArgs = ['-r', '-d', req.home, '-s', req.shell, '-G', 'homeserver-web', req.username];
+      if (req.home === '/dev/null') {
+        // compat: home par défaut /home/<user>
+      }
+      const home = req.home === '/dev/null' ? `/home/${req.username}` : req.home;
+      mkdirSync(home.replace(/\/[^/]+$/, ''), { recursive: true });
+      if (!existsSync(home)) mkdirSync(home, { mode: 0o755 });
+      const useraddArgs = ['-r', '-d', home, '-s', req.shell, '-G', 'homeserver-web', req.username];
       try {
         await exec('useradd', useraddArgs);
       } catch (err) {
@@ -325,9 +331,18 @@ WantedBy=multi-user.target
         const e = err as { message: string };
         throw new Error(`Définition du mot de passe échouée: ${e.message}`);
       }
-      if (req.home !== '/dev/null' && existsSync(req.home)) {
-        chownSync(req.home, -1, -1);
-        try { chmodSync(req.home, 0o755); } catch { /* no-op */ }
+      if (existsSync(home)) {
+        chownSync(home, -1, -1);
+        try { chmodSync(home, 0o755); } catch { /* no-op */ }
+        const uid = uidOf(req.username);
+        const gid = gidOf(req.username);
+        if (uid !== undefined && gid !== undefined) {
+          for (const sub of ['www', 'nodeApps']) {
+            const subPath = `${home}/${sub}`;
+            if (!existsSync(subPath)) mkdirSync(subPath, { mode: 0o755 });
+            chownSync(subPath, uid, gid);
+          }
+        }
       }
       return { username: req.username, created: true };
     }
@@ -395,7 +410,7 @@ WantedBy=multi-user.target
       const content = [
         '# managed by homeserver — SFTP chrooté pour les utilisateurs web',
         'Match Group homeserver-web',
-        '    ChrootDirectory /var/www',
+        '    ChrootDirectory %h',
         '    ForceCommand internal-sftp',
         '    AllowTcpForwarding no',
         '    X11Forwarding no',
@@ -415,8 +430,8 @@ WantedBy=multi-user.target
       const out = await exec('getent', ['passwd']);
       const users = out.trim().split('\n').map((line) => {
         const [username, , uid, gid, , home, shell] = line.split(':');
-        return { username, uid: Number(uid), gid: Number(gid), home, shell };
-      }).filter((u) => u.home && u.home.startsWith('/var/www'));
+        return { username: username ?? '', uid: Number(uid), gid: Number(gid), home: home ?? '', shell: shell ?? '' };
+      }).filter((u) => u.home !== undefined && (u.home.startsWith('/var/www') || (u.home.startsWith('/home/') && u.username !== 'ubuntu' && u.username !== 'hs-xlndjukrsczf' && !u.username.startsWith('hs-'))));
       return { users };
     }
     case 'fs_read': {
@@ -609,7 +624,7 @@ WantedBy=multi-user.target
       const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
       const file = `homeserver-${req.site}-${stamp}.tar.gz`;
       const target = `/var/backups/homeserver/${file}`;
-      await exec('tar', ['-czf', target, '-C', '/var/www', req.site]);
+      await exec('tar', ['-czf', target, '-C', '/home/' + req.site.split('/')[0], 'www/' + req.site.split('/').slice(1).join('/')]);
       const st = statSync(target);
       return { file, site: req.site, sizeBytes: st.size, createdAt: new Date().toISOString() };
     }
@@ -632,7 +647,7 @@ WantedBy=multi-user.target
     case 'backup_restore': {
       const target = `/var/backups/homeserver/${req.file}`;
       if (!existsSync(target)) throw new Error('Sauvegarde introuvable');
-      await exec('tar', ['-xzf', target, '-C', '/var/www']);
+      await exec('tar', ['-xzf', target, '-C', `/home/${req.site.split('/')[0]}`]);
       return { file: req.file, site: req.site, restored: true };
     }
     case 'cron_write': {

@@ -8,7 +8,7 @@ import { IconFileDescription } from '@tabler/icons-react';
 import type { FsEntry } from '../types';
 
 export function FilesPage() {
-  const [path, setPath] = useState('/var/www');
+  const [path, setPath] = useState('/home');
   const entries = useModuleQuery<{ path: string; entries: FsEntry[] }>('files', 'files.list', { path });
   const action = useModuleAction('files');
   const [mkdirOpen, setMkdirOpen] = useState(false);
@@ -33,7 +33,7 @@ export function FilesPage() {
     <div>
       <PageHeader
 icon={IconFileDescription}         title="Fichiers"
-        description="Explorateur /var/www"
+        description="Explorateur /home et /var/www"
         actions={<Button size="xs" onClick={() => setMkdirOpen(true)}>Nouveau dossier</Button>}
       />
       <Group mb="sm">
@@ -41,13 +41,15 @@ icon={IconFileDescription}         title="Fichiers"
           <Text
             size="sm"
             style={{ cursor: 'pointer' }}
-            c={path === '/var/www' ? 'white' : 'dimmed'}
-            onClick={() => setPath('/var/www')}
+            c={path === '/home' || path === '/var/www' ? 'white' : 'dimmed'}
+            onClick={() => setPath(crumbs[0] === 'var' ? '/var/www' : '/home')}
           >
-            /var/www
+            /{crumbs[0] === 'var' ? 'var/www' : 'home'}
           </Text>
-          {crumbs.slice(2).map((crumb, i) => {
-            const crumbPath = `/var/www/${crumbs.slice(2, i + 3).join('/')}`;
+          {(crumbs[0] === 'var' ? crumbs.slice(2) : crumbs.slice(1)).map((crumb, i) => {
+            const crumbPath = crumbs[0] === 'var'
+              ? `/var/www/${crumbs.slice(2, i + 3).join('/')}`
+              : `/home/${crumbs.slice(1, i + 2).join('/')}`;
             return (
               <Text
                 key={crumbPath}
@@ -61,8 +63,8 @@ icon={IconFileDescription}         title="Fichiers"
             );
           })}
         </Breadcrumbs>
-        {path !== '/var/www' && (
-          <ActionIcon variant="light" onClick={() => setPath(path.split('/').slice(0, -1).join('/') || '/var/www')}>
+        {path !== '/home' && (
+          <ActionIcon variant="light" onClick={() => setPath(path.split('/').slice(0, -1).join('/') || '/home')}>
             <IconArrowUp size={16} />
           </ActionIcon>
         )}

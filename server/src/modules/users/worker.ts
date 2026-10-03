@@ -46,19 +46,16 @@ const definition: ModuleDefinition = {
       },
     },
     'users.create': {
-      summary: 'Créer un utilisateur SFTP chrooté dans /var/www/<site> (payload: { username, password, site })',
+      summary: 'Créer un utilisateur (home /home/<user> avec www/ et nodeApps/) (payload: { username, password, shell? })',
       handler: async (payload) => {
         const username = validateUsername(payload);
         const p = (payload ?? {}) as Record<string, unknown>;
         const password = typeof p.password === 'string' ? p.password : '';
         if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
-        const site = typeof p.site === 'string' ? p.site.trim().toLowerCase() : '';
-        if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(site)) throw new Error('Site invalide');
         const shell = p.shell === '/bin/bash' ? '/bin/bash' : SFTP_SHELL;
         const users = await listUsers();
         if (users.some((u) => u.username === username)) throw new Error(`L'utilisateur ${username} existe déjà`);
-        const home = `/var/www/${site}`;
-        await callHelper({ action: 'fs_mkdir', path: home });
+        const home = `/home/${username}`;
         const created = await callHelper<{ username: string; created: boolean }>({
           action: 'user_create',
           username,
@@ -66,7 +63,6 @@ const definition: ModuleDefinition = {
           home,
           shell,
         });
-        await callHelper({ action: 'fs_chown', path: home, owner: username, group: username, recursive: true });
         const sftp = await callHelper<{ configured: boolean }>({ action: 'sftp_configure' });
         return { ...created, home, sftpOnly: shell === SFTP_SHELL, sftpConfigured: sftp.configured };
       },

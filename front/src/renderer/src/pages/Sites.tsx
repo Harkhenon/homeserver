@@ -6,7 +6,7 @@ import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
 import { IconWorld } from '@tabler/icons-react';
-import type { Vhost, NginxVhost, Zone } from '../types';
+import type { Vhost, NginxVhost, Zone, SftpUser } from '../types';
 
 const PAGE_SIZE = 10;
 type ServerKind = 'apache' | 'nginx';
@@ -183,12 +183,19 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   const [server, setServer] = useState<ServerKind>('apache');
   const action = useModuleAction(server);
   const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
+  const users = useModuleQuery<SftpUser[]>('users', 'users.list');
   const [domain, setDomain] = useState<string | null>(null);
+  const [owner, setOwner] = useState<string | null>(null);
   const [docroot, setDocroot] = useState('');
 
   const pickDomain = (value: string | null) => {
     setDomain(value);
-    if (value) setDocroot(`/var/www/${value}`);
+    if (value && owner) setDocroot(`/home/${owner}/www/${value}`);
+  };
+
+  const pickOwner = (value: string | null) => {
+    setOwner(value);
+    if (value && domain) setDocroot(`/home/${value}/www/${domain}`);
   };
   const [phpVersion, setPhpVersion] = useState<string | null>(null);
   const [ssl, setSsl] = useState(false);
@@ -222,6 +229,16 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
             { label: 'Apache', value: 'apache' },
             { label: 'Nginx', value: 'nginx' },
           ]}
+        />
+        <Select
+          label="Propriétaire"
+          placeholder="Choisir un utilisateur"
+          data={(users.data ?? []).map((u) => ({ label: u.username, value: u.username }))}
+          value={owner}
+          onChange={pickOwner}
+          required
+          disabled={users.loading}
+          error={!users.loading && (users.data ?? []).length === 0 ? 'Aucun utilisateur — créez-en un dans Utilisateurs' : undefined}
         />
         <Select
           label="Domaine"

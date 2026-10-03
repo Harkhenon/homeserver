@@ -105,8 +105,8 @@ const APP_NAME_RE = /^hs-app-[a-z0-9][a-z0-9-]{0,40}$/;
 const APP_ENTRY_RE = /^(?!\.\.)([A-Za-z0-9._/-]{1,200}\.js)$/;
 const PORT_RE = /^([1-9][0-9]{0,4})$/;
 const UNIX_NAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
-const FS_PATH_RE = /^\/var\/www(\/[A-Za-z0-9._@ -]+)*\/?$/;
-const FS_SUB_RE = /^\/var\/www\/[A-Za-z0-9._@ -][A-Za-z0-9._@ \/-]*$/;
+const FS_PATH_RE = /^(\/var\/www|\/home)(\/[A-Za-z0-9._@ -]+)*\/?$/;
+const FS_SUB_RE = /^(\/var\/www|\/home)\/[A-Za-z0-9._@ -][A-Za-z0-9._@ \/-]*$/;
 
 function isSafeFsPath(path: string, re: RegExp): boolean {
   if (!re.test(path)) return false;
@@ -121,7 +121,7 @@ const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
 const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
 const CRON_FILE_RE = /^homeserver-[A-Za-z0-9_-]{1,50}$/;
 const BACKUP_FILE_RE = /^homeserver-[A-Za-z0-9._-]+\.tar\.gz$/;
-const SITE_RE_BIS = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
+const SITE_RE_BIS = /^[a-z0-9][a-z0-9.-]*[a-z0-9](\/[a-z0-9][a-z0-9.-]*[a-z0-9])*$/;
 
 function validatePort(v: unknown): number | null {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 65535) return null;
@@ -169,6 +169,7 @@ const DIR_WHITELIST: readonly string[] = [
   '/etc/named',
   '/etc/letsencrypt/renewal',
   '/var/www',
+  '/home',
 ];
 
 const ZONE_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.?$/i;
@@ -248,7 +249,7 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'user_create':
       if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
       if (typeof raw.password !== 'string' || raw.password.length < 6 || raw.password.length > 200) return null;
-      if (typeof raw.home !== 'string' || !(FS_PATH_RE.test(raw.home) || raw.home === '/dev/null')) return null;
+      if (typeof raw.home !== 'string' || !(FS_PATH_RE.test(raw.home) || raw.home === '/dev/null' || /^\/home\/[a-z_][a-z0-9_-]{0,31}$/.test(raw.home))) return null;
       if (typeof raw.shell !== 'string' || !['/usr/sbin/nologin', '/bin/false', '/bin/bash'].includes(raw.shell)) return null;
       return { action: 'user_create', username: raw.username, password: raw.password, home: raw.home, shell: raw.shell };
     case 'user_set_password':
