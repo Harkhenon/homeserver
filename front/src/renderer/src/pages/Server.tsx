@@ -50,7 +50,7 @@ export function ServerPage() {
   const info = useModuleQuery<SysInfo>('system', 'info');
   const mem = useModuleQuery<{ totalBytes: number; usedBytes: number; usagePercent: number }>('system', 'memory', undefined, { refetchInterval: 5000 });
   const cpu = useModuleQuery<{ cores: number; load: [number, number, number]; usagePercent: number }>('system', 'cpu', undefined, { refetchInterval: 5000 });
-  const procs = useModuleQuery<ProcInfo[]>('system', 'processes', { limit: 15 });
+  const procs = useModuleQuery<ProcInfo[]>('system', 'processes', { limit: 15 }, { refetchInterval: 5000 });
   const updates = useModuleQuery<UpdatesInfo>('system', 'updates');
   const history = useModuleQuery<{ samples: MonitorSample[] }>('monitor', 'history', { minutes: 60 });
   const latest = useModuleQuery<MonitorSample>('monitor', 'latest', undefined, { refetchInterval: 5000 });

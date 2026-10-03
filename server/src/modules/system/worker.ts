@@ -97,7 +97,7 @@ interface ProcessInfo {
 
 async function readProcesses(sort: 'cpu' | 'mem' = 'cpu', limit = 20): Promise<ProcessInfo[]> {
   try {
-    const { stdout } = await run('ps', ['eo', 'pid,user,pcpu,pmem,comm', '--no-headers', '--sort=-' + (sort === 'cpu' ? 'pcpu' : 'pmem')], { timeout: 10_000 });
+    const { stdout } = await run('ps', ['-eo', 'pid,user,pcpu,pmem,comm', '--no-headers', '--sort=-' + (sort === 'cpu' ? 'pcpu' : 'pmem')], { timeout: 10_000 });
     return stdout
       .trim()
       .split('\n')
