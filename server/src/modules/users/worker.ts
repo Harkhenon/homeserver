@@ -68,14 +68,17 @@ const definition: ModuleDefinition = {
           if (sshKey.length < 50 || sshKey.includes('\n')) throw new Error('Clé SSH invalide');
           await callHelper({ action: 'user_ssh_keys_add', username, key: sshKey });
         }
-        const sftp = await callHelper<{ configured: boolean; reloaded?: boolean }>({ action: 'sftp_configure' });
+        const sftp = await callHelper<{ configured: boolean; reloaded?: boolean; reloadError?: string }>({ action: 'sftp_configure' });
+        if (sftp.configured && sftp.reloaded === false) {
+          throw new Error(`SFTP configuré mais rechargement sshd échoué: ${sftp.reloadError ?? 'inconnu'} — lancez « systemctl reload ssh »`);
+        }
         return {
           ...created,
           home,
           sftpOnly: shell === SFTP_SHELL,
           sshKeyInstalled: Boolean(sshKey),
           sftpConfigured: sftp.configured,
-          sshReloaded: sftp.reloaded !== false,
+          sshReloaded: true,
         };
       },
     },

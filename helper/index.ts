@@ -429,17 +429,31 @@ WantedBy=multi-user.target
       if (existing !== content) writeFileSync(confPath, content, { mode: 0o644 });
       const test = await tryExec('/usr/sbin/sshd', ['-t']);
       if (test !== null) throw new Error(`Configuration sshd invalide: ${test}`);
-      let reloaded = true;
-      try {
-        await exec('systemctl', ['reload', 'ssh']);
-      } catch {
+      let reloaded = false;
+      let reloadError: string | undefined;
+      for (const unit of ['ssh', 'sshd']) {
         try {
-          await exec('systemctl', ['reload', 'sshd']);
-        } catch {
-          reloaded = false;
+          await exec('systemctl', ['reload', unit]);
+          reloaded = true;
+          break;
+        } catch (err) {
+          reloadError = (err as Error).message;
         }
       }
-      return { configured: true, confPath, reloaded };
+      if (!reloaded) {
+        try {
+          const pidOut = await tryExec('systemctl', ['show', '-p', 'MainPID', '--value', 'ssh']);
+          const pid = Number((pidOut ?? '').trim());
+          if (pid > 0) {
+            process.kill(pid, 'SIGHUP');
+            reloaded = true;
+            reloadError = undefined;
+          }
+        } catch (err) {
+          reloadError = (err as Error).message;
+        }
+      }
+      return { configured: true, confPath, reloaded, ...(reloadError ? { reloadError } : {}) };
     }
     case 'user_list': {
       const out = await exec('getent', ['passwd']);
