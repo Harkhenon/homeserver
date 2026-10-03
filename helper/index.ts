@@ -319,7 +319,9 @@ WantedBy=multi-user.target
       mkdirSync(home.replace(/\/[^/]+$/, ''), { recursive: true });
       if (!existsSync(home)) mkdirSync(home, { mode: 0o755 });
       await exec('groupadd', ['-f', 'homeserver-web']);
-      const useraddArgs = ['-r', '-d', home, '-s', req.shell, '-G', 'homeserver-web', req.username];
+      await exec('groupadd', ['-f', 'homeserver-sftp']);
+      const group = req.shell === '/bin/bash' ? 'homeserver-web' : 'homeserver-sftp';
+      const useraddArgs = ['-r', '-d', home, '-s', req.shell, '-G', group, req.username];
       try {
         await exec('useradd', useraddArgs);
       } catch (err) {
@@ -409,15 +411,15 @@ WantedBy=multi-user.target
       const confPath = '/etc/ssh/sshd_config.d/homeserver-sftp.conf';
       const dir = '/etc/ssh/sshd_config.d';
       const content = [
-        '# managed by homeserver — SFTP chrooté pour les utilisateurs web',
-        'Match Group homeserver-web',
+        '# managed by homeserver — SFTP chrooté pour les utilisateurs SFTP uniquement',
+        'Match Group homeserver-sftp',
         '    ChrootDirectory %h',
         '    ForceCommand internal-sftp',
         '    AllowTcpForwarding no',
         '    X11Forwarding no',
       ].join('\n') + '\n';
       try {
-        await exec('groupadd', ['-f', 'homeserver-web']);
+        await exec('groupadd', ['-f', 'homeserver-sftp']);
       } catch { /* groupe existant */ }
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       const existing = existsSync(confPath) ? readFileSync(confPath, 'utf8') : '';
