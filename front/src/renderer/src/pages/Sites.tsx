@@ -6,7 +6,7 @@ import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
 import { IconWorld } from '@tabler/icons-react';
-import type { Vhost, NginxVhost } from '../types';
+import type { Vhost, NginxVhost, Zone } from '../types';
 
 const PAGE_SIZE = 10;
 type ServerKind = 'apache' | 'nginx';
@@ -182,13 +182,15 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
 }) {
   const [server, setServer] = useState<ServerKind>('apache');
   const action = useModuleAction(server);
-  const [domain, setDomain] = useState('');
+  const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
+  const [domain, setDomain] = useState<string | null>(null);
   const [docroot, setDocroot] = useState('');
   const [phpVersion, setPhpVersion] = useState<string | null>(null);
   const [ssl, setSsl] = useState(false);
   const [nodePort, setNodePort] = useState('');
 
   const submit = async () => {
+    if (!domain) return;
     const res = await action.run('vhosts.create', {
       domain,
       docroot: docroot || `/var/www/${domain}`,
@@ -216,8 +218,17 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
             { label: 'Nginx', value: 'nginx' },
           ]}
         />
-        <TextInput label="Domaine" placeholder="exemple.com" value={domain} onChange={(e) => setDomain(e.currentTarget.value)} required />
-        <TextInput label="DocumentRoot" placeholder={`/var/www/${domain || 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
+        <Select
+          label="Domaine"
+          placeholder="Choisir un domaine enregistré"
+          data={(zones.data ?? []).map((z) => ({ label: z.domain, value: z.domain }))}
+          value={domain}
+          onChange={setDomain}
+          required
+          disabled={zones.loading}
+          error={!zones.loading && (zones.data ?? []).length === 0 ? 'Aucun domaine enregistré — créez-en un dans Domaines' : undefined}
+        />
+        <TextInput label="DocumentRoot" placeholder={`/var/www/${domain ?? 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
         <Select
           label="Version PHP"
           placeholder="Aucune (statique ou Node)"
@@ -235,7 +246,7 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
           />
         </Tooltip>
         <Switch label="SSL (Let's Encrypt déjà émis)" checked={ssl} onChange={(e) => setSsl(e.currentTarget.checked)} />
-        <Button loading={action.loading} onClick={() => void submit()}>Créer</Button>
+        <Button loading={action.loading} disabled={!domain} onClick={() => void submit()}>Créer</Button>
       </Stack>
     </Modal>
   );
