@@ -422,10 +422,19 @@ WantedBy=multi-user.target
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       const existing = existsSync(confPath) ? readFileSync(confPath, 'utf8') : '';
       if (existing !== content) writeFileSync(confPath, content, { mode: 0o644 });
-      const test = await tryExec('sshd', ['-t']);
+      const test = await tryExec('/usr/sbin/sshd', ['-t']);
       if (test !== null) throw new Error(`Configuration sshd invalide: ${test}`);
-      await exec('systemctl', ['reload', 'ssh']);
-      return { configured: true, confPath };
+      let reloaded = true;
+      try {
+        await exec('systemctl', ['reload', 'ssh']);
+      } catch {
+        try {
+          await exec('systemctl', ['reload', 'sshd']);
+        } catch {
+          reloaded = false;
+        }
+      }
+      return { configured: true, confPath, reloaded };
     }
     case 'user_list': {
       const out = await exec('getent', ['passwd']);

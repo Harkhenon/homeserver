@@ -63,8 +63,8 @@ const definition: ModuleDefinition = {
           home,
           shell,
         });
-        const sftp = await callHelper<{ configured: boolean }>({ action: 'sftp_configure' });
-        return { ...created, home, sftpOnly: shell === SFTP_SHELL, sftpConfigured: sftp.configured };
+        void callHelper<{ configured: boolean }>({ action: 'sftp_configure' }).catch(() => undefined);
+        return { ...created, home, sftpOnly: shell === SFTP_SHELL };
       },
     },
     'users.sshKeys': {
