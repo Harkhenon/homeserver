@@ -10,6 +10,22 @@ function uidOf(user: string): number | undefined {
   }
   return undefined;
 }
+function gidOf(user: string): number | undefined {
+  const passwd = readFileSync('/etc/passwd', 'utf8');
+  for (const line of passwd.split('\n')) {
+    const [name, , , gid] = line.split(':');
+    if (name === user) return Number(gid);
+  }
+  return undefined;
+}
+function homeOf(user: string): string | undefined {
+  const passwd = readFileSync('/etc/passwd', 'utf8');
+  for (const line of passwd.split('\n')) {
+    const [name, , , , , home] = line.split(':');
+    if (name === user) return home;
+  }
+  return undefined;
+}
 import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -315,6 +331,55 @@ WantedBy=multi-user.target
       const args = req.removeHome ? ['-r', req.username] : [req.username];
       await exec('userdel', args);
       return { username: req.username, deleted: true };
+    }
+    case 'user_ssh_keys_list': {
+      const home = homeOf(req.username);
+      const file = `${home}/.ssh/authorized_keys`;
+      if (!existsSync(file)) return { username: req.username, keys: [] as string[] };
+      const keys = readFileSync(file, 'utf8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith('#'));
+      return { username: req.username, keys };
+    }
+    case 'user_ssh_keys_add': {
+      const home = homeOf(req.username);
+      if (!home || !existsSync(home)) throw new Error(`Répertoire personnel introuvable: ${home}`);
+      const sshDir = `${home}/.ssh`;
+      const file = `${sshDir}/authorized_keys`;
+      if (!existsSync(sshDir)) mkdirSync(sshDir, { mode: 0o700 });
+      const uid = uidOf(req.username);
+      const gid = gidOf(req.username);
+      if (uid !== undefined && gid !== undefined) {
+        chownSync(sshDir, uid, gid);
+        chmodSync(sshDir, 0o700);
+      }
+      const existing = existsSync(file) ? readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.length > 0) : [];
+      if (existing.some((k) => k === req.key)) throw new Error('Cette clé est déjà installée');
+      existing.push(req.key);
+      writeFileSync(file, `${existing.join('\n')}\n`, { mode: 0o600 });
+      if (uid !== undefined && gid !== undefined) {
+        chownSync(file, uid, gid);
+        chmodSync(file, 0o600);
+      }
+      return { username: req.username, added: true, count: existing.length };
+    }
+    case 'user_ssh_keys_remove': {
+      const home = homeOf(req.username);
+      const file = `${home}/.ssh/authorized_keys`;
+      if (!existsSync(file)) throw new Error('Aucune clé installée');
+      const existing = readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+      if (req.index >= existing.length) throw new Error('Clé introuvable');
+      existing.splice(req.index, 1);
+      if (existing.length === 0) {
+        rmSync(file);
+      } else {
+        writeFileSync(file, `${existing.join('\n')}\n`, { mode: 0o600 });
+        const uid = uidOf(req.username);
+        const gid = gidOf(req.username);
+        if (uid !== undefined && gid !== undefined) chownSync(file, uid, gid);
+      }
+      return { username: req.username, removed: true, count: existing.length };
     }
     case 'user_list': {
       const out = await exec('getent', ['passwd']);

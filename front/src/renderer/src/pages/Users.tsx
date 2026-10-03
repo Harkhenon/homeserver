@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { call } from '../api/client';
 import {
   Drawer, Table, Badge, Button, Modal, TextInput, PasswordInput, Stack,
-  Text, Group, ThemeIcon, Divider, Tabs,
+  Text, Group, ThemeIcon, Divider, Tabs, Textarea,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
-import { IconUsers, IconUser, IconKey, IconPackage, IconBrandNodejs, IconPlus } from '@tabler/icons-react';
+import { IconUsers, IconUser, IconKey, IconPackage, IconBrandNodejs, IconPlus, IconTerminal2, IconTrash } from '@tabler/icons-react';
 import { PageHeader, LoadingBlock, ErrorBlock, StatusBadge } from '../components';
 import type { SftpUser } from '../types';
 
@@ -194,6 +194,7 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
       <Tabs defaultValue="security">
         <Tabs.List mb="md">
           <Tabs.Tab value="security" leftSection={<IconKey size={16} stroke={1.5} />}>Sécurité</Tabs.Tab>
+          <Tabs.Tab value="ssh" leftSection={<IconTerminal2 size={16} stroke={1.5} />}>Clés SSH</Tabs.Tab>
           <Tabs.Tab value="versions" leftSection={<IconPackage size={16} stroke={1.5} />}>Versions</Tabs.Tab>
         </Tabs.List>
 
@@ -219,6 +220,10 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
               Supprimer l'utilisateur
             </Button>
           </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="ssh">
+          <UserSshKeys username={user.username} />
         </Tabs.Panel>
 
         <Tabs.Panel value="versions">
@@ -311,5 +316,77 @@ function CreateUserModal({ opened, onClose, onCreated }: {
         <Button loading={action.loading} onClick={() => void submit()}>Créer</Button>
       </Stack>
     </Modal>
+  );
+}
+
+function UserSshKeys({ username }: { username: string }) {
+  const keys = useModuleQuery<{ username: string; keys: string[] }>('users', 'users.sshKeys', { username });
+  const action = useModuleAction('users');
+  const [newKey, setNewKey] = useState('');
+
+  const add = async () => {
+    const key = newKey.trim();
+    if (key.length < 50) {
+      notifications.show({ message: 'Clé SSH invalide (trop courte)', color: 'red' });
+      return;
+    }
+    const res = await action.run('users.sshKeys.add', { username, key });
+    if (res !== null) {
+      notifications.show({ message: 'Clé SSH ajoutée', color: 'green' });
+      setNewKey('');
+      void keys.reload();
+    } else if (action.error) {
+      notifications.show({ message: action.error, color: 'red' });
+    }
+  };
+
+  const remove = async (index: number) => {
+    const res = await action.run('users.sshKeys.remove', { username, index });
+    if (res !== null) {
+      notifications.show({ message: 'Clé retirée', color: 'green' });
+      void keys.reload();
+    } else if (action.error) {
+      notifications.show({ message: action.error, color: 'red' });
+    }
+  };
+
+  const list = keys.data?.keys ?? [];
+
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        Les clés autorisent la connexion SFTP (et SSH si l'utilisateur dispose d'un shell).
+      </Text>
+      {keys.loading ? (
+        <Text size="sm" c="dimmed">Chargement…</Text>
+      ) : list.length > 0 ? (
+        <Stack gap="xs">
+          {list.map((key, i) => (
+            <Group key={i} justify="space-between" wrap="nowrap">
+              <Text size="xs" c="dimmed" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} miw={100}>
+                {key}
+              </Text>
+              <Button size="compact-xs" variant="light" color="red" leftSection={<IconTrash size={14} />} onClick={() => void remove(i)}>
+                Retirer
+              </Button>
+            </Group>
+          ))}
+        </Stack>
+      ) : (
+        <Text size="sm" c="dimmed">Aucune clé SSH installée.</Text>
+      )}
+      <Divider my="xs" />
+      <Textarea
+        label="Nouvelle clé publique"
+        placeholder="ssh-ed25519 AAAAC3Nza... user@machine"
+        autosize
+        minRows={2}
+        value={newKey}
+        onChange={(e) => setNewKey(e.currentTarget.value)}
+      />
+      <Button size="sm" variant="light" loading={action.loading} onClick={() => void add()}>
+        Ajouter la clé
+      </Button>
+    </Stack>
   );
 }

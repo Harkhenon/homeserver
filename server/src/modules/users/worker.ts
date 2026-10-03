@@ -22,6 +22,11 @@ async function listUsers(): Promise<UserInfo[]> {
   return res.users;
 }
 
+async function assertUserExists(username: string): Promise<void> {
+  const users = await listUsers();
+  if (!users.some((u) => u.username === username)) throw new Error(`Utilisateur introuvable: ${username}`);
+}
+
 const definition: ModuleDefinition = {
   name: 'users',
   prefix: 'users',
@@ -62,6 +67,36 @@ const definition: ModuleDefinition = {
         });
         await callHelper({ action: 'fs_chown', path: home, owner: username, group: username, recursive: true });
         return { ...created, home, sftpOnly: true };
+      },
+    },
+    'users.sshKeys': {
+      summary: 'Lister les clés SSH d\'un utilisateur (payload: { username })',
+      handler: async (payload) => {
+        const username = validateUsername(payload);
+        await assertUserExists(username);
+        return callHelper<{ username: string; keys: string[] }>({ action: 'user_ssh_keys_list', username });
+      },
+    },
+    'users.sshKeys.add': {
+      summary: 'Ajouter une clé SSH à un utilisateur (payload: { username, key })',
+      handler: async (payload) => {
+        const username = validateUsername(payload);
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const key = typeof p.key === 'string' ? p.key.trim() : '';
+        if (key.length < 50) throw new Error('Clé SSH invalide (trop courte)');
+        await assertUserExists(username);
+        return callHelper({ action: 'user_ssh_keys_add', username, key });
+      },
+    },
+    'users.sshKeys.remove': {
+      summary: 'Retirer une clé SSH d\'un utilisateur (payload: { username, index })',
+      handler: async (payload) => {
+        const username = validateUsername(payload);
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const index = typeof p.index === 'number' ? p.index : -1;
+        if (!Number.isInteger(index) || index < 0) throw new Error('Index de clé invalide');
+        await assertUserExists(username);
+        return callHelper({ action: 'user_ssh_keys_remove', username, index });
       },
     },
     'users.delete': {
