@@ -67,7 +67,7 @@ async function main() {
   const existingJwt = existingEnv?.match(/^HS_JWT_SECRET=(.+)$/m)?.[1] ?? null;
   const existingModules = existingEnv?.match(/^HS_MODULES=(.+)$/m)?.[1] ?? null;
 
-  const port = existingPort ?? (await rl.question("Port de l'API [3000]: ")) ?? '3000';
+  const port = existingPort ?? ((await rl.question("Port de l'API [3000]: ")) || '3000');
   const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
   const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
   const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
