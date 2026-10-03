@@ -99,6 +99,9 @@ HS_GROUP="homeserver"
 if ! getent group "$HS_GROUP" >/dev/null; then
   run_step "Création du groupe $HS_GROUP" groupadd "$HS_GROUP"
 fi
+if ! getent group "homeserver-web" >/dev/null; then
+  run_step "Création du groupe homeserver-web (SFTP)" groupadd "homeserver-web"
+fi
 HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
 if [ -n "$HS_USER" ]; then
   echo -e "${GREEN}✓${RESET} Utilisateur existant réutilisé: ${HS_USER} (aucun doublon créé)"

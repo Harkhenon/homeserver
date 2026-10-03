@@ -318,6 +318,7 @@ WantedBy=multi-user.target
       const home = req.home === '/dev/null' ? `/home/${req.username}` : req.home;
       mkdirSync(home.replace(/\/[^/]+$/, ''), { recursive: true });
       if (!existsSync(home)) mkdirSync(home, { mode: 0o755 });
+      await exec('groupadd', ['-f', 'homeserver-web']);
       const useraddArgs = ['-r', '-d', home, '-s', req.shell, '-G', 'homeserver-web', req.username];
       try {
         await exec('useradd', useraddArgs);
