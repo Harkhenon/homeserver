@@ -46,7 +46,7 @@ const definition: ModuleDefinition = {
       },
     },
     'users.create': {
-      summary: 'Créer un utilisateur (home /home/<user> avec www/ et nodeApps/) (payload: { username, password, shell? })',
+      summary: 'Créer un utilisateur (home /home/<user> avec www/ et nodeApps/) (payload: { username, password, shell?, sshKey? })',
       handler: async (payload) => {
         const username = validateUsername(payload);
         const p = (payload ?? {}) as Record<string, unknown>;
@@ -63,8 +63,13 @@ const definition: ModuleDefinition = {
           home,
           shell,
         });
+        const sshKey = typeof p.sshKey === 'string' ? p.sshKey.trim() : '';
+        if (sshKey) {
+          if (sshKey.length < 50 || sshKey.includes('\n')) throw new Error('Clé SSH invalide');
+          await callHelper({ action: 'user_ssh_keys_add', username, key: sshKey });
+        }
         void callHelper<{ configured: boolean }>({ action: 'sftp_configure' }).catch(() => undefined);
-        return { ...created, home, sftpOnly: shell === SFTP_SHELL };
+        return { ...created, home, sftpOnly: shell === SFTP_SHELL, sshKeyInstalled: Boolean(sshKey) };
       },
     },
     'users.sshKeys': {

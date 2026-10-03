@@ -296,11 +296,18 @@ function CreateUserModal({ opened, onClose, onCreated }: {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [shell, setShell] = useState<string | null>('nologin');
+  const [sshKey, setSshKey] = useState('');
 
   const submit = async () => {
+    const key = sshKey.trim();
+    if (key && key.length < 50) {
+      notifications.show({ message: 'Clé SSH invalide (trop courte)', color: 'red' });
+      return;
+    }
     const res = await action.run('users.create', {
       username, password,
       shell: shell === 'bash' ? '/bin/bash' : undefined,
+      ...(key ? { sshKey: key } : {}),
     });
     if (res !== null) {
       notifications.show({ message: `Utilisateur ${username} créé`, color: 'green' });
@@ -324,6 +331,14 @@ function CreateUserModal({ opened, onClose, onCreated }: {
           ]}
           value={shell}
           onChange={setShell}
+        />
+        <Textarea
+          label="Clé publique SSH (optionnel)"
+          placeholder="ssh-ed25519 AAAAC3Nza... user@machine"
+          autosize
+          minRows={2}
+          value={sshKey}
+          onChange={(e) => setSshKey(e.currentTarget.value)}
         />
         <Button loading={action.loading} onClick={() => void submit()}>Créer</Button>
       </Stack>
