@@ -185,6 +185,11 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
   const [domain, setDomain] = useState<string | null>(null);
   const [docroot, setDocroot] = useState('');
+
+  const pickDomain = (value: string | null) => {
+    setDomain(value);
+    if (value) setDocroot(`/var/www/${value}`);
+  };
   const [phpVersion, setPhpVersion] = useState<string | null>(null);
   const [ssl, setSsl] = useState(false);
   const [nodePort, setNodePort] = useState('');
@@ -223,7 +228,7 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
           placeholder="Choisir un domaine enregistré"
           data={(zones.data ?? []).map((z) => ({ label: z.domain, value: z.domain }))}
           value={domain}
-          onChange={setDomain}
+          onChange={pickDomain}
           required
           disabled={zones.loading}
           error={!zones.loading && (zones.data ?? []).length === 0 ? 'Aucun domaine enregistré — créez-en un dans Domaines' : undefined}
