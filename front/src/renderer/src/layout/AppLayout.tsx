@@ -82,11 +82,16 @@ export function AppLayout({
                 />
               </ActionIcon>
             </Tooltip>
-            <Image
-              src={HomeserverLogo}
-              alt='Homeserver logo'
-              style={{ width: '64px', height: '64px' }}
-            />
+            <ThemeIcon
+              size={32}
+              radius='md'
+              variant='filled'>
+              <Image
+                src={HomeserverLogo}
+                alt='Homeserver logo'
+                style={{ width: '32px', height: '32px' }}
+              />
+            </ThemeIcon>
             <Title order={4}>Homeserver</Title>
             <Text
               size='xs'
