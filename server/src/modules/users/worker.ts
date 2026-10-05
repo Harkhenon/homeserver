@@ -117,11 +117,11 @@ const definition: ModuleDefinition = {
       handler: async (payload) => {
         const username = validateUsername(payload);
         const p = (payload ?? {}) as Record<string, unknown>;
-        const removeHome = p.removeHome === true;
+        const removeHome = p.removeHome !== false;
         const users = await listUsers();
         if (!users.some((u) => u.username === username)) throw new Error(`Utilisateur introuvable: ${username}`);
-        await callHelper({ action: 'user_delete', username, removeHome: false });
-        return { username, deleted: true, homeRemoved: removeHome };
+        const res = await callHelper<{ username: string; deleted: boolean; homeRemoved: boolean }>({ action: 'user_delete', username, removeHome });
+        return { username, deleted: res.deleted, homeRemoved: res.homeRemoved };
       },
     },
     'users.setPassword': {

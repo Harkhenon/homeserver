@@ -167,7 +167,7 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
   };
 
   const remove = async () => {
-    const res = await action.run('users.delete', { username: user.username });
+    const res = await action.run('users.delete', { username: user.username, removeHome: true });
     if (res !== null) {
       notifications.show({ message: `${user.username} supprimé`, color: 'green' });
       onDeleted();

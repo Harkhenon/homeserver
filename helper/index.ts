@@ -413,9 +413,17 @@ WantedBy=multi-user.target
       // tuer toutes les sessions/processus de l'utilisateur avant suppression
       try { await exec('pkill', ['-STOP', '-u', req.username]); } catch { /* aucun processus */ }
       try { await exec('pkill', ['-KILL', '-u', req.username]); } catch { /* aucun processus */ }
+      const home = homeOf(req.username);
       const args = req.removeHome ? ['-r', req.username] : [req.username];
       await exec('userdel', args);
-      return { username: req.username, deleted: true };
+      let homeRemoved = false;
+      if (req.removeHome && home !== undefined && home.startsWith('/home/') && home !== '/home') {
+        if (existsSync(home)) {
+          rmSync(home, { recursive: true, force: true });
+        }
+        homeRemoved = !existsSync(home);
+      }
+      return { username: req.username, deleted: true, homeRemoved };
     }
     case 'user_ssh_keys_list': {
       const home = homeOf(req.username);
