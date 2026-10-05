@@ -6,6 +6,7 @@ import type { DirEntryInfo, ServiceStatusResult } from '../../core/privileged/co
 const SITES_AVAILABLE = '/etc/nginx/sites-available';
 const SITES_ENABLED = '/etc/nginx/sites-enabled';
 const SITE_FILE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
+const BASE_SITES = new Set(['000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 
 interface NginxVhost {
@@ -127,7 +128,7 @@ function validateVhostInput(payload: Record<string, unknown>): { domain: string;
 async function listVhosts(): Promise<NginxVhost[]> {
   const enabled = await listEnabled();
   const res = await callHelper<{ entries: DirEntryInfo[] }>({ action: 'list_dir', path: SITES_AVAILABLE });
-  const files = (res.entries ?? []).filter((e) => e.type === 'file' && SITE_FILE_RE.test(e.name));
+  const files = (res.entries ?? []).filter((e) => e.type === 'file' && SITE_FILE_RE.test(e.name) && !BASE_SITES.has(e.name));
   return Promise.all(files.map(async (e) => parseVhost(e.name, await readSite(e.name), enabled.has(e.name))));
 }
 

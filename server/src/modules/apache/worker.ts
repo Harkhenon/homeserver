@@ -34,6 +34,7 @@ function confPath(site: string): string {
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 const SITE_FILE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
+const BASE_SITES = new Set(['000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
 
 function parseVhostConf(site: string, content: string, enabled: boolean): Vhost {
   const id = site.replace(/\.conf$/, '');
@@ -146,7 +147,7 @@ ${phpBlock}
 async function listVhosts(): Promise<Vhost[]> {
   const enabled = await listEnabledSites();
   const res = await callHelper<{ entries: DirEntryInfo[] }>({ action: 'list_dir', path: sitesAvailableDir() });
-  const files = (res.entries ?? []).filter((e) => e.type === 'file' && SITE_FILE_RE.test(e.name));
+  const files = (res.entries ?? []).filter((e) => e.type === 'file' && SITE_FILE_RE.test(e.name) && !BASE_SITES.has(e.name));
   const vhosts = await Promise.all(files.map(async (e) => {
     const content = await readSite(e.name).catch(() => '');
     return parseVhostConf(e.name, content, enabled.has(e.name));
