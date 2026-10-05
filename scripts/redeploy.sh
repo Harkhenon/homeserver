@@ -77,10 +77,22 @@ as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NOD
 
 echo -e "${CYAN}Homeserver — redéploiement rapide (${HS_USER})${RESET}"
 
-# --- 1. git pull ---------------------------------------------------------------------
+# --- 1. git pull (dans le dépôt source) + re-copie vers INSTALL_DIR -------------------
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if $DO_PULL; then
-  run_step "git pull dans $INSTALL_DIR" as_hs "git pull --ff-only"
+  [ -d "$SRC_DIR/.git" ] || fail "$SRC_DIR n'est pas un dépôt git — utilise --no-pull."
+  run_step "git pull dans $SRC_DIR" git -C "$SRC_DIR" pull --ff-only
 fi
+run_step "Synchronisation des sources vers $INSTALL_DIR" bash -c "
+  tar -C '$SRC_DIR' \
+    --exclude='./node_modules' \
+    --exclude='./server/dist' \
+    --exclude='./.git' \
+    --exclude='./.env' \
+    --exclude='./front/dist' \
+    --exclude='./front/node_modules' \
+    -cf - . | tar -C '$INSTALL_DIR' -xf -
+  chown -R '$HS_USER:$HS_USER' '$INSTALL_DIR'"
 
 # --- 2. Dépendances + builds ----------------------------------------------------------
 run_step "Dépendances du back (npm ci)" as_hs "'$HS_NPM_BIN' ci --no-audit --no-fund"
