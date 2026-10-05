@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Table, Badge, Button, Modal, TextInput, Select, Stack, Group } from '@mantine/core';
+import { Table, Badge, Button, Modal, TextInput, Select, Stack, Group, Alert } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
-import { IconBrandNodejs } from '@tabler/icons-react';
+import { IconBrandNodejs, IconAlertCircle } from '@tabler/icons-react';
 import type { NodeApp } from '../types';
 
 export function NodeAppsPage() {
@@ -82,6 +82,7 @@ icon={IconBrandNodejs}         title="Applications Node"
 
 function CreateAppModal({ opened, onClose, onCreated }: { opened: boolean; onClose: () => void; onCreated: () => void }) {
   const action = useModuleAction('node');
+  const users = useModuleQuery<{ username: string }[]>('users', 'users.list');
   const [name, setName] = useState('');
   const [port, setPort] = useState('');
   const [user, setUser] = useState('');
@@ -107,7 +108,20 @@ function CreateAppModal({ opened, onClose, onCreated }: { opened: boolean; onClo
       <Stack>
         <TextInput label="Nom" placeholder="blog" description="Préfixe hs-app- ajouté automatiquement" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
         <TextInput label="Port" placeholder="3001" value={port} onChange={(e) => setPort(e.currentTarget.value)} required />
-        <TextInput label="Utilisateur système" placeholder="web-alice" value={user} onChange={(e) => setUser(e.currentTarget.value)} required />
+        <Select
+          label="Utilisateur système"
+          placeholder="Choisir un utilisateur"
+          data={(users.data ?? []).map((u) => ({ value: u.username, label: u.username }))}
+          value={user}
+          onChange={(v) => setUser(v ?? '')}
+          required
+          disabled={users.loading || (users.data?.length ?? 0) === 0}
+        />
+        {!users.loading && (users.data?.length ?? 0) === 0 && (
+          <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
+            Aucun utilisateur existant — créez d'abord un utilisateur dans la section Utilisateurs.
+          </Alert>
+        )}
         <TextInput label="Point d'entrée" placeholder="server.js" value={entry} onChange={(e) => setEntry(e.currentTarget.value)} required />
         <Button loading={action.loading} onClick={() => void submit()}>Créer</Button>
       </Stack>
