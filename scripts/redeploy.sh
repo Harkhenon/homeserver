@@ -10,11 +10,11 @@ set -euo pipefail
 BOLD='\033[1m'; CYAN='\033[1;36m'; GREEN='\033[32m'; RED='\033[31m'; DIM='\033[2m'; RESET='\033[0m'
 
 VERBOSE=false
-DO_pull=true
+DO_PULL=true
 for arg in "$@"; do
   case "$arg" in
     --verbose|-v) VERBOSE=true ;;
-    --no-pull) do_pull=false ;;
+    --no-pull) DO_PULL=false ;;
     *) echo -e "${RED}✗ Option inconnue: $arg${RESET}"; exit 1 ;;
   esac
 done
@@ -75,7 +75,7 @@ as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NOD
 echo -e "${CYAN}Homeserver — redéploiement rapide (${HS_USER})${RESET}"
 
 # --- 1. git pull ---------------------------------------------------------------------
-if $do_pull; then
+if $DO_PULL; then
   run_step "git pull dans $INSTALL_DIR" as_hs "git pull --ff-only"
 fi
 
