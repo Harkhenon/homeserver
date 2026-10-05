@@ -491,6 +491,10 @@ WantedBy=multi-user.target
       const dir = '/etc/ssh/sshd_config.d';
       const content = [
         '# managed by homeserver — SFTP chrooté pour les utilisateurs SFTP uniquement',
+        '# autoriser explicitement le mot de passe pour les utilisateurs du panel',
+        '# (les images cloud Ubuntu desactivent PasswordAuthentication globalement)',
+        'PasswordAuthentication yes',
+        'KbdInteractiveAuthentication yes',
         'Match Group homeserver-sftp',
         '    ChrootDirectory %h',
         '    ForceCommand internal-sftp',
