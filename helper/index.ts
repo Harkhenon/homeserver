@@ -380,7 +380,7 @@ WantedBy=multi-user.target
       await exec('groupadd', ['-f', 'homeserver-web']);
       await exec('groupadd', ['-f', 'homeserver-sftp']);
       const group = req.shell === '/bin/bash' ? 'homeserver-web' : 'homeserver-sftp';
-      const useraddArgs = ['-r', '-d', home, '-s', req.shell, '-G', group, req.username];
+      const useraddArgs = ['-m', '-d', home, '-s', req.shell, '-G', group, req.username];
       try {
         await exec('useradd', useraddArgs);
       } catch (err) {
