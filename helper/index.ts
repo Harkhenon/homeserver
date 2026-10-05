@@ -483,8 +483,15 @@ WantedBy=multi-user.target
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       const existing = existsSync(confPath) ? readFileSync(confPath, 'utf8') : '';
       if (existing !== content) writeFileSync(confPath, content, { mode: 0o644 });
-      const test = await tryExec('/usr/sbin/sshd', ['-t']);
-      if (test !== null) throw new Error(`Configuration sshd invalide: ${test}`);
+      let sshdTestErr: string | null = null;
+      try {
+        await run('/usr/sbin/sshd', ['-t'], { timeout: 30_000 });
+      } catch (err) {
+        sshdTestErr = (err as { stderr?: string; message?: string }).stderr
+          ?? (err as { message?: string }).message
+          ?? 'erreur inconnue';
+      }
+      if (sshdTestErr !== null) throw new Error(`Configuration sshd invalide: ${sshdTestErr}`);
       let reloaded = false;
       let reloadError: string | undefined;
       for (const unit of ['ssh', 'sshd']) {
@@ -512,11 +519,19 @@ WantedBy=multi-user.target
       return { configured: true, confPath, reloaded, ...(reloadError ? { reloadError } : {}) };
     }
     case 'user_list': {
-      const out = await exec('getent', ['passwd']);
-      const users = out.trim().split('\n').map((line) => {
+      const panelGroups = ['homeserver-web', 'homeserver-sftp'];
+      const panelUsers = new Set<string>();
+      for (const g of panelGroups) {
+        const out = await tryExec('getent', ['group', g]);
+        if (out === null) continue;
+        const members = (out.trim().split(':')[3] ?? '').split(',').map((m) => m.trim()).filter((m) => m.length > 0);
+        for (const m of members) panelUsers.add(m);
+      }
+      const passwd = await exec('getent', ['passwd']);
+      const users = passwd.trim().split('\n').map((line) => {
         const [username, , uid, gid, , home, shell] = line.split(':');
         return { username: username ?? '', uid: Number(uid), gid: Number(gid), home: home ?? '', shell: shell ?? '' };
-      }).filter((u) => u.home !== undefined && (u.home.startsWith('/var/www') || (u.home.startsWith('/home/') && u.username !== 'ubuntu' && u.username !== 'hs-xlndjukrsczf' && !u.username.startsWith('hs-'))));
+      }).filter((u) => panelUsers.has(u.username));
       return { users };
     }
     case 'fs_read': {
