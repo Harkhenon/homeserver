@@ -17,6 +17,7 @@ import { CronPage } from './pages/Cron';
 import { BackupsPage } from './pages/Backups';
 import { FirewallPage } from './pages/Firewall';
 import { ServerPage } from './pages/Server';
+import { SettingsPage } from './pages/Settings';
 import type { AccentColor } from './theme/colors';
 import { buildTheme } from './theme/theme';
 import { getToken } from './api/client';
@@ -91,6 +92,7 @@ function Shell() {
             <Route path="/backups" element={<BackupsPage />} />
             <Route path="/firewall" element={<FirewallPage />} />
             <Route path="/server" element={<ServerPage />} />
+            <Route path="/settings" element={<SettingsPage accent={accent} onAccentChange={changeAccent} />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -1,7 +1,7 @@
 import {
   IconDashboard, IconServer, IconWorld, IconBrandNodejs,
   IconDatabase, IconLock, IconUsers, IconFileDescription,
-  IconClock, IconDatabaseImport, IconFlame,
+  IconClock, IconDatabaseImport, IconFlame, IconSettings,
 } from '@tabler/icons-react';
 
 export interface NavItem {
@@ -29,7 +29,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/sites', label: 'Sites', icon: IconWorld },
       { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
       { to: '/domains', label: 'Domaines', icon: IconWorld },
-      { to: '/ssl', label: 'SSL', icon: IconLock },
+      // SSL masqué temporairement — à remanier ou supprimer définitivement plus tard
+      // { to: '/ssl', label: 'SSL', icon: IconLock },
     ],
   },
   {
@@ -46,6 +47,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/cron', label: 'Tâches cron', icon: IconClock },
       { to: '/backups', label: 'Sauvegardes', icon: IconDatabaseImport },
       { to: '/firewall', label: 'Pare-feu', icon: IconFlame },
+      { to: '/settings', label: 'Paramètres', icon: IconSettings },
     ],
   },
 ];
