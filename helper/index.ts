@@ -393,6 +393,7 @@ WantedBy=multi-user.target
         const e = err as { message: string };
         throw new Error(`Définition du mot de passe échouée: ${e.message}`);
       }
+      try { await exec('usermod', ['-U', req.username]); } catch { /* deja deverrouille */ }
       if (existsSync(home)) {
         chownSync(home, -1, -1);
         try { chmodSync(home, 0o755); } catch { /* no-op */ }
@@ -410,6 +411,7 @@ WantedBy=multi-user.target
     }
     case 'user_set_password': {
       execFileSync('chpasswd', [`${req.username}:${req.password}`], { stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+      try { await exec('usermod', ['-U', req.username]); } catch { /* deja deverrouille */ }
       return { username: req.username, updated: true };
     }
     case 'user_delete': {
