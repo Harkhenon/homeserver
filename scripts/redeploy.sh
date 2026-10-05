@@ -62,11 +62,14 @@ HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
 
 NVM_DIR="$HS_HOME/.nvm"
 export NVM_DIR
+test -s "$NVM_DIR/nvm.sh" || fail "nvm introuvable dans $NVM_DIR — installation incomplète ?"
 HS_NODE_BIN="$(sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" \
   PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  bash -lc 'command -v node' 2>/dev/null || true)"
-[ -n "$HS_NODE_BIN" ] || HS_NODE_BIN="$(cd "$INSTALL_DIR" && bash -lc 'command -v node' 2>/dev/null || true)"
-[ -n "$HS_NODE_BIN" ] || fail "Node.js introuvable pour $HS_USER."
+  bash -c '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which current' 2>/dev/null || true)"
+[ -n "$HS_NODE_BIN" ] || HS_NODE_BIN="$(sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" \
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  bash -c '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which default' 2>/dev/null || true)"
+[ -n "$HS_NODE_BIN" ] || fail "Node.js introuvable pour $HS_USER (nvm install ?)."
 HS_NPM_BIN="$(dirname "$HS_NODE_BIN")/npm"
 HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
 
