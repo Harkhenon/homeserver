@@ -388,7 +388,7 @@ WantedBy=multi-user.target
         if (!e.message.includes('already exists')) throw err;
       }
       try {
-        execFileSync('chpasswd', [`${req.username}:${req.password}`], { stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+        execFileSync('chpasswd', [], { input: `${req.username}:${req.password}\n`, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
       } catch (err) {
         const e = err as { message: string };
         throw new Error(`Définition du mot de passe échouée: ${e.message}`);
@@ -410,7 +410,7 @@ WantedBy=multi-user.target
       return { username: req.username, created: true };
     }
     case 'user_set_password': {
-      execFileSync('chpasswd', [`${req.username}:${req.password}`], { stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+      execFileSync('chpasswd', [], { input: `${req.username}:${req.password}\n`, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
       try { await exec('usermod', ['-U', req.username]); } catch { /* deja deverrouille */ }
       return { username: req.username, updated: true };
     }
