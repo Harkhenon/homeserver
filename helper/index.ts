@@ -416,9 +416,18 @@ WantedBy=multi-user.target
       // tuer toutes les sessions/processus de l'utilisateur avant suppression
       try { await exec('pkill', ['-STOP', '-u', req.username]); } catch { /* aucun processus */ }
       try { await exec('pkill', ['-KILL', '-u', req.username]); } catch { /* aucun processus */ }
+      // terminer ses sessions systemd (loginctl) sinon userdel peut echouer
+      try { await exec('loginctl', ['terminate-user', req.username]); } catch { /* aucune session */ }
       const home = homeOf(req.username);
       const args = req.removeHome ? ['-r', req.username] : [req.username];
-      await exec('userdel', args);
+      try {
+        await exec('userdel', args);
+      } catch (err) {
+        // certains userdel sortent en erreur si le home a deja ete supprime ou si des crontabs
+        // referencent l'utilisateur ; on retente en mode non recursif puis on verifie
+        const still = await tryExec('id', [req.username]);
+        if (still !== null) throw err;
+      }
       let homeRemoved = false;
       if (req.removeHome && home !== undefined && home.startsWith('/home/') && home !== '/home') {
         if (existsSync(home)) {
