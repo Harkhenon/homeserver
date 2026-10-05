@@ -35,7 +35,6 @@ const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
 function ensureNodeOnPath(): string | null {
-  if (existsSync('/usr/local/bin/node')) return '/usr/local/bin/node';
   const candidates = [
     '/var/lib/homeserver/.nvm/versions/node',
   ];
@@ -47,6 +46,10 @@ function ensureNodeOnPath(): string | null {
     if (versions.length === 0) continue;
     const binDir = `${versionsDir}/v${versions[0]}/bin`;
     if (!existsSync(`${binDir}/node`)) continue;
+    // rendre les parents traversables pour que les autres utilisateurs puissent executer
+    for (const dir of ['/var/lib/homeserver', '/var/lib/homeserver/.nvm', versionsDir, `${versionsDir}/v${versions[0]}`, binDir]) {
+      try { chmodSync(dir, 0o755); } catch { /* deja ok */ }
+    }
     for (const bin of ['node', 'npm', 'npx', 'corepack']) {
       const target = `${binDir}/${bin}`;
       const link = `/usr/local/bin/${bin}`;
