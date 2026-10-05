@@ -120,8 +120,13 @@ const definition: ModuleDefinition = {
         const removeHome = p.removeHome !== false;
         const users = await listUsers();
         if (!users.some((u) => u.username === username)) throw new Error(`Utilisateur introuvable: ${username}`);
+        const apps = await callHelper<{ apps: { name: string; user: string }[] }>({ action: 'node_app_list' });
+        const userApps = apps.apps.filter((a) => a.user === username);
+        for (const app of userApps) {
+          await callHelper({ action: 'node_app_delete', name: app.name });
+        }
         const res = await callHelper<{ username: string; deleted: boolean; homeRemoved: boolean }>({ action: 'user_delete', username, removeHome });
-        return { username, deleted: res.deleted, homeRemoved: res.homeRemoved };
+        return { username, deleted: res.deleted, homeRemoved: res.homeRemoved, removedApps: userApps.map((a) => a.name) };
       },
     },
     'users.setPassword': {
