@@ -230,7 +230,34 @@ async function handleRequest(raw: unknown): Promise<unknown> {
         if (uid !== undefined) chownSync(appDir, uid, -1);
       }
       const entry = `${appDir}/${req.entry}`;
-      const codePresent = existsSync(entry);
+      let entryCreated = false;
+      if (!existsSync(entry)) {
+        const entryDir = entry.replace(/\/[^/]+$/, '');
+        if (!existsSync(entryDir)) {
+          mkdirSync(entryDir, { recursive: true, mode: 0o755 });
+          const uid = req.user === 'root' ? 0 : uidOf(req.user);
+          if (uid !== undefined) chownSync(entryDir, uid, -1);
+        }
+        const skeleton = `const http = require('node:http');
+
+const port = Number(process.env.PORT ?? ${req.port});
+const host = '127.0.0.1';
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('Bonjour depuis ${req.name}\\n');
+});
+
+server.listen(port, host, () => {
+  console.log('App ${req.name} à l\'écoute sur http://' + host + ':' + port);
+});
+`;
+        writeFileSync(entry, skeleton, { mode: 0o644 });
+        const uid = req.user === 'root' ? 0 : uidOf(req.user);
+        if (uid !== undefined) chownSync(entry, uid, -1);
+        entryCreated = true;
+      }
+      const codePresent = true;
       const unitContent = `[Unit]
 Description=Homeserver Node app ${req.name}
 After=network.target
@@ -257,7 +284,9 @@ WantedBy=multi-user.target
       return {
         name: req.name, port: req.port, created: true,
         started: codePresent,
-        warning: codePresent ? undefined : `Code absent: déposez votre code dans ${appDir} puis démarrez l'application`,
+        entryCreated,
+        appDir,
+        warning: entryCreated ? `Squelette créé: ${entry} — personnalisez-le puis redémarrez l'application` : undefined,
       };
     }
     case 'node_app_delete': {
