@@ -34,6 +34,31 @@ import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
+function ensureNodeOnPath(): string | null {
+  if (existsSync('/usr/local/bin/node')) return '/usr/local/bin/node';
+  const candidates = [
+    '/var/lib/homeserver/.nvm/versions/node',
+  ];
+  for (const versionsDir of candidates) {
+    if (!existsSync(versionsDir)) continue;
+    const versions = readdirSync(versionsDir)
+      .map((v) => v.replace(/^v/, ''))
+      .sort((a, b) => Number(b.split('.')[0]) - Number(a.split('.')[0]));
+    if (versions.length === 0) continue;
+    const binDir = `${versionsDir}/v${versions[0]}/bin`;
+    if (!existsSync(`${binDir}/node`)) continue;
+    for (const bin of ['node', 'npm', 'npx', 'corepack']) {
+      const target = `${binDir}/${bin}`;
+      const link = `/usr/local/bin/${bin}`;
+      if (existsSync(target) && !existsSync(link)) {
+        try { symlinkSync(target, link); } catch { /* deja lie */ }
+      }
+    }
+    return '/usr/local/bin/node';
+  }
+  return null;
+}
+
 const run = promisify(execFile);
 
 function log(line: string): void {
@@ -220,6 +245,7 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       return { port: req.port, free: stdout.trim() === '' };
     }
     case 'node_app_create': {
+      const nodeBin = ensureNodeOnPath() ?? '/usr/bin/env node';
       const unit = `/etc/systemd/system/${req.name}.service`;
       if (existsSync(unit)) throw new Error(`L'application ${req.name} existe déjà`);
       const home = homeOf(req.user) ?? `/home/${req.user}`;
@@ -266,7 +292,7 @@ After=network.target
 Type=simple
 User=${req.user}
 WorkingDirectory=${appDir}
-ExecStart=/usr/bin/env node ${entry}
+ExecStart=${nodeBin} ${entry}
 Environment=PORT=${req.port}
 Environment=NODE_ENV=production
 Restart=on-failure
@@ -347,6 +373,7 @@ WantedBy=multi-user.target
       const home = req.home === '/dev/null' ? `/home/${req.username}` : req.home;
       mkdirSync(home.replace(/\/[^/]+$/, ''), { recursive: true });
       if (!existsSync(home)) mkdirSync(home, { mode: 0o755 });
+      ensureNodeOnPath();
       await exec('groupadd', ['-f', 'homeserver-web']);
       await exec('groupadd', ['-f', 'homeserver-sftp']);
       const group = req.shell === '/bin/bash' ? 'homeserver-web' : 'homeserver-sftp';
