@@ -180,31 +180,43 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const NEW_DOMAIN = '__new__';
   const [server, setServer] = useState<ServerKind>('apache');
   const action = useModuleAction(server);
+  const bind9Action = useModuleAction('bind9');
   const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
   const users = useModuleQuery<SftpUser[]>('users', 'users.list');
   const [domain, setDomain] = useState<string | null>(null);
+  const [newDomain, setNewDomain] = useState('');
   const [owner, setOwner] = useState<string | null>(null);
   const [docroot, setDocroot] = useState('');
 
+  const effectiveDomain = domain === NEW_DOMAIN ? newDomain.trim().toLowerCase() : domain;
+
   const pickDomain = (value: string | null) => {
     setDomain(value);
-    if (value && owner) setDocroot(`/home/${owner}/www/${value}`);
+    if (value && value !== NEW_DOMAIN && owner) setDocroot(`/home/${owner}/www/${value}`);
   };
 
   const pickOwner = (value: string | null) => {
     setOwner(value);
-    if (value && domain) setDocroot(`/home/${value}/www/${domain}`);
+    if (value && effectiveDomain) setDocroot(`/home/${value}/www/${effectiveDomain}`);
   };
   const [phpVersion, setPhpVersion] = useState<string | null>(null);
   const [ssl, setSsl] = useState(false);
   const [nodePort, setNodePort] = useState('');
 
   const submit = async () => {
-    if (!domain) return;
+    if (!effectiveDomain) return;
+    if (domain === NEW_DOMAIN) {
+      const zoneRes = await bind9Action.run('zones.create', { domain: effectiveDomain });
+      if (zoneRes === null) {
+        if (bind9Action.error) notifications.show({ message: bind9Action.error, color: 'red' });
+        return;
+      }
+    }
     const res = await action.run('vhosts.create', {
-      domain,
+      domain: effectiveDomain,
       docroot: docroot || `/var/www/${domain}`,
       phpVersion: phpVersion ?? undefined,
       ssl,
@@ -243,14 +255,29 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
         <Select
           label="Domaine"
           placeholder="Choisir un domaine enregistré"
-          data={(zones.data ?? []).map((z) => ({ label: z.domain, value: z.domain }))}
+          data={[
+            ...(zones.data ?? []).map((z) => ({ label: z.domain, value: z.domain })),
+            { label: '— Créer un nouveau domaine —', value: NEW_DOMAIN },
+          ]}
           value={domain}
           onChange={pickDomain}
           required
           disabled={zones.loading}
-          error={!zones.loading && (zones.data ?? []).length === 0 ? 'Aucun domaine enregistré — créez-en un dans Domaines' : undefined}
         />
-        <TextInput label="DocumentRoot" placeholder={`/var/www/${domain ?? 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
+        {domain === NEW_DOMAIN && (
+          <TextInput
+            label="Nouveau domaine"
+            placeholder="exemple.com"
+            value={newDomain}
+            onChange={(e) => {
+              const value = e.currentTarget.value.trim().toLowerCase();
+              setNewDomain(value);
+              if (value && owner) setDocroot(`/home/${owner}/www/${value}`);
+            }}
+            required
+          />
+        )}
+        <TextInput label="DocumentRoot" placeholder={`/var/www/${effectiveDomain ?? 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
         <Select
           label="Version PHP"
           placeholder="Aucune (statique ou Node)"
@@ -268,7 +295,7 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
           />
         </Tooltip>
         <Switch label="SSL (Let's Encrypt déjà émis)" checked={ssl} onChange={(e) => setSsl(e.currentTarget.checked)} />
-        <Button loading={action.loading} disabled={!domain} onClick={() => void submit()}>Créer</Button>
+        <Button loading={action.loading || bind9Action.loading} disabled={!effectiveDomain} onClick={() => void submit()}>Créer</Button>
       </Stack>
     </Modal>
   );
