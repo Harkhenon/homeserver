@@ -45,8 +45,10 @@ export function buildTheme(accent: string) {
         defaultProps: { padding: 'lg', radius: 'lg', withBorder: true },
         styles: {
           root: {
-            background: 'var(--mantine-color-dark-7)',
-            borderColor: 'var(--mantine-color-dark-4)',
+            background: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            borderColor: 'color-mix(in srgb, var(--mantine-color-dark-4) 80%, transparent)',
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.25)',
             '&:hover': {
@@ -63,11 +65,15 @@ export function buildTheme(accent: string) {
         styles: {
           root: { background: 'var(--mantine-color-dark-9)' },
           header: {
-            backgroundColor: 'var(--mantine-color-dark-8)',
+            backgroundColor: 'color-mix(in srgb, var(--mantine-color-dark-8) 78%, transparent)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             borderBottom: '1px solid var(--mantine-color-dark-4)',
           },
           navbar: {
-            background: 'linear-gradient(180deg, color-mix(in srgb, var(--mantine-primary-color-filled) 14%, var(--mantine-color-dark-8)) 0%, var(--mantine-color-dark-8) 40%)',
+            background: 'linear-gradient(180deg, color-mix(in srgb, var(--mantine-primary-color-filled) 14%, color-mix(in srgb, var(--mantine-color-dark-8) 78%, transparent)) 0%, color-mix(in srgb, var(--mantine-color-dark-8) 78%, transparent) 40%)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             borderRight: '1px solid var(--mantine-color-dark-4)',
           },
           main: { background: 'transparent' },
@@ -119,7 +125,9 @@ export function buildTheme(accent: string) {
       Menu: {
         styles: {
           dropdown: {
-            backgroundColor: 'var(--mantine-color-dark-7)',
+            backgroundColor: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             border: '1px solid var(--mantine-color-dark-4)',
           },
           item: { color: 'var(--mantine-color-dark-1)' },
@@ -128,7 +136,9 @@ export function buildTheme(accent: string) {
       Modal: {
         styles: {
           content: {
-            backgroundColor: 'var(--mantine-color-dark-7)',
+            backgroundColor: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
             border: '1px solid var(--mantine-color-dark-4)',
             boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
           },

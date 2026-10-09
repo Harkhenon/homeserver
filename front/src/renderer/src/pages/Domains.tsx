@@ -49,7 +49,9 @@ export function DomainsPage() {
             style={{
               border: '1px solid var(--mantine-color-dark-4)',
               borderRadius: 'var(--mantine-radius-lg)',
-              background: 'var(--mantine-color-dark-7)',
+              background: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
               cursor: 'pointer',
               transition: 'border-color 150ms ease, box-shadow 150ms ease',
             }}
