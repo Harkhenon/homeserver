@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Code, ScrollArea,
   ThemeIcon, Table, Divider,
@@ -39,6 +39,12 @@ export function NodeAppDetailPage() {
   const action = useModuleAction('node');
   const [port, setPort] = useState<number | undefined>(undefined);
   const [entry, setEntry] = useState<string | undefined>(undefined);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight });
+  }, [info.data?.log]);
 
   const app = info.data;
 
@@ -190,7 +196,7 @@ export function NodeAppDetailPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="console" pt="xs">
-          <ScrollArea.Autosize mah={520} type="always" offsetScrollbars p="sm" style={{ background: 'var(--mantine-color-dark-8)', borderRadius: 'var(--mantine-radius-lg)' }}>
+          <ScrollArea.Autosize mah={520} type="always" offsetScrollbars p="sm" viewportRef={viewportRef} style={{ background: 'var(--mantine-color-dark-8)', borderRadius: 'var(--mantine-radius-lg)' }}>
             <Stack gap={0}>
               {(app?.log ?? []).map((line, i) => (
                 <Text key={i} fz="xs" ff="monospace" c={line.includes('error') || line.includes('Error') ? 'red.4' : 'dark-2'} style={{ whiteSpace: 'pre-wrap' }}>
