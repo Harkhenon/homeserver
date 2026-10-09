@@ -22,6 +22,8 @@ export type PrivilegedRequest =
   | { action: 'pending_updates' }
   | { action: 'packages_upgrade' }
   | { action: 'check_zone'; zone: string; file: string }
+  | { action: 'dns_slaves_config'; slaves: Array<{ name: string; ip: string; external: boolean }> }
+  | { action: 'dns_soa_query'; server: string; zone: string }
   | { action: 'user_create'; username: string; password: string; home: string; shell: string }
   | { action: 'user_set_password'; username: string; password: string }
   | { action: 'user_delete'; username: string; removeHome: boolean }
@@ -258,6 +260,25 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.zone !== 'string' || !ZONE_NAME_RE.test(raw.zone)) return null;
       if (typeof raw.file !== 'string' || !ZONE_FILE_RE.test(raw.file)) return null;
       return { action: 'check_zone', zone: raw.zone, file: raw.file };
+    case 'dns_slaves_config': {
+      if (!Array.isArray(raw.slaves)) return null;
+      const slaves: Array<{ name: string; ip: string; external: boolean }> = []
+      for (const s of raw.slaves) {
+        if (!s || typeof s !== 'object') return null;
+        const so = s as Record<string, unknown>;
+        if (typeof so.name !== 'string' || so.name.length === 0 || so.name.length > 253 || !/^[a-zA-Z0-9._-]+$/.test(so.name)) return null;
+        if (typeof so.ip !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(so.ip)) return null;
+        const parts = so.ip.split('.').map(Number);
+        if (parts.some((n) => n > 255)) return null;
+        slaves.push({ name: so.name, ip: so.ip, external: so.external === true });
+      }
+      if (slaves.length > 16) return null;
+      return { action: 'dns_slaves_config', slaves };
+    }
+    case 'dns_soa_query':
+      if (typeof raw.server !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(raw.server)) return null;
+      if (typeof raw.zone !== 'string' || !ZONE_NAME_RE.test(raw.zone)) return null;
+      return { action: 'dns_soa_query', server: raw.server, zone: raw.zone };
     case 'user_create':
       if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
       if (typeof raw.password !== 'string' || raw.password.length < 6 || raw.password.length > 200) return null;

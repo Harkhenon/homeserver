@@ -1,5 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import type { DirEntryInfo, ServiceStatusResult } from '../../core/privileged/contract.js';
@@ -129,6 +131,30 @@ async function writeZoneChecked(domain: string, records: DnsRecord[], serial: nu
   }
 }
 
+interface DnsSlave {
+  name: string;
+  ip: string;
+  external: boolean;
+}
+
+const SLAVES_PATH = process.env.HS_DATA_DIR
+  ? path.join(process.env.HS_DATA_DIR, 'dns-slaves.json')
+  : '/var/lib/homeserver/dns-slaves.json';
+
+function loadSlaves(): DnsSlave[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SLAVES_PATH, 'utf8')) as { slaves?: DnsSlave[] };
+    return Array.isArray(parsed.slaves) ? parsed.slaves : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSlaves(slaves: DnsSlave[]): void {
+  fs.mkdirSync(path.dirname(SLAVES_PATH), { recursive: true });
+  fs.writeFileSync(SLAVES_PATH, JSON.stringify({ slaves }));
+}
+
 const definition: ModuleDefinition = {
   name: 'bind9',
   prefix: 'bind9',
@@ -138,7 +164,24 @@ const definition: ModuleDefinition = {
       handler: async () => {
         const files = await listZoneFiles();
         const zones = await Promise.all(files.map(async (f) => parseZone(f, await readZone(f))));
-        return zones.map(({ records, ...z }) => ({ ...z, recordCount: records.length }));
+        return zones.map(({ records, ...z }) => {
+          const nsRecords = records.filter((r) => r.type === 'NS');
+          const aByRecord = new Map(records.filter((r) => r.type === 'A').map((r) => [r.name, r.value]));
+          const ips = new Set(
+            nsRecords
+              .map((r) => {
+                const short = r.value.replace(/\.$/, '').replace(new RegExp(`\\.${z.domain.replace(/\./g, '\\.')}$`), '');
+                return aByRecord.get(short) ?? null;
+              })
+              .filter((ip): ip is string => ip !== null && !['127.0.0.1', '::1'].includes(ip)),
+          );
+          return {
+            ...z,
+            recordCount: records.length,
+            nsCount: nsRecords.length,
+            redundantNs: ips.size >= 2,
+          };
+        });
       },
     },
     'zones.get': {
@@ -216,6 +259,86 @@ const definition: ModuleDefinition = {
         if (!ZONE_FILE_RE.test(file)) throw new Error('Identifiant de zone invalide');
         await callHelper({ action: 'unlink', path: `${ZONES_DIR}/${file}` });
         return { id, deleted: true };
+      },
+    },
+    'slaves.config': {
+      summary: 'Déclarer les esclaves DNS : allow-transfer + also-notify dans Bind (payload: { slaves: [{ name, ip, external }] })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const raw = Array.isArray(p.slaves) ? p.slaves : [];
+        const slaves = raw.map((s) => {
+          const so = (s ?? {}) as Record<string, unknown>;
+          return { name: String(so.name ?? ''), ip: String(so.ip ?? ''), external: so.external === true };
+        });
+        return callHelper({ action: 'dns_slaves_config', slaves });
+      },
+    },
+    'slaves.list': {
+      summary: 'Lister les esclaves DNS déclarés',
+      handler: () => ({ slaves: loadSlaves() }),
+    },
+    'slaves.set': {
+      summary: 'Déclarer les esclaves DNS et appliquer allow-transfer/also-notify (payload: { slaves: [{ name, ip, external }] })',
+      handler: async (payload) => {
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const raw = Array.isArray(p.slaves) ? p.slaves : [];
+        const slaves = raw.map((s) => {
+          const so = (s ?? {}) as Record<string, unknown>;
+          return { name: String(so.name ?? ''), ip: String(so.ip ?? ''), external: so.external === true };
+        }).filter((s) => s.name && s.ip);
+        if (slaves.length === 0) throw new Error('Au moins un esclave requis (nom + IP)');
+        const res = await callHelper({ action: 'dns_slaves_config', slaves });
+        persistSlaves(slaves);
+        return res;
+      },
+    },
+    'slaves.delete': {
+      summary: 'Réappliquer une liste d\'esclaves vide (payload: { })',
+      handler: async () => {
+        const res = await callHelper({ action: 'dns_slaves_config', slaves: [] });
+        persistSlaves([]);
+        return res;
+      },
+    },
+    'zones.health': {
+      summary: 'Santé DNS d\'une zone : NS, redondance des IP, synchro serial avec les esclaves (payload: { id, slaves: [{ name, ip }] })',
+      handler: async (payload) => {
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const id = typeof p.id === 'string' ? p.id : '';
+        if (!id) throw new Error('id requis');
+        const zone = await loadZone(id);
+        const nsRecords = zone.records.filter((r) => r.type === 'NS').map((r) => r.value.replace(/\.$/, ''));
+        const aByRecord = new Map(zone.records.filter((r) => r.type === 'A').map((r) => [r.name, r.value]));
+        const nsIps: Array<{ ns: string; ip: string | null; external: boolean }> = nsRecords.map((ns) => {
+          const shortName = ns.replace(new RegExp(`\\.${zone.domain.replace(/\./g, '\\.')}$`), '');
+          const ip = aByRecord.get(shortName) ?? null;
+          return { ns, ip, external: ip !== null && !['127.0.0.1', '::1'].includes(ip) };
+        });
+        const ips = nsIps.filter((n) => n.ip !== null).map((n) => n.ip as string);
+        const uniqueIps = new Set(ips);
+        const redundant = uniqueIps.size >= 2;
+        const rawSlaves = Array.isArray(p.slaves) ? p.slaves : loadSlaves();
+        const slaves = [] as Array<{ name: string; ip: string; synced: boolean | null; serial: number | null }>;
+        for (const s of rawSlaves) {
+          const so = (s ?? {}) as Record<string, unknown>;
+          const name = String(so.name ?? '');
+          const ip = String(so.ip ?? '');
+          if (!name || !ip) continue;
+          try {
+            const res = await callHelper<{ serial: number }>({ action: 'dns_soa_query', server: ip, zone: zone.domain });
+            slaves.push({ name, ip, synced: res.serial === zone.serial, serial: res.serial });
+          } catch {
+            slaves.push({ name, ip, synced: null, serial: null });
+          }
+        }
+        return {
+          zone: zone.id,
+          serial: zone.serial,
+          ns: nsIps,
+          redundant,
+          delegable: nsIps.length >= 2 && redundant,
+          slaves,
+        };
       },
     },
     'service.status': {

@@ -33,6 +33,8 @@ export interface NodeApp {
 export interface Zone {
   id: string;
   domain: string;
+  nsCount?: number;
+  redundantNs?: boolean;
   file: string;
   serial: number;
   records?: DnsRecord[];

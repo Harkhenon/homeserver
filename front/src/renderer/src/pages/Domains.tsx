@@ -62,7 +62,18 @@ export function DomainsPage() {
                 <IconBinaryTree size={18} stroke={1.5} />
               </ThemeIcon>
               <div>
-                <Text fw={600}>{zone.domain}</Text>
+                <Group gap="xs" wrap="nowrap">
+                  <Text fw={600}>{zone.domain}</Text>
+                  {(zone.nsCount ?? 0) >= 2 && zone.redundantNs && (
+                    <Badge color="green" variant="light" size="sm">NS redondants</Badge>
+                  )}
+                  {(zone.nsCount ?? 0) >= 2 && !zone.redundantNs && (
+                    <Badge color="orange" variant="light" size="sm">NS sur la même IP</Badge>
+                  )}
+                  {(zone.nsCount ?? 0) < 2 && (
+                    <Badge color="orange" variant="light" size="sm">NS unique</Badge>
+                  )}
+                </Group>
                 <Text size="xs" c="dimmed">{zone.recordCount ?? 0} enregistrement(s)</Text>
               </div>
             </Group>

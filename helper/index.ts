@@ -838,6 +838,45 @@ WantedBy=multi-user.target
       unlinkSync(path);
       return { file: req.file, deleted: true };
     }
+    case 'dns_slaves_config': {
+      const confDir = existsSync('/etc/bind') ? '/etc/bind' : '/etc/named';
+      const includeFile = `${confDir}/homeserver-slaves.conf`;
+      const ipList = req.slaves.map((s) => s.ip);
+      if (ipList.length === 0) {
+        unlinkSync(includeFile);
+      } else {
+        writeFileSync(includeFile, [
+          '// Généré par Homeserver — ne pas éditer manuellement',
+          `allow-transfer { ${ipList.join('; ')}; };`,
+          `also-notify { ${ipList.join('; ')}; };`,
+        ].join('\n') + '\n', { mode: 0o644 });
+      }
+      const namedConf = `${confDir}/named.conf.local`;
+      if (existsSync(namedConf)) {
+        const conf = readFileSync(namedConf, 'utf8');
+        const includeLine = `include "${includeFile}";`;
+        if (ipList.length > 0 && !conf.includes(includeLine)) {
+          writeFileSync(namedConf, `${conf.trimEnd()}\n${includeLine}\n`, { mode: 0o644 });
+        }
+      } else if (ipList.length > 0) {
+        writeFileSync(namedConf, `include "${includeFile}";\n`, { mode: 0o644 });
+      }
+      const checker = existsSync('/usr/sbin/named-checkconf') ? '/usr/sbin/named-checkconf' : 'named-checkconf';
+      try {
+        await exec(checker, []);
+      } catch (err) {
+        throw new Error(`Configuration Bind invalide: ${(err as Error).message}`);
+      }
+      const unit = existsSync('/etc/bind') ? 'bind9' : 'named';
+      await exec('systemctl', ['reload', unit]);
+      return { slaves: req.slaves, applied: true };
+    }
+    case 'dns_soa_query': {
+      const { stdout } = await run('dig', [`@${req.server}`, req.zone, 'SOA', '+short', '+time=3', '+tries=1'], { timeout: 10_000 });
+      const soa = stdout.trim().split(/\s+/);
+      if (soa.length < 3) throw new Error(`Pas de réponse SOA depuis ${req.server}`);
+      return { server: req.server, zone: req.zone, serial: Number(soa[2] ?? 0) };
+    }
     case 'check_zone': {
       const checker = existsSync('/usr/sbin/named-checkzone') ? '/usr/sbin/named-checkzone' : 'named-checkzone';
       try {
