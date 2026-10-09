@@ -212,6 +212,7 @@ const definition: ModuleDefinition = {
         ];
         const serial = Number(new Date().toISOString().slice(0, 10).replace(/-/g, '') + '01');
         await writeZoneChecked(domain, records, serial);
+        await callHelper({ action: 'dns_slaves_config', slaves: loadSlaves() });
         return { id: domain, created: true };
       },
     },
@@ -258,6 +259,7 @@ const definition: ModuleDefinition = {
         const file = id.endsWith('.zone') ? id : `${id}.zone`;
         if (!ZONE_FILE_RE.test(file)) throw new Error('Identifiant de zone invalide');
         await callHelper({ action: 'unlink', path: `${ZONES_DIR}/${file}` });
+        await callHelper({ action: 'dns_slaves_config', slaves: loadSlaves() });
         return { id, deleted: true };
       },
     },

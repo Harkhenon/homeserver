@@ -840,27 +840,42 @@ WantedBy=multi-user.target
     }
     case 'dns_slaves_config': {
       const confDir = existsSync('/etc/bind') ? '/etc/bind' : '/etc/named';
-      const includeFile = `${confDir}/homeserver-slaves.conf`;
+      const zonesDir = existsSync('/etc/bind/zones') ? '/etc/bind/zones' : '/etc/named';
+      const includeFile = `${confDir}/homeserver-zones.conf`;
       const ipList = req.slaves.map((s) => s.ip);
-      if (ipList.length === 0) {
-        unlinkSync(includeFile);
-      } else {
-        writeFileSync(includeFile, [
-          '// Généré par Homeserver — ne pas éditer manuellement',
-          `allow-transfer { ${ipList.join('; ')}; };`,
-          `also-notify { ${ipList.join('; ')}; };`,
-        ].join('\n') + '\n', { mode: 0o644 });
+      const transferBlock = ipList.length > 0
+        ? [`  allow-transfer { ${ipList.join('; ')}; };`, `  also-notify { ${ipList.join('; ')}; };`]
+        : [];
+      const zoneFiles = existsSync(zonesDir)
+        ? readdirSync(zonesDir).filter((f) => f.endsWith('.zone'))
+        : [];
+      const lines = [
+        '// Généré par Homeserver — ne pas éditer manuellement',
+      ];
+      for (const zf of zoneFiles) {
+        const domain = zf.replace(/\.zone$/, '');
+        lines.push(
+          `zone "${domain}" {`,
+          '  type master;',
+          `  file "${zonesDir}/${zf}";`,
+          ...transferBlock,
+          '};',
+          '',
+        );
       }
+      writeFileSync(includeFile, lines.join('\n') + '\n', { mode: 0o644 });
       const namedConf = `${confDir}/named.conf.local`;
-      if (existsSync(namedConf)) {
-        const conf = readFileSync(namedConf, 'utf8');
-        const includeLine = `include "${includeFile}";`;
-        if (ipList.length > 0 && !conf.includes(includeLine)) {
-          writeFileSync(namedConf, `${conf.trimEnd()}\n${includeLine}\n`, { mode: 0o644 });
-        }
-      } else if (ipList.length > 0) {
-        writeFileSync(namedConf, `include "${includeFile}";\n`, { mode: 0o644 });
-      }
+      const includeLine = `include "${includeFile}";`;
+      const currentConf = existsSync(namedConf) ? readFileSync(namedConf, 'utf8') : '';
+      const cleaned = currentConf
+        .split('\n')
+        .filter((l) => !l.includes('homeserver-slaves.conf') && !l.includes('homeserver-zones.conf'))
+        .join('\n')
+        .trimEnd();
+      const nextConf = cleaned.length > 0 ? `${cleaned}\n${includeLine}\n` : `${includeLine}\n`;
+      writeFileSync(namedConf, nextConf, { mode: 0o644 });
+      const oldSlavesFile = `${confDir}/homeserver-slaves.conf`;
+      if (existsSync(oldSlavesFile)) unlinkSync(oldSlavesFile);
       const checker = existsSync('/usr/sbin/named-checkconf') ? '/usr/sbin/named-checkconf' : 'named-checkconf';
       try {
         await exec(checker, []);
@@ -869,7 +884,7 @@ WantedBy=multi-user.target
       }
       const unit = existsSync('/etc/bind') ? 'bind9' : 'named';
       await exec('systemctl', ['reload', unit]);
-      return { slaves: req.slaves, applied: true };
+      return { slaves: req.slaves, zones: zoneFiles.length, applied: true };
     }
     case 'dns_soa_query': {
       const { stdout } = await run('dig', [`@${req.server}`, req.zone, 'SOA', '+short', '+time=3', '+tries=1'], { timeout: 10_000 });
