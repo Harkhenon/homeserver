@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Table, Badge, Button, Modal, TextInput, Stack, Group } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
+import { Table, Badge, Button, Modal, TextInput, Stack, Group, Anchor } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { UserPicker } from '../components/UserPicker';
@@ -11,6 +12,7 @@ export function NodeAppsPage() {
   const apps = useModuleQuery<{ apps: NodeApp[] }>('node', 'apps.list');
   const action = useModuleAction('node');
   const [createOpen, setCreateOpen] = useState(false);
+  const navigate = useNavigate();
 
   const service = async (name: string, verb: 'start' | 'stop' | 'restart') => {
     const res = await action.run('apps.service', { name, verb });
@@ -56,7 +58,7 @@ icon={IconBrandNodejs}         title="Applications Node"
           <Table.Tbody>
             {(apps.data?.apps ?? []).map((app) => (
               <Table.Tr key={app.name}>
-                <Table.Td fw={600}>{app.name}</Table.Td>
+                <Table.Td><Anchor fw={600} onClick={(e) => { e.preventDefault(); navigate(`/node/${encodeURIComponent(app.name)}`); }} c="var(--mantine-color-dark-0)">{app.name}</Anchor></Table.Td>
                 <Table.Td>{app.port}</Table.Td>
                 <Table.Td c="dimmed">{app.user}</Table.Td>
                 <Table.Td>

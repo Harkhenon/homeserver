@@ -54,6 +54,26 @@ const definition: ModuleDefinition = {
         return callHelper({ action: 'node_app_delete', name });
       },
     },
+    'apps.info': {
+      summary: 'Informations complètes d\'une app Node : unité, PID, CPU/RAM, journal (payload: { name })',
+      handler: (payload) => {
+        const name = validateAppName((payload ?? {}) as Record<string, unknown>);
+        return callHelper({ action: 'node_app_info', name });
+      },
+    },
+    'apps.update': {
+      summary: 'Mettre à jour port et/ou point d\'entrée d\'une app (payload: { name, port?, entry? })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const name = validateAppName(p);
+        const port = p.port === undefined ? undefined : validatePort(p);
+        const entry = typeof p.entry === 'string' ? p.entry.trim() : undefined;
+        if (entry !== undefined && !ENTRY_RE.test(entry)) {
+          throw new Error('Point d\'entrée invalide (chemin .js relatif)');
+        }
+        return callHelper({ action: 'node_app_update', name, ...(port !== undefined ? { port } : {}), ...(entry !== undefined ? { entry } : {}) });
+      },
+    },
     'apps.service': {
       summary: 'start/stop/restart/status d\'une app (payload: { name, verb })',
       handler: (payload) => {

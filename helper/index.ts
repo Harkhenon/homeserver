@@ -350,6 +350,54 @@ WantedBy=multi-user.target
       await exec('systemctl', [req.verb, req.name]);
       return { name: req.name, verb: req.verb };
     }
+    case 'node_app_info': {
+      const unit = `/etc/systemd/system/${req.name}.service`;
+      if (!existsSync(unit)) throw new Error(`Application introuvable: ${req.name}`);
+      const content = readFileSync(unit, 'utf8');
+      const port = Number(content.match(/Environment=PORT=(\d+)/)?.[1] ?? 0);
+      const user = content.match(/User=(.+)/)?.[1] ?? '';
+      const appDir = content.match(/WorkingDirectory=(.+)/)?.[1] ?? '';
+      const entry = (content.match(/ExecStart=\S+ (.+)/)?.[1] ?? '').replace(appDir + '/', '');
+      const active = (await tryExec('systemctl', ['is-active', req.name]) ?? '').trim() === 'active';
+      const enabled = (await tryExec('systemctl', ['is-enabled', req.name]) ?? '').trim() === 'enabled';
+      const pid = Number((await tryExec('systemctl', ['show', req.name, '--property=MainPID', '--value']) ?? '0').trim());
+      let cpuPercent: number | null = null;
+      let memPercent: number | null = null;
+      let memBytes: number | null = null;
+      if (pid > 0) {
+        const ps = await tryExec('ps', ['-p', String(pid), '-o', '%cpu,%mem,rss,--no-headers']);
+        if (ps && ps.trim() !== '') {
+          const parts = ps.trim().split(/\s+/);
+          cpuPercent = Number(parts[0]);
+          memPercent = Number(parts[1]);
+          memBytes = Number(parts[2]) * 1024;
+        }
+      }
+      const log = (await tryExec('journalctl', ['-u', req.name, '-n', '200', '--no-pager', '-o', 'short'])) ?? '';
+      return {
+        name: req.name, port, user, appDir, entry, active, enabled, pid: pid > 0 ? pid : null,
+        cpuPercent, memPercent, memBytes,
+        log: log.split('\n'),
+      };
+    }
+    case 'node_app_update': {
+      const unit = `/etc/systemd/system/${req.name}.service`;
+      if (!existsSync(unit)) throw new Error(`Application introuvable: ${req.name}`);
+      let content = readFileSync(unit, 'utf8');
+      if (req.port !== undefined) {
+        content = content.replace(/Environment=PORT=\d+/g, `Environment=PORT=${req.port}`);
+      }
+      if (req.entry !== undefined) {
+        const appDir = content.match(/WorkingDirectory=(.+)/)?.[1] ?? '';
+        const nodeBin = content.match(/ExecStart=(\S+)/)?.[1] ?? 'node';
+        content = content.replace(/ExecStart=.+/g, `ExecStart=${nodeBin} ${appDir}/${req.entry}`);
+      }
+      writeFileSync(unit, content, { mode: 0o644 });
+      await exec('systemctl', ['daemon-reload']);
+      const active = (await tryExec('systemctl', ['is-active', req.name]) ?? '').trim() === 'active';
+      if (active) await exec('systemctl', ['restart', req.name]);
+      return { name: req.name, updated: true, restarted: active };
+    }
     case 'web_server_detect': {
       const servers: Array<{ name: 'apache' | 'nginx'; unit: string; installed: boolean; active: boolean }> = [];
       for (const [name, unit] of [['apache', 'apache2'], ['nginx', 'nginx']] as const) {

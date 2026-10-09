@@ -57,6 +57,8 @@ export type PrivilegedRequest =
   | { action: 'node_app_delete'; name: string }
   | { action: 'node_app_list' }
   | { action: 'node_app_service'; name: string; verb: 'start' | 'stop' | 'restart' | 'status' }
+  | { action: 'node_app_info'; name: string }
+  | { action: 'node_app_update'; name: string; port?: number; entry?: string }
   | { action: 'web_server_detect' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
@@ -236,6 +238,16 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'status'].includes(raw.verb)) return null;
       return { action: 'node_app_service', name: raw.name, verb: raw.verb as 'start' | 'stop' | 'restart' | 'status' };
+    case 'node_app_info':
+      if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
+      return { action: 'node_app_info', name: raw.name };
+    case 'node_app_update': {
+      if (typeof raw.name !== 'string' || !APP_NAME_RE.test(raw.name)) return null;
+      const port = typeof raw.port === 'number' && Number.isInteger(raw.port) && raw.port >= 1024 && raw.port <= 65535 ? raw.port : undefined;
+      const entry = typeof raw.entry === 'string' && APP_ENTRY_RE.test(raw.entry) && !raw.entry.includes('..') ? raw.entry : undefined;
+      if (port === undefined && entry === undefined) return null;
+      return { action: 'node_app_update', name: raw.name, ...(port !== undefined ? { port } : {}), ...(entry !== undefined ? { entry } : {}) };
+    }
     case 'web_server_detect':
       return { action: 'web_server_detect' };
     case 'pending_updates':

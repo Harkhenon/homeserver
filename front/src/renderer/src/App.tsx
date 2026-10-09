@@ -7,6 +7,7 @@ import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { SitesPage } from './pages/Sites';
 import { NodeAppsPage } from './pages/NodeApps';
+import { NodeAppDetailPage } from './pages/NodeAppDetail';
 import { DomainsPage } from './pages/Domains';
 import { DomainDetailPage } from './pages/DomainDetail';
 import { DatabasesPage } from './pages/Databases';
@@ -82,6 +83,7 @@ function Shell() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/sites" element={<SitesPage />} />
             <Route path="/node" element={<NodeAppsPage />} />
+            <Route path="/node/:name" element={<NodeAppDetailPage />} />
             <Route path="/domains" element={<DomainsPage />} />
             <Route path="/domains/:id" element={<DomainDetailPage />} />
             <Route path="/databases" element={<DatabasesPage />} />
