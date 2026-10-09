@@ -1,5 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
@@ -32,6 +33,26 @@ interface Zone {
 
 function zoneFilePath(domain: string): string {
   return `${ZONES_DIR}/${domain}.zone`;
+}
+
+function detectPublicIp(): string {
+  const interfaces = os.networkInterfaces();
+  const excluded = /^((172\.(1[6-9]|2\d|3[01]))\.|192\.168\.|10\.|127\.|169\.254\.)/;
+  for (const addrs of Object.values(interfaces)) {
+    for (const a of addrs ?? []) {
+      if (a.family !== 'IPv4' || a.internal) continue;
+      if (excluded.test(a.address)) continue;
+      if (a.address.startsWith('172.')) continue;
+      return a.address;
+    }
+  }
+  for (const addrs of Object.values(interfaces)) {
+    for (const a of addrs ?? []) {
+      if (a.family !== 'IPv4' || a.internal) continue;
+      return a.address;
+    }
+  }
+  return '127.0.0.1';
 }
 
 function escapeZoneValue(value: string): string {
@@ -200,9 +221,10 @@ const definition: ModuleDefinition = {
         if (!DOMAIN_RE.test(domain)) throw new Error('Domaine invalide');
         const existing = await listZoneFiles();
         if (existing.includes(`${domain}.zone`)) throw new Error(`La zone ${domain} existe déjà`);
+        const serverIp = detectPublicIp();
         const defaults: DnsRecord[] = [
           { name: '@', type: 'NS', value: `ns1.${domain}.`, ttl: 3600 },
-          { name: 'ns1', type: 'A', value: '127.0.0.1', ttl: 3600 },
+          { name: 'ns1', type: 'A', value: serverIp, ttl: 3600 },
         ];
         const records = [
           ...defaults,
