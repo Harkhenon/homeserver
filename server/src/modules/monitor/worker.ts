@@ -1,4 +1,6 @@
 import { parentPort } from 'node:worker_threads';
+import fs from 'node:fs';
+import path from 'node:path';
 import os from 'node:os';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 
@@ -12,9 +14,35 @@ interface Sample {
 
 const MAX_SAMPLES = 720;
 const INTERVAL_MS = 60_000;
+const STORE_PATH = process.env.HS_DATA_DIR
+  ? path.join(process.env.HS_DATA_DIR, 'monitor-history.json')
+  : '/var/lib/homeserver/monitor-history.json';
 
 const samples: Sample[] = [];
 let timer: NodeJS.Timeout | null = null;
+let storeDir = '';
+
+function loadSamples(): void {
+  try {
+    const raw = fs.readFileSync(STORE_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as { samples?: Sample[] };
+    if (Array.isArray(parsed.samples)) {
+      samples.push(...parsed.samples.filter((s) => typeof s?.at === 'string'));
+      if (samples.length > MAX_SAMPLES) samples.splice(0, samples.length - MAX_SAMPLES);
+    }
+  } catch {
+    
+  }
+}
+
+function persistSamples(): void {
+  try {
+    fs.mkdirSync(storeDir, { recursive: true });
+    fs.writeFileSync(STORE_PATH, JSON.stringify({ samples }));
+  } catch {
+    
+  }
+}
 
 function takeSample(): void {
   const total = os.totalmem();
@@ -28,10 +56,13 @@ function takeSample(): void {
     memTotalBytes: total,
   });
   if (samples.length > MAX_SAMPLES) samples.splice(0, samples.length - MAX_SAMPLES);
+  persistSamples();
 }
 
 function startMonitor(): void {
   if (timer) return;
+  storeDir = path.dirname(STORE_PATH);
+  loadSamples();
   takeSample();
   timer = setInterval(takeSample, INTERVAL_MS);
   timer.unref?.();
