@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
-import type { PendingUpdatesResult } from '../../core/privileged/contract.js';
+import type { PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult } from '../../core/privileged/contract.js';
 
 const run = promisify(execFile);
 
@@ -170,6 +170,21 @@ const definition: ModuleDefinition = {
         const sort = p.sort === 'mem' ? 'mem' : 'cpu';
         const limit = typeof p.limit === 'number' && p.limit > 0 && p.limit <= 100 ? Math.floor(p.limit) : 20;
         return readProcesses(sort, limit);
+      },
+    },
+    'panel.check': {
+      summary: 'Version du panel et disponibilité d\'une mise à jour',
+      handler: () => callHelper<PanelUpdateResult>({ action: 'panel_check' }),
+    },
+    'panel.update': {
+      summary: 'Mettre à jour le panel (git pull, rebuild back/front, restart des services)',
+      handler: () => callHelper<PanelUpdateApplyResult>({ action: 'panel_update' }),
+    },
+    'panel.version': {
+      summary: 'Version courante du panel (package.json)',
+      handler: () => {
+        const pkg = JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { version?: string };
+        return { version: pkg.version ?? 'unknown' };
       },
     },
     upgrade: {

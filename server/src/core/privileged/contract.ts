@@ -62,6 +62,8 @@ export type PrivilegedRequest =
   | { action: 'node_app_info'; name: string }
   | { action: 'node_app_update'; name: string; port?: number; entry?: string }
   | { action: 'web_server_detect' }
+  | { action: 'panel_check' }
+  | { action: 'panel_update' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -77,6 +79,22 @@ export interface PendingUpdatesResult {
   family: DistroFamily;
   count: number;
   packages: string[];
+}
+
+export interface PanelUpdateResult {
+  current: string;
+  latest: string;
+  available: boolean;
+  branch: string;
+}
+
+export interface PanelUpdateApplyResult {
+  updated?: boolean;
+  current?: string;
+  latest?: string;
+  branch?: string;
+  wasActive: boolean;
+  active: boolean;
 }
 
 export interface ServiceStatusResult {
@@ -388,6 +406,10 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'cron_delete':
       if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
       return { action: 'cron_delete', file: raw.file };
+    case 'panel_check':
+      return { action: 'panel_check' };
+    case 'panel_update':
+      return { action: 'panel_update' };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;

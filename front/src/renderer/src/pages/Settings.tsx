@@ -14,6 +14,7 @@ import { IconSettings } from '@tabler/icons-react';
 import { PageHeader } from '../components';
 import { ACCENT_COLORS, type AccentColor } from '../theme/colors';
 import { VersionsPanel } from '../components/settings/VersionsPanel';
+import { UpdatePanel } from '../components/settings/UpdatePanel';
 
 const LANGUAGES = [
   { value: 'fr', label: 'Français' },
@@ -51,6 +52,7 @@ export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
           <Tabs.Tab value="versions">Versions par défaut</Tabs.Tab>
           <Tabs.Tab value="general">Général</Tabs.Tab>
           <Tabs.Tab value="appearance">Apparence</Tabs.Tab>
+          <Tabs.Tab value="update">Mise à jour</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="versions" pt="md">
@@ -101,6 +103,9 @@ export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
               La couleur s'applique instantanément et est mémorisée.
             </Text>
           </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="update" pt="md">
+          <UpdatePanel />
         </Tabs.Panel>
       </Tabs>
     </div>

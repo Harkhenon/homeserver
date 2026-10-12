@@ -32,6 +32,7 @@ import { promisify } from 'node:util';
 import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
+const UPDATE_SCRIPT = process.env.HS_UPDATE_SCRIPT ?? '/usr/share/homeserver/scripts/update.sh';
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
 function ensureNodeOnPath(): string | null {
@@ -69,8 +70,8 @@ function log(line: string): void {
   import('node:fs').then((fs) => fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${line}\n`));
 }
 
-async function exec(cmd: string, args: string[]): Promise<string> {
-  const { stdout } = await run(cmd, args, { timeout: 120_000 });
+async function exec(cmd: string, args: string[], timeoutMs = 120_000): Promise<string> {
+  const { stdout } = await run(cmd, args, { timeout: timeoutMs });
   return stdout;
 }
 
@@ -901,6 +902,28 @@ WantedBy=multi-user.target
         const e = err as { stderr?: string; message: string };
         return { valid: false, errors: (e.stderr ?? e.message).trim() };
       }
+    }
+    case 'panel_check': {
+      const out = await tryExec('bash', [UPDATE_SCRIPT, '--check']);
+      if (out === null) throw new Error('Vérification de mise à jour impossible (git / réseau ?)');
+      try {
+        return JSON.parse(out.trim());
+      } catch {
+        throw new Error('Réponse de vérification illisible');
+      }
+    }
+    case 'panel_update': {
+      const before = await tryExec('systemctl', ['is-active', 'homeserver']);
+      const out = await exec('bash', [UPDATE_SCRIPT, '--apply', '--verbose'], 900_000);
+      const last = (out.trim().split('\n').filter((l) => l.startsWith('{')).pop()) ?? '';
+      let result: Record<string, unknown> = {};
+      try { result = JSON.parse(last) as Record<string, unknown>; } catch { /* pas de json */ }
+      const after = await tryExec('systemctl', ['is-active', 'homeserver']);
+      return {
+        ...result,
+        wasActive: (before ?? '').trim() === 'active',
+        active: (after ?? '').trim() === 'active',
+      };
     }
     case 'systemctl': {
       if (req.verb === 'status') {
