@@ -35,6 +35,8 @@ export interface Zone {
   domain: string;
   nsCount?: number;
   redundantNs?: boolean;
+  external?: boolean;
+  registrar?: string | null;
   file: string;
   serial: number;
   records?: DnsRecord[];

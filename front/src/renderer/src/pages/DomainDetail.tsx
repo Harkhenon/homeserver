@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Tabs, Table, Badge, Button, Modal, TextInput, Select, NumberInput, Stack,
-  Group, Text, ThemeIcon, Card, Divider,
+  Group, Text, ThemeIcon, Card, Divider, SegmentedControl,
 } from '@mantine/core';
 import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
@@ -241,10 +241,15 @@ function AddRecordModal({ zoneId, opened, onClose, onAdded, subdomainMode }: {
 
 function NewDomain({ onCreated }: { onCreated: (domainId: string) => void }) {
   const action = useModuleAction('bind9');
+  const [mode, setMode] = useState<'local' | 'external'>('local');
   const [domain, setDomain] = useState('');
+  const [registrar, setRegistrar] = useState<string | null>(null);
 
   const submit = async () => {
-    const res = await action.run<{ id: string }>('zones.create', { domain });
+    const res = await action.run<{ id: string }>(
+      mode === 'external' ? 'external.create' : 'zones.create',
+      mode === 'external' ? { domain, registrar: registrar ?? undefined } : { domain },
+    );
     if (res !== null) {
       notifications.show({ message: `Domaine ${domain} créé`, color: 'green' });
       onCreated(domain);
@@ -260,8 +265,19 @@ function NewDomain({ onCreated }: { onCreated: (domainId: string) => void }) {
           <IconWorld size={22} stroke={1.5} />
         </ThemeIcon>
         <Text ta="center" fz="h4" fw={700}>Nouveau domaine</Text>
+        <SegmentedControl
+          fullWidth
+          value={mode}
+          onChange={(v) => setMode(v as 'local' | 'external')}
+          data={[
+            { label: 'Zone Bind9 locale', value: 'local' },
+            { label: 'Géré par le registrar', value: 'external' },
+          ]}
+        />
         <Text ta="center" size="sm" c="dimmed">
-          Une zone Bind9 sera créée avec les enregistrements NS et A par défaut.
+          {mode === 'external'
+            ? 'Le domaine est hébergé chez un registrar (OVH, Gandi...) : utilisable pour des sites et apps Node, sans créer de zone dans Bind.'
+            : 'Une zone Bind9 sera créée avec les enregistrements NS et A par défaut.'}
         </Text>
         <Divider my={4} />
         <TextInput
@@ -271,6 +287,16 @@ function NewDomain({ onCreated }: { onCreated: (domainId: string) => void }) {
           onChange={(e) => setDomain(e.currentTarget.value)}
           required
         />
+        {mode === 'external' && (
+          <Select
+            label="Registrar"
+            placeholder="Sélectionner le registrar"
+            data={['OVH', 'Gandi', 'Namecheap', 'GoDaddy', 'Cloudflare', 'Scaleway']}
+            value={registrar}
+            onChange={setRegistrar}
+            clearable
+          />
+        )}
         <Button loading={action.loading} onClick={() => void submit()}>Créer le domaine</Button>
       </Stack>
     </Card>

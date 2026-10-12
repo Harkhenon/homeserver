@@ -11,10 +11,10 @@ export function DomainsPage() {
   const action = useModuleAction('bind9');
   const navigate = useNavigate();
 
-  const remove = async (id: string) => {
-    const res = await action.run('zones.delete', { id });
+  const remove = async (zone: Zone) => {
+    const res = await action.run(zone.external ? 'external.delete' : 'zones.delete', { id: zone.id });
     if (res !== null) {
-      notifications.show({ message: `Domaine ${id} supprimé`, color: 'green' });
+      notifications.show({ message: `Domaine ${zone.id} supprimé`, color: 'green' });
       void zones.reload();
     } else if (action.error) {
       notifications.show({ message: action.error, color: 'red' });
@@ -55,7 +55,7 @@ export function DomainsPage() {
               cursor: 'pointer',
               transition: 'border-color 150ms ease, box-shadow 150ms ease',
             }}
-            onClick={() => navigate(`/domains/${encodeURIComponent(zone.id)}`)}
+            onClick={() => navigate(zone.external ? `/domains` : `/domains/${encodeURIComponent(zone.id)}`)}
           >
             <Group gap="sm" wrap="nowrap">
               <ThemeIcon variant="light" size={36} radius="md">
@@ -64,17 +64,26 @@ export function DomainsPage() {
               <div>
                 <Group gap="xs" wrap="nowrap">
                   <Text fw={600}>{zone.domain}</Text>
-                  {(zone.nsCount ?? 0) >= 2 && zone.redundantNs && (
+                  {zone.external && (
+                    <Badge color="grape" variant="light" size="sm">
+                      Registrar{zone.registrar ? ` · ${zone.registrar}` : ''}
+                    </Badge>
+                  )}
+                  {!zone.external && (zone.nsCount ?? 0) >= 2 && zone.redundantNs && (
                     <Badge color="green" variant="light" size="sm">NS redondants</Badge>
                   )}
-                  {(zone.nsCount ?? 0) >= 2 && !zone.redundantNs && (
+                  {!zone.external && (zone.nsCount ?? 0) >= 2 && !zone.redundantNs && (
                     <Badge color="orange" variant="light" size="sm">NS sur la même IP</Badge>
                   )}
-                  {(zone.nsCount ?? 0) < 2 && (
+                  {!zone.external && (zone.nsCount ?? 0) < 2 && (
                     <Badge color="orange" variant="light" size="sm">NS unique</Badge>
                   )}
                 </Group>
-                <Text size="xs" c="dimmed">{zone.recordCount ?? 0} enregistrement(s)</Text>
+                <Text size="xs" c="dimmed">
+                  {zone.external
+                    ? 'Zone DNS gérée chez le registrar — Bind non utilisé'
+                    : `${zone.recordCount ?? 0} enregistrement(s)`}
+                </Text>
               </div>
             </Group>
             <Group gap="sm" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
@@ -82,8 +91,8 @@ export function DomainsPage() {
                 <Text size="xs" c="dimmed">SSL</Text>
                 <SslToggle domain={zone.domain} onChanged={() => void zones.reload()} />
               </Group>
-              <Badge variant="light" size="sm">{zone.serial}</Badge>
-              <Button size="compact-xs" variant="light" color="red" onClick={() => void remove(zone.id)}>
+              {!zone.external && <Badge variant="light" size="sm">{zone.serial}</Badge>}
+              <Button size="compact-xs" variant="light" color="red" onClick={() => void remove(zone)}>
                 Supprimer
               </Button>
               <IconChevronRight size={16} stroke={1.5} />

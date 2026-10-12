@@ -176,6 +176,31 @@ function persistSlaves(slaves: DnsSlave[]): void {
   fs.writeFileSync(SLAVES_PATH, JSON.stringify({ slaves }));
 }
 
+const EXTERNAL_DOMAINS_PATH = process.env.HS_DATA_DIR
+  ? path.join(process.env.HS_DATA_DIR, 'external-domains.json')
+  : '/var/lib/homeserver/external-domains.json';
+
+interface ExternalDomain {
+  id: string;
+  domain: string;
+  registrar: string | null;
+}
+
+function loadExternalDomains(): ExternalDomain[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(EXTERNAL_DOMAINS_PATH, 'utf8')) as { domains?: ExternalDomain[] };
+    return Array.isArray(parsed.domains) ? parsed.domains : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistExternalDomains(domains: ExternalDomain[]): void {
+  fs.mkdirSync(path.dirname(EXTERNAL_DOMAINS_PATH), { recursive: true });
+  fs.writeFileSync(EXTERNAL_DOMAINS_PATH, JSON.stringify({ domains }));
+}
+
+
 const definition: ModuleDefinition = {
   name: 'bind9',
   prefix: 'bind9',
@@ -185,7 +210,7 @@ const definition: ModuleDefinition = {
       handler: async () => {
         const files = await listZoneFiles();
         const zones = await Promise.all(files.map(async (f) => parseZone(f, await readZone(f))));
-        return zones.map(({ records, ...z }) => {
+        const local = zones.map(({ records, ...z }) => {
           const nsRecords = records.filter((r) => r.type === 'NS');
           const aByRecord = new Map(records.filter((r) => r.type === 'A').map((r) => [r.name, r.value]));
           const ips = new Set(
@@ -198,11 +223,25 @@ const definition: ModuleDefinition = {
           );
           return {
             ...z,
+            external: false,
+            registrar: null,
             recordCount: records.length,
             nsCount: nsRecords.length,
             redundantNs: ips.size >= 2,
           };
         });
+        const external = loadExternalDomains().map((d) => ({
+          id: d.id,
+          domain: d.domain,
+          file: '',
+          serial: 0,
+          external: true,
+          registrar: d.registrar,
+          recordCount: 0,
+          nsCount: 0,
+          redundantNs: false,
+        }));
+        return [...local, ...external];
       },
     },
     'zones.get': {
@@ -284,6 +323,42 @@ const definition: ModuleDefinition = {
         await callHelper({ action: 'dns_slaves_config', slaves: loadSlaves() });
         return { id, deleted: true };
       },
+    },
+    'external.create': {
+      summary: 'D\u00e9clarer un domaine g\u00e9r\u00e9 par le registrar, sans zone Bind (payload: { domain, registrar? })',
+      handler: async (payload) => {
+        const p = (payload ?? {}) as Record<string, unknown>;
+        const domain = typeof p.domain === 'string' ? p.domain.trim().toLowerCase() : '';
+        if (!DOMAIN_RE.test(domain)) throw new Error('Domaine invalide');
+        const registrar = typeof p.registrar === 'string' && p.registrar.trim().length > 0
+          ? p.registrar.trim()
+          : null;
+        const domains = loadExternalDomains();
+        if (domains.some((d) => d.domain === domain)) throw new Error(`Le domaine ${domain} est d\u00e9j\u00e0 d\u00e9clar\u00e9`);
+        const existingZones = await listZoneFiles();
+        if (existingZones.includes(`${domain}.zone`)) {
+          throw new Error(`Une zone Bind9 existe d\u00e9j\u00e0 pour ${domain}`);
+        }
+        domains.push({ id: domain, domain, registrar });
+        persistExternalDomains(domains);
+        return { id: domain, external: true, registrar };
+      },
+    },
+    'external.delete': {
+      summary: 'Retirer un domaine externe (payload: { id })',
+      handler: (payload) => {
+        const { id } = (payload ?? {}) as { id?: unknown };
+        if (typeof id !== 'string' || id.length === 0) throw new Error('id requis');
+        const domains = loadExternalDomains();
+        const next = domains.filter((d) => d.id !== id);
+        if (next.length === domains.length) throw new Error('Domaine externe introuvable');
+        persistExternalDomains(next);
+        return { id, deleted: true };
+      },
+    },
+    'external.list': {
+      summary: 'Lister les domaines g\u00e9r\u00e9s par le registrar',
+      handler: () => ({ domains: loadExternalDomains() }),
     },
     'slaves.config': {
       summary: 'Déclarer les esclaves DNS : allow-transfer + also-notify dans Bind (payload: { slaves: [{ name, ip, external }] })',

@@ -187,6 +187,7 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
   const [domain, setDomain] = useState<string | null>(null);
   const [newDomain, setNewDomain] = useState('');
+  const [newDomainExternal, setNewDomainExternal] = useState(false);
   const [owner, setOwner] = useState<string | null>(null);
   const [docroot, setDocroot] = useState('');
 
@@ -208,8 +209,11 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
   const submit = async () => {
     if (!effectiveDomain) return;
     if (domain === NEW_DOMAIN) {
-      const zoneRes = await bind9Action.run('zones.create', { domain: effectiveDomain });
-      if (zoneRes === null) {
+      const domainRes = await bind9Action.run(
+        newDomainExternal ? 'external.create' : 'zones.create',
+        { domain: effectiveDomain },
+      );
+      if (domainRes === null) {
         if (bind9Action.error) notifications.show({ message: bind9Action.error, color: 'red' });
         return;
       }
@@ -259,17 +263,24 @@ function CreateSiteModal({ opened, onClose, onCreated }: {
           disabled={zones.loading}
         />
         {domain === NEW_DOMAIN && (
-          <TextInput
-            label="Nouveau domaine"
-            placeholder="exemple.com"
-            value={newDomain}
-            onChange={(e) => {
-              const value = e.currentTarget.value.trim().toLowerCase();
-              setNewDomain(value);
-              if (value && owner) setDocroot(`/home/${owner}/www/${value}`);
-            }}
-            required
-          />
+          <>
+            <TextInput
+              label="Nouveau domaine"
+              placeholder="exemple.com"
+              value={newDomain}
+              onChange={(e) => {
+                const value = e.currentTarget.value.trim().toLowerCase();
+                setNewDomain(value);
+                if (value && owner) setDocroot(`/home/${owner}/www/${value}`);
+              }}
+              required
+            />
+            <Switch
+              label="Géré par le registrar (pas de zone Bind9)"
+              checked={newDomainExternal}
+              onChange={(e) => setNewDomainExternal(e.currentTarget.checked)}
+            />
+          </>
         )}
         <TextInput label="DocumentRoot" placeholder={`/var/www/${effectiveDomain ?? 'exemple.com'}`} value={docroot} onChange={(e) => setDocroot(e.currentTarget.value)} />
         <Select
