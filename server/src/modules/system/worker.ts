@@ -5,7 +5,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
-import type { PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult } from '../../core/privileged/contract.js';
+import type {
+  PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult,
+  PanelRollbackResult, PanelReleasesResult,
+} from '../../core/privileged/contract.js';
 
 const run = promisify(execFile);
 
@@ -179,6 +182,14 @@ const definition: ModuleDefinition = {
     'panel.update': {
       summary: 'Mettre à jour le panel (git pull, rebuild back/front, restart des services)',
       handler: () => callHelper<PanelUpdateApplyResult>({ action: 'panel_update' }),
+    },
+    'panel.rollback': {
+      summary: 'Revenir à la release précédente du panel',
+      handler: () => callHelper<PanelRollbackResult>({ action: 'panel_rollback' }),
+    },
+    'panel.releases': {
+      summary: 'Lister les releases du panel présentes sur le disque',
+      handler: () => callHelper<PanelReleasesResult>({ action: 'panel_releases' }),
     },
     'panel.version': {
       summary: 'Version courante du panel (package.json)',

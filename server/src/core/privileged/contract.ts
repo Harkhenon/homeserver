@@ -64,6 +64,8 @@ export type PrivilegedRequest =
   | { action: 'web_server_detect' }
   | { action: 'panel_check' }
   | { action: 'panel_update' }
+  | { action: 'panel_rollback' }
+  | { action: 'panel_releases' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
 
 export type PrivilegedResponse<T = unknown> =
@@ -93,8 +95,19 @@ export interface PanelUpdateApplyResult {
   current?: string;
   latest?: string;
   branch?: string;
-  wasActive: boolean;
-  active: boolean;
+  active?: boolean;
+}
+
+export interface PanelRollbackResult {
+  rolledBack?: boolean;
+  current?: string;
+  active?: boolean;
+}
+
+export interface PanelReleasesResult {
+  releases: string[];
+  current: string | null;
+  previous: string | null;
 }
 
 export interface ServiceStatusResult {
@@ -410,6 +423,10 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       return { action: 'panel_check' };
     case 'panel_update':
       return { action: 'panel_update' };
+    case 'panel_rollback':
+      return { action: 'panel_rollback' };
+    case 'panel_releases':
+      return { action: 'panel_releases' };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;

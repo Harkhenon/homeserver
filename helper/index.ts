@@ -32,7 +32,7 @@ import { promisify } from 'node:util';
 import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
-const UPDATE_SCRIPT = process.env.HS_UPDATE_SCRIPT ?? '/usr/share/homeserver/scripts/update.sh';
+const UPDATE_SCRIPT = process.env.HS_UPDATE_SCRIPT ?? '/usr/share/homeserver/current/scripts/update.sh';
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
 function ensureNodeOnPath(): string | null {
@@ -81,6 +81,15 @@ async function tryExec(cmd: string, args: string[]): Promise<string | null> {
     return stdout;
   } catch {
     return null;
+  }
+}
+
+function parseJson(out: string, errMsg: string): Record<string, unknown> {
+  const last = (out.trim().split('\n').filter((l) => l.trim().startsWith('{')).pop()) ?? '';
+  try {
+    return JSON.parse(last) as Record<string, unknown>;
+  } catch {
+    throw new Error(errMsg);
   }
 }
 
@@ -906,24 +915,24 @@ WantedBy=multi-user.target
     case 'panel_check': {
       const out = await tryExec('bash', [UPDATE_SCRIPT, '--check']);
       if (out === null) throw new Error('Vérification de mise à jour impossible (git / réseau ?)');
-      try {
-        return JSON.parse(out.trim());
-      } catch {
-        throw new Error('Réponse de vérification illisible');
-      }
+      return parseJson(out, 'Réponse de vérification illisible');
     }
     case 'panel_update': {
-      const before = await tryExec('systemctl', ['is-active', 'homeserver']);
       const out = await exec('bash', [UPDATE_SCRIPT, '--apply', '--verbose'], 900_000);
-      const last = (out.trim().split('\n').filter((l) => l.startsWith('{')).pop()) ?? '';
-      let result: Record<string, unknown> = {};
-      try { result = JSON.parse(last) as Record<string, unknown>; } catch { /* pas de json */ }
+      const result = parseJson(out, 'Réponse de mise à jour illisible');
       const after = await tryExec('systemctl', ['is-active', 'homeserver']);
-      return {
-        ...result,
-        wasActive: (before ?? '').trim() === 'active',
-        active: (after ?? '').trim() === 'active',
-      };
+      return { ...result, active: (after ?? '').trim() === 'active' };
+    }
+    case 'panel_rollback': {
+      const out = await exec('bash', [UPDATE_SCRIPT, '--rollback', '--verbose'], 300_000);
+      const result = parseJson(out, 'Réponse de rollback illisible');
+      const after = await tryExec('systemctl', ['is-active', 'homeserver']);
+      return { ...result, active: (after ?? '').trim() === 'active' };
+    }
+    case 'panel_releases': {
+      const out = await tryExec('bash', [UPDATE_SCRIPT, '--releases']);
+      if (out === null) throw new Error('Liste des releases indisponible');
+      return parseJson(out, 'Réponse releases illisible');
     }
     case 'systemctl': {
       if (req.verb === 'status') {

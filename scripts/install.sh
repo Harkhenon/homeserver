@@ -180,6 +180,24 @@ run_step "Installation des dépendances du front" as_hs "cd '$INSTALL_DIR/front'
 run_step "Build du front" as_hs "cd '$INSTALL_DIR/front' && '$HS_NPM_BIN' run build"
 test -f "$INSTALL_DIR/front/dist/index.html" || fail "front/dist/index.html introuvable après build."
 
+# --- 5bis. Release initiale (layout releases/ + symlink current) ----------------------
+RELEASES_DIR="$HS_HOME/releases"
+PANEL_VERSION="$("$HS_NODE_BIN" -e "console.log(require('$INSTALL_DIR/package.json').version)" 2>/dev/null || echo '0.0.0')"
+INITIAL_RELEASE_DIR="$RELEASES_DIR/$PANEL_VERSION"
+mkdir -p "$INITIAL_RELEASE_DIR"
+tar -C "$INSTALL_DIR" \
+  --exclude='./node_modules' \
+  --exclude='./.git' \
+  --exclude='./.env' \
+  --exclude='./front/node_modules' \
+  -cf - . | tar -C "$INITIAL_RELEASE_DIR" -xf -
+cp "$INSTALL_DIR/.env" "$INITIAL_RELEASE_DIR/.env" 2>/dev/null || true
+chown -R "$HS_USER:$HS_USER" "$INITIAL_RELEASE_DIR"
+printf '{"current": "%s", "previous": null, "history": [], "updatedAt": "%s"}' "$PANEL_VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RELEASES_DIR/installed.json"
+chown "$HS_USER:$HS_USER" "$RELEASES_DIR/installed.json"
+ln -sfn "$INITIAL_RELEASE_DIR" "$INSTALL_DIR/current"
+echo -e "${DIM}  release initiale: $INITIAL_RELEASE_DIR (current -> $PANEL_VERSION)${RESET}"
+
 # --- 6. Services systemd ---------------------------------------------------------------
 cat > /etc/systemd/system/hs-helper.service <<UNIT
 [Unit]
@@ -190,7 +208,7 @@ After=network.target
 Type=simple
 User=root
 Group=$HS_GROUP
-ExecStart=$HS_NODE_BIN $HELPER_DIR/index.js
+ExecStart=$HS_NODE_BIN $INSTALL_DIR/current/server/dist/helper/index.js
 Restart=on-failure
 RuntimeDirectory=homeserver
 RuntimeDirectoryMode=0770
@@ -209,7 +227,7 @@ Requires=hs-helper.service
 Type=simple
 User=$HS_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$HS_NODE_BIN $INSTALL_DIR/server/dist/server/src/index.js
+ExecStart=$HS_NODE_BIN $INSTALL_DIR/current/server/dist/server/src/index.js
 Restart=on-failure
 EnvironmentFile=$INSTALL_DIR/.env
 
