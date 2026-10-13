@@ -69,6 +69,9 @@ NODE_MAJOR_MIN=20
 HS_HOME=/var/lib/homeserver
 INSTALL_DIR=/usr/share/homeserver
 HELPER_DIR="$INSTALL_DIR/server/dist/helper"
+SRC_DIR="$HS_HOME/homeserver"
+REPO_URL="${HS_REPO_URL:-https://github.com/Harkhenon/homeserver.git}"
+BRANCH="${HS_UPDATE_BRANCH:-main}"
 # --- Désinstallation ----------------------------------------------------------------
 if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
