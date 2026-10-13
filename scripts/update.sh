@@ -34,20 +34,44 @@ INSTALL_DIR=/usr/share/homeserver
 RELEASES_DIR="$HS_HOME/releases"
 STATE_FILE="$RELEASES_DIR/installed.json"
 CURRENT_LINK="$INSTALL_DIR/current"
-# Le script peut être exécuté depuis la release active (current/scripts/) qui n'a pas de .git :
-# le dépôt git source est soit le clone de travail, soit déclaré via HS_SRC_DIR.
+# Le script peut être exécuté depuis la release active (current/scripts/) qui n'a pas de .git.
+# Le dépôt git source est trouvé dans cet ordre :
+#   1. le répertoire du script lui-même (exécution depuis un clone de travail)
+#   2. HS_SRC_DIR (déclaré dans le .env du helper)
+#   3. l'emplacement canonique $HS_HOME/homeserver (créé par install.sh) — cloné à la volée si absent
+#   4. recherche dans les emplacements courants, sinon clone automatique
+REPO_URL="${HS_REPO_URL:-https://github.com/Harkhenon/homeserver.git}"
+BRANCH="${HS_UPDATE_BRANCH:-main}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CANONICAL_SRC_DIR="$HS_HOME/homeserver"
+ensure_repo() {
+  local dir="$1"
+  if [ ! -d "$dir/.git" ]; then
+    logv "Clonage du dépôt dans $dir"
+    mkdir -p "$dir"
+    rm -rf "$dir"
+    git clone --branch "$BRANCH" "$REPO_URL" "$dir" >/dev/null 2>&1 || fail "Clonage impossible ($REPO_URL)"
+    chown -R "$HS_USER:$HS_USER" "$dir" 2>/dev/null || true
+  fi
+}
 if [ -d "$SCRIPT_DIR/.git" ]; then
   SRC_DIR="$SCRIPT_DIR"
 else
   SRC_DIR="${HS_SRC_DIR:-}"
   if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR/.git" ]; then
-    for cand in /root/homeserver /opt/homeserver /srv/homeserver "$HS_HOME/homeserver"; do
-      if [ -d "$cand/.git" ]; then SRC_DIR="$cand"; break; fi
-    done
+    if [ -d "$CANONICAL_SRC_DIR/.git" ]; then
+      SRC_DIR="$CANONICAL_SRC_DIR"
+    else
+      for cand in /root/homeserver /opt/homeserver /srv/homeserver; do
+        if [ -d "$cand/.git" ]; then SRC_DIR="$cand"; break; fi
+      done
+      if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR/.git" ]; then
+        ensure_repo "$CANONICAL_SRC_DIR"
+        SRC_DIR="$CANONICAL_SRC_DIR"
+      fi
+    fi
   fi
 fi
-BRANCH="${HS_UPDATE_BRANCH:-main}"
 PANEL_PORT="${HS_PORT:-3000}"
 KEEP_RELEASES="${HS_KEEP_RELEASES:-5}"
 

@@ -69,7 +69,6 @@ NODE_MAJOR_MIN=20
 HS_HOME=/var/lib/homeserver
 INSTALL_DIR=/usr/share/homeserver
 HELPER_DIR="$INSTALL_DIR/server/dist/helper"
-
 # --- Désinstallation ----------------------------------------------------------------
 if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
@@ -124,6 +123,23 @@ NVM_DIR="$HS_HOME/.nvm"
 export NVM_DIR
 HS_NODE_BIN_DIR=""
 as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "cd '$HS_HOME' && $*"; }
+
+# --- 0. Dépôt git source (pour l'auto-update du panel) --------------------------------
+# Le panel a besoin d'un clone git local pour ses mises à jour. Si l'installation
+# est lancée depuis un clone, il devient le clone de référence ; sinon on clone le
+# dépôt à l'emplacement canonique.
+if [ -d "$SCRIPT_DIR/.git" ]; then
+  if [ "$SCRIPT_DIR" != "$SRC_DIR" ]; then
+    run_step "Enregistrement du clone de référence dans $SRC_DIR" bash -c "
+      rm -rf '$SRC_DIR'
+      cp -a '$SCRIPT_DIR' '$SRC_DIR'
+      chown -R '$HS_USER:$HS_USER' '$SRC_DIR' 2>/dev/null || true"
+  fi
+elif [ ! -d "$SRC_DIR/.git" ]; then
+  run_step "Clonage du dépôt dans $SRC_DIR" git clone --branch "$BRANCH" "$REPO_URL" "$SRC_DIR"
+  chown -R "$HS_USER:$HS_USER" "$SRC_DIR" 2>/dev/null || true
+fi
+echo -e "${DIM}  clone de référence pour les mises à jour: $SRC_DIR${RESET}"
 
 # --- 2. Node.js (nvm, en tant que hs-*) ---------------------------------------------
 if as_hs 'command -v node >/dev/null 2>&1'; then
