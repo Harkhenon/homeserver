@@ -34,12 +34,24 @@ INSTALL_DIR=/usr/share/homeserver
 RELEASES_DIR="$HS_HOME/releases"
 STATE_FILE="$RELEASES_DIR/installed.json"
 CURRENT_LINK="$INSTALL_DIR/current"
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Le script peut être exécuté depuis la release active (current/scripts/) qui n'a pas de .git :
+# le dépôt git source est soit le clone de travail, soit déclaré via HS_SRC_DIR.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -d "$SCRIPT_DIR/.git" ]; then
+  SRC_DIR="$SCRIPT_DIR"
+else
+  SRC_DIR="${HS_SRC_DIR:-}"
+  if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR/.git" ]; then
+    for cand in /root/homeserver /opt/homeserver /srv/homeserver "$HS_HOME/homeserver"; do
+      if [ -d "$cand/.git" ]; then SRC_DIR="$cand"; break; fi
+    done
+  fi
+fi
 BRANCH="${HS_UPDATE_BRANCH:-main}"
 PANEL_PORT="${HS_PORT:-3000}"
 KEEP_RELEASES="${HS_KEEP_RELEASES:-5}"
 
-[ -d "$SRC_DIR/.git" ] || fail "$SRC_DIR n'est pas un dépôt git."
+[ -d "$SRC_DIR/.git" ] || fail "Dépôt git introuvable (essayé: $SRC_DIR). Clone le dépôt quelque part et définis HS_SRC_DIR dans le .env du helper."
 [ -d "$INSTALL_DIR" ] || fail "$INSTALL_DIR introuvable — lance d'abord scripts/install.sh."
 
 HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
@@ -77,7 +89,9 @@ write_state() {
 if [ "$MODE" = "check" ]; then
   git -C "$SRC_DIR" fetch origin "$BRANCH" --tags >/dev/null 2>&1 || fail "git fetch impossible (réseau ?)"
   CUR="unknown"; LAT="unknown"
-  [ -f "$STATE_FILE" ] && CUR="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$STATE_FILE','utf8')).current || 'unknown')" 2>/dev/null || echo unknown)"
+  if [ -f "$STATE_FILE" ] && [ -n "$HS_NODE_BIN" ]; then
+    CUR="$("$HS_NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('$STATE_FILE','utf8')).current || 'unknown')" 2>/dev/null || echo unknown)"
+  fi
   LAT="$(git -C "$SRC_DIR" show "origin/$BRANCH:package.json" 2>/dev/null \
     | "$HS_NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})" \
     || echo unknown)"
@@ -89,14 +103,17 @@ fi
 
 # --- MODE releases ---------------------------------------------------------------------
 if [ "$MODE" = "releases" ]; then
-  DIRS=""
-  [ -d "$RELEASES_DIR" ] && DIRS="$(ls -1 "$RELEASES_DIR" 2>/dev/null | grep -v installed.json | sort -rV || true)"
   CUR="null"; PREV="null"
   if [ -f "$STATE_FILE" ]; then
     CUR="$("$HS_NODE_BIN" -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf8'));console.log(JSON.stringify(s.current))" 2>/dev/null || echo null)"
     PREV="$("$HS_NODE_BIN" -e "const s=JSON.parse(require('fs').readFileSync('$STATE_FILE','utf8'));console.log(JSON.stringify(s.previous))" 2>/dev/null || echo null)"
   fi
-  echo "{\"releases\": $(node -e "console.log(JSON.stringify(process.argv.slice(1).filter(Boolean))" $DIRS 2>/dev/null || echo '[]'), \"current\": $CUR, \"previous\": $PREV}"
+  DIRS=""
+  if [ -d "$RELEASES_DIR" ]; then
+    DIRS="$(ls -1 "$RELEASES_DIR" 2>/dev/null | grep -v 'installed.json' | sort -rV || true)"
+  fi
+  REL_JSON="$("$HS_NODE_BIN" -e "console.log(JSON.stringify(process.argv.slice(1).filter(Boolean)))" $DIRS 2>/dev/null || echo '[]')"
+  echo "{\"releases\": $REL_JSON, \"current\": $CUR, \"previous\": $PREV}"
   exit 0
 fi
 
