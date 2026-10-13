@@ -180,7 +180,7 @@ const definition: ModuleDefinition = {
       handler: () => callHelper<PanelUpdateResult>({ action: 'panel_check' }),
     },
     'panel.update': {
-      summary: 'Mettre à jour le panel (git pull, rebuild back/front, restart des services)',
+      summary: 'Mettre à jour le panel (build release, bascule atomique, health-check, rollback auto)',
       handler: () => callHelper<PanelUpdateApplyResult>({ action: 'panel_update' }),
     },
     'panel.rollback': {

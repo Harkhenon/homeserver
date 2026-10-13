@@ -7,10 +7,8 @@ import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp } from '@tabler/i
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 
 interface PanelCheckInfo {
-  current: string;
-  latest: string;
-  available: boolean;
-  branch: string;
+  available?: boolean;
+  latest?: { version: string; notes?: string } | null;
 }
 
 interface PanelUpdateResult {
@@ -25,6 +23,7 @@ export function PanelUpdateCard() {
   const check = useModuleQuery<PanelCheckInfo>('system', 'panel.check', undefined, {
     refetchInterval: 60_000,
   });
+  const versionQuery = useModuleQuery<{ version: string }>('system', 'panel.version');
   const action = useModuleAction('system');
   const [updating, setUpdating] = useState(false);
 
@@ -56,7 +55,7 @@ export function PanelUpdateCard() {
     }
   };
 
-  const version = check.data?.current ?? '…';
+  const version = versionQuery.data?.version ?? '…';
   const available = check.data?.available ?? false;
   const loading = check.loading && !check.data;
 
@@ -74,7 +73,7 @@ export function PanelUpdateCard() {
           <Badge color="orange" variant="light" size="lg">
             <Group gap={4} wrap="nowrap">
               <IconArrowUp size={12} stroke={2.5} />
-              {check.data?.latest}
+              {check.data?.latest?.version}
             </Group>
           </Badge>
         ) : (
@@ -85,7 +84,7 @@ export function PanelUpdateCard() {
       </Group>
       <Text size="sm" c="dimmed" mt="xs">
         {available
-          ? `Une nouvelle version est disponible sur ${check.data?.branch ?? 'main'}`
+          ? 'Une nouvelle version est disponible'
           : check.error
             ? 'Vérification indisponible'
             : 'Aucune mise à jour en attente'}

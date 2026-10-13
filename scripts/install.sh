@@ -69,9 +69,6 @@ NODE_MAJOR_MIN=20
 HS_HOME=/var/lib/homeserver
 INSTALL_DIR=/usr/share/homeserver
 HELPER_DIR="$INSTALL_DIR/server/dist/helper"
-SRC_DIR="$HS_HOME/homeserver"
-REPO_URL="${HS_REPO_URL:-https://github.com/Harkhenon/homeserver.git}"
-BRANCH="${HS_UPDATE_BRANCH:-main}"
 # --- Désinstallation ----------------------------------------------------------------
 if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
@@ -84,7 +81,11 @@ if $UNINSTALL; then
 
   systemctl stop homeserver hs-helper 2>/dev/null || true
   systemctl disable homeserver hs-helper 2>/dev/null || true
+  systemctl stop hs-updater-check.timer 2>/dev/null || true
+  systemctl disable hs-updater-check.timer 2>/dev/null || true
   rm -f /etc/systemd/system/homeserver.service /etc/systemd/system/hs-helper.service
+  rm -f /etc/systemd/system/hs-updater-check.service /etc/systemd/system/hs-updater-check.timer /etc/systemd/system/hs-updater-apply.service
+  rm -rf /usr/local/lib/homeserver
   systemctl daemon-reload
 
   for u in $(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1}'); do
@@ -127,22 +128,67 @@ export NVM_DIR
 HS_NODE_BIN_DIR=""
 as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "cd '$HS_HOME' && $*"; }
 
-# --- 0. Dépôt git source (pour l'auto-update du panel) --------------------------------
-# Le panel a besoin d'un clone git local pour ses mises à jour. Si l'installation
-# est lancée depuis un clone, il devient le clone de référence ; sinon on clone le
-# dépôt à l'emplacement canonique.
-if [ -d "$SCRIPT_DIR/.git" ]; then
-  if [ "$SCRIPT_DIR" != "$SRC_DIR" ]; then
-    run_step "Enregistrement du clone de référence dans $SRC_DIR" bash -c "
-      rm -rf '$SRC_DIR'
-      cp -a '$SCRIPT_DIR' '$SRC_DIR'
-      chown -R '$HS_USER:$HS_USER' '$SRC_DIR' 2>/dev/null || true"
+# --- 0. Couple updater (core + updater, hors des releases du panel) ------------------
+# L'updater vit dans /usr/local/lib/homeserver/updater/, indépendant du panel.
+# Bootstrap : si l'updater est déjà installé et sain, on n'y touche pas ;
+# sinon on l'installe depuis updater/dist/ du présent clone (le dépôt dédié
+# homeserver-updater prendra le relais via HS_UPDATER_TARBALL_URL une fois publié).
+PAIR_DIR=/usr/local/lib/homeserver/updater
+if [ -x "$PAIR_DIR/updater-core.sh" ] && [ -x "$PAIR_DIR/updater.sh" ]; then
+  echo -e "${DIM}  couple updater déjà présent ($PAIR_DIR) — conservé${RESET}"
+else
+  LOCAL_TARBALL="$(ls -1 "$SCRIPT_DIR"/updater/dist/homeserver-updater-*.tar.gz 2>/dev/null | sort -rV | head -1 || true)"
+  if [ -n "$LOCAL_TARBALL" ]; then
+    run_step "Installation du couple updater (local: $LOCAL_TARBALL)" bash \
+      -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\\$(mktemp -d) \
+      && tar -xzf '$LOCAL_TARBALL' -C \\$tmp \
+      && src=\"\\$(find \\$tmp -maxdepth 2 -name VERSION -printf '%h\\n' | head -1)\" \
+      && mkdir -p '$PAIR_DIR' && cp \\$src/updater-core.sh \\$src/updater.sh \\$src/VERSION '$PAIR_DIR/' \
+      && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \\$tmp"
+  elif [ -n "${HS_UPDATER_TARBALL_URL:-}" ]; then
+    run_step "Installation du couple updater (dépôt dédié)" bash \
+      -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\\$(mktemp -d) \
+      && curl -fsSL '${HS_UPDATER_TARBALL_URL}' -o \\$tmp/pair.tar.gz \
+      && tar -xzf \\$tmp/pair.tar.gz -C \\$tmp \
+      && src=\"\\$(find \\$tmp -maxdepth 2 -name VERSION -printf '%h\\n' | head -1)\" \
+      && cp \\$src/updater-core.sh \\$src/updater.sh \\$src/VERSION '$PAIR_DIR/' \
+      && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \\$tmp"
+  else
+    fail "Couple updater introuvable (ni updater/dist/, ni HS_UPDATER_TARBALL_URL)."
   fi
-elif [ ! -d "$SRC_DIR/.git" ]; then
-  run_step "Clonage du dépôt dans $SRC_DIR" git clone --branch "$BRANCH" "$REPO_URL" "$SRC_DIR"
-  chown -R "$HS_USER:$HS_USER" "$SRC_DIR" 2>/dev/null || true
 fi
-echo -e "${DIM}  clone de référence pour les mises à jour: $SRC_DIR${RESET}"
+cat > /etc/systemd/system/hs-updater-check.service <<UNIT
+[Unit]
+Description=Homeserver updater - check périodique
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=$PAIR_DIR/updater-core.sh run check
+UNIT
+cat > /etc/systemd/system/hs-updater-check.timer <<'UNIT'
+[Unit]
+Description=Homeserver updater - check toutes les 6h
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+cat > /etc/systemd/system/hs-updater-apply.service <<UNIT
+[Unit]
+Description=Homeserver updater - application d'une mise à jour
+After=network-online.target hs-helper.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=$PAIR_DIR/updater-core.sh run apply
+TimeoutStartSec=900
+UNIT
+systemctl daemon-reload
+systemctl enable hs-updater-check.timer >/dev/null 2>&1
+systemctl restart hs-updater-check.timer
+echo -e "${DIM}  updater installé: $PAIR_DIR (timer 6h actif)${RESET}"
 
 # --- 2. Node.js (nvm, en tant que hs-*) ---------------------------------------------
 if as_hs 'command -v node >/dev/null 2>&1'; then

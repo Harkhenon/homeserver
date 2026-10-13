@@ -18,6 +18,7 @@ import { IconServer2, IconLayoutSidebar } from '@tabler/icons-react';
 import { NAV_SECTIONS } from './nav';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
+import { UpdateNotification } from '../components/UpdateNotification';
 import type { AccentColor } from '../theme/colors';
 import HomeserverLogo from '../assets/logo_homeserver.webp';
 
@@ -100,10 +101,15 @@ export function AppLayout({
               v0.5.0
             </Text>
           </Group>
-          <UserMenu
-            username={avatarSeed || username}
-            onOpenSettings={openSettings}
-          />
+          <Group gap="sm" wrap="nowrap">
+            <Box miw={200} visibleFrom="xs">
+              <UpdateNotification />
+            </Box>
+            <UserMenu
+              username={avatarSeed || username}
+              onOpenSettings={openSettings}
+            />
+          </Group>
         </Group>
       </AppShell.Header>
 

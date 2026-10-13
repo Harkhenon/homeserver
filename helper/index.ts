@@ -32,7 +32,18 @@ import { promisify } from 'node:util';
 import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
-const UPDATE_SCRIPT = process.env.HS_UPDATE_SCRIPT ?? '/usr/share/homeserver/current/scripts/update.sh';
+const RELEASES_DIR = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/releases` : '/var/lib/homeserver/releases';
+const INSTALLED_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/releases/installed.json` : '/var/lib/homeserver/releases/installed.json';
+const STATUS_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/update-status.json` : '/var/lib/homeserver/update-status.json';
+const CURRENT_LINK = process.env.HS_CURRENT_LINK ?? '/usr/share/homeserver/current';
+
+function readJsonState(file: string, errMsg: string): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  } catch {
+    throw new Error(errMsg);
+  }
+}
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
 function ensureNodeOnPath(): string | null {
@@ -81,15 +92,6 @@ async function tryExec(cmd: string, args: string[]): Promise<string | null> {
     return stdout;
   } catch {
     return null;
-  }
-}
-
-function parseJson(out: string, errMsg: string): Record<string, unknown> {
-  const last = (out.trim().split('\n').filter((l) => l.trim().startsWith('{')).pop()) ?? '';
-  try {
-    return JSON.parse(last) as Record<string, unknown>;
-  } catch {
-    throw new Error(errMsg);
   }
 }
 
@@ -913,26 +915,26 @@ WantedBy=multi-user.target
       }
     }
     case 'panel_check': {
-      const out = await tryExec('bash', [UPDATE_SCRIPT, '--check']);
-      if (out === null) throw new Error('Vérification de mise à jour impossible (git / réseau ?)');
-      return parseJson(out, 'Réponse de vérification illisible');
+      await exec('systemctl', ['start', 'hs-updater-check.service']);
+      return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
     }
     case 'panel_update': {
-      const out = await exec('bash', [UPDATE_SCRIPT, '--apply', '--verbose'], 900_000);
-      const result = parseJson(out, 'Réponse de mise à jour illisible');
-      const after = await tryExec('systemctl', ['is-active', 'homeserver']);
-      return { ...result, active: (after ?? '').trim() === 'active' };
+      await exec('systemctl', ['start', 'hs-updater-apply.service']);
+      return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
     }
     case 'panel_rollback': {
-      const out = await exec('bash', [UPDATE_SCRIPT, '--rollback', '--verbose'], 300_000);
-      const result = parseJson(out, 'Réponse de rollback illisible');
+      const before = await tryExec('systemctl', ['is-active', 'homeserver']);
+      const prev = readJsonState(INSTALLED_FILE, 'installed.json introuvable').previous;
+      if (typeof prev !== 'string' || !prev) throw new Error('Aucune release précédente');
+      await exec('ln', ['-sfn', `${RELEASES_DIR}/${prev}`, CURRENT_LINK]);
+      await exec('systemctl', ['restart', 'hs-helper', 'homeserver']);
       const after = await tryExec('systemctl', ['is-active', 'homeserver']);
-      return { ...result, active: (after ?? '').trim() === 'active' };
+      return { rolledBack: true, current: prev, active: (after ?? '').trim() === 'active', wasActive: (before ?? '').trim() === 'active' };
     }
     case 'panel_releases': {
-      const out = await tryExec('bash', [UPDATE_SCRIPT, '--releases']);
-      if (out === null) throw new Error('Liste des releases indisponible');
-      return parseJson(out, 'Réponse releases illisible');
+      const res = await tryExec('bash', ['-c', `ls -1 '${RELEASES_DIR}' 2>/dev/null | grep -v installed.json | sort -rV || true`]);
+      const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
+      return { releases: (res ?? '').trim().split('\n').filter(Boolean), current: state.current ?? null, previous: state.previous ?? null };
     }
     case 'systemctl': {
       if (req.verb === 'status') {

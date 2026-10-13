@@ -18,10 +18,9 @@ import {
 import { useModuleQuery, useModuleAction } from '../../api/hooks';
 
 interface PanelCheckInfo {
-  current: string;
-  latest: string;
-  available: boolean;
-  branch: string;
+  available?: boolean;
+  latest?: { version: string; notes?: string } | null;
+  updaterHealth?: { core: string; updater: string; pairVersion?: string };
 }
 
 interface PanelUpdateResult {
@@ -98,7 +97,7 @@ export function UpdatePanel() {
     }
   };
 
-  const current = releases.data?.current ?? check.data?.current ?? '?';
+  const current = releases.data?.current ?? '?';
   const available = check.data?.available ?? false;
   const canRollback = Boolean(releases.data?.previous);
 
@@ -113,7 +112,7 @@ export function UpdatePanel() {
           <Group gap="xs">
             <Badge variant="light" color={available ? 'orange' : 'green'}>{current}</Badge>
             {available && (
-              <Text size="xs" c="dimmed">{check.data?.latest} disponible</Text>
+              <Text size="xs" c="dimmed">{check.data?.latest?.version} disponible</Text>
             )}
             {!available && (
               <Group gap={4}>
@@ -189,6 +188,14 @@ export function UpdatePanel() {
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
+      {check.data?.updaterHealth && (
+        <Group gap="xs">
+          <IconCircleCheck size={14} stroke={1.5} />
+          <Text size="xs" c="dimmed">
+            Updater sain — core {check.data.updaterHealth.core}, couple v{check.data.updaterHealth.pairVersion ?? '?'}
+          </Text>
+        </Group>
+      )}
       {check.error && (
         <Text size="xs" c="dimmed">
           Vérification indisponible : {check.error}
