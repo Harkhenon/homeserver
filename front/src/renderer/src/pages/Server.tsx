@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { health as fetchHealth } from '../api/client';
 import { notifications } from '@mantine/notifications';
 import type { ServiceStatus, MonitorSample } from '../types';
+import { PanelUpdateCard } from '../components/PanelUpdateCard';
 
 interface SysInfo {
   hostname: string;
@@ -91,7 +92,6 @@ export function ServerPage() {
   }));
   const last = latest.data;
   const modules = health?.modules ?? [];
-  const healthyCount = modules.filter((m) => m.healthy).length;
 
   return (
     <div>
@@ -127,13 +127,7 @@ export function ServerPage() {
             sub={updates.data && updates.data.count > 0 ? 'paquets en attente' : 'système à jour'}
             action={updates.data && updates.data.count > 0 ? { label: 'Mettre à jour', onClick: () => void runUpgrade(), loading: upgrading } : null}
           />
-          <StatCard
-            title="Modules"
-            icon={IconServer}
-            color={healthyCount === modules.length && modules.length > 0 ? 'teal' : 'red'}
-            value={modules.length > 0 ? `${healthyCount}/${modules.length}` : '…'}
-            sub="sains"
-          />
+          <PanelUpdateCard />
         </SimpleGrid>
 
         <SimpleGrid cols={{ base: 1, lg: 2 }}>

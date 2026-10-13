@@ -4,3 +4,4 @@ export { StatCard } from './StatCard';
 export { WelcomeCard, StatusBadge } from './WelcomeCard';
 export { SslToggle } from './SslToggle';
 export { UserPicker } from './UserPicker';
+export { PanelUpdateCard } from './PanelUpdateCard';
