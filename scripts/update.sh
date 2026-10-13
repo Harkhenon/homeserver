@@ -50,8 +50,7 @@ ensure_repo() {
     logv "Clonage du dépôt dans $dir"
     mkdir -p "$dir"
     rm -rf "$dir"
-    git clone --branch "$BRANCH" "$REPO_URL" "$dir" >/dev/null 2>&1 || fail "Clonage impossible ($REPO_URL)"
-    chown -R "$HS_USER:$HS_USER" "$dir" 2>/dev/null || true
+    ash "git clone --branch '$BRANCH' '$REPO_URL' '$dir'" >/dev/null 2>&1 || fail "Clonage impossible ($REPO_URL)"
   fi
 }
 if [ -d "$SCRIPT_DIR/.git" ]; then
@@ -96,6 +95,9 @@ HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
 
 # Exécute une commande en tant que l'utilisateur hs-* (arguments en une seule chaîne)
 ash() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "$1"; }
+# Toutes les opérations git sur le clone se font en tant que hs-* (le clone lui appartient) :
+# git en root échouerait avec "dubious ownership" et créerait des fichiers root dans le clone.
+git_src() { ash "git -C '$SRC_DIR' $1"; }
 
 read_state() {
   [ -f "$STATE_FILE" ] || echo '{"current": null, "previous": null, "history": []}'
@@ -111,12 +113,12 @@ write_state() {
 
 # --- MODE check ------------------------------------------------------------------------
 if [ "$MODE" = "check" ]; then
-  git -C "$SRC_DIR" fetch origin "$BRANCH" --tags >/dev/null 2>&1 || fail "git fetch impossible (réseau ?)"
+  git_src "fetch origin '$BRANCH' --tags" >/dev/null 2>&1 || fail "git fetch impossible (réseau ?)"
   CUR="unknown"; LAT="unknown"
   if [ -f "$STATE_FILE" ] && [ -n "$HS_NODE_BIN" ]; then
     CUR="$("$HS_NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('$STATE_FILE','utf8')).current || 'unknown')" 2>/dev/null || echo unknown)"
   fi
-  LAT="$(git -C "$SRC_DIR" show "origin/$BRANCH:package.json" 2>/dev/null \
+  LAT="$(git_src "show 'origin/$BRANCH:package.json'" 2>/dev/null \
     | "$HS_NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})" \
     || echo unknown)"
   AVAIL="false"
@@ -167,9 +169,9 @@ fi
 BEFORE_STATE="$(read_state)"
 BEFORE="$(printf '%s' "$BEFORE_STATE" | "$HS_NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=JSON.parse(d);console.log(s.current ?? 'none')})")"
 
-git -C "$SRC_DIR" fetch origin "$BRANCH" --tags >/dev/null 2>&1 || fail "git fetch impossible (réseau ?)"
-LOCAL="$(git -C "$SRC_DIR" rev-parse HEAD)"
-REMOTE="$(git -C "$SRC_DIR" rev-parse "origin/$BRANCH" 2>/dev/null || echo "")"
+git_src "fetch origin '$BRANCH' --tags" >/dev/null 2>&1 || fail "git fetch impossible (réseau ?)"
+LOCAL="$(git_src "rev-parse HEAD")"
+REMOTE="$(git_src "rev-parse 'origin/$BRANCH'" 2>/dev/null || echo "")"
 [ -n "$REMOTE" ] || fail "origin/$BRANCH introuvable."
 
 if [ "$LOCAL" = "$REMOTE" ] && [ "$BEFORE" != "none" ]; then
@@ -177,7 +179,7 @@ if [ "$LOCAL" = "$REMOTE" ] && [ "$BEFORE" != "none" ]; then
   exit 0
 fi
 
-git -C "$SRC_DIR" reset --hard "origin/$BRANCH" >/dev/null 2>&1 || fail "git reset impossible (modifications locales ?)"
+git_src "reset --hard 'origin/$BRANCH'" >/dev/null 2>&1 || fail "git reset impossible (modifications locales ?)"
 NEW_VERSION="$(node -e "console.log(require('$SRC_DIR/package.json').version)" 2>/dev/null || echo unknown)"
 
 RELEASE_DIR="$RELEASES_DIR/$NEW_VERSION"
