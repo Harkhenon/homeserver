@@ -98,7 +98,6 @@ async function main() {
     `HS_ADMIN_PASSWORD=${adminPassword}`,
     `HS_USER=${user}`,
     `HS_MODULES=system,${modulesList},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
-    `HS_SRC_DIR=${process.env.HS_SRC_DIR ?? '/var/lib/homeserver/homeserver'}`,
   ].join('\n') + '\n';
   writeFileSync(`${installDir}/.env`, env);
   ok(`.env généré (${installDir}/.env)`);

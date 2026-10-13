@@ -72,7 +72,7 @@ HELPER_DIR="$INSTALL_DIR/server/dist/helper"
 # --- Désinstallation ----------------------------------------------------------------
 if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
-  echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${HS_HOME}, utilisateur hs-*${RESET}"
+  echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${HS_HOME} (releases+états), updater, logs, utilisateur hs-*${RESET}"
   read -r -p "  Continuer ? [y/N] " confirm
   case "$confirm" in
     y|Y|yes|oui|o) : ;;

@@ -1,10 +1,9 @@
-import { useState } from 'react';
 import {
   Card, Text, ThemeIcon, Badge, Button, Group, Stack,
 } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp } from '@tabler/icons-react';
-import { useModuleQuery, useModuleAction } from '../api/hooks';
+import { useModuleQuery } from '../api/hooks';
+import { usePanelUpdate as usePanelUpdateHook } from '../api/usePanelUpdate';
 
 interface PanelCheckInfo {
   available?: boolean;
@@ -24,36 +23,7 @@ export function PanelUpdateCard() {
     refetchInterval: 60_000,
   });
   const versionQuery = useModuleQuery<{ version: string }>('system', 'panel.version');
-  const action = useModuleAction('system');
-  const [updating, setUpdating] = useState(false);
-
-  const applyUpdate = async () => {
-    setUpdating(true);
-    notifications.show({
-      message: 'Mise à jour du panel en cours — il redémarrera à la fin',
-      color: 'blue',
-    });
-    const res = await action.run<PanelUpdateResult>('panel.update');
-    setUpdating(false);
-    if (res !== null) {
-      if (res.rolledBack) {
-        notifications.show({
-          message: 'Mise à jour échouée — retour automatique à la version précédente',
-          color: 'orange',
-        });
-      } else if (res.updated) {
-        notifications.show({
-          message: `Panel mis à jour vers ${res.latest ?? '?'} — recharge la page`,
-          color: 'green',
-        });
-      } else {
-        notifications.show({ message: 'Le panel est déjà à jour', color: 'blue' });
-      }
-      void check.reload();
-    } else if (action.error) {
-      notifications.show({ message: action.error, color: 'red' });
-    }
-  };
+  const { applying: updating, apply } = usePanelUpdateHook();
 
   const version = versionQuery.data?.version ?? '…';
   const available = check.data?.available ?? false;
@@ -106,7 +76,7 @@ export function PanelUpdateCard() {
             color="orange"
             leftSection={<IconRocket size={14} stroke={1.5} />}
             loading={updating}
-            onClick={() => void applyUpdate()}
+            onClick={() => void apply()}
           >
             Mettre à jour
           </Button>
