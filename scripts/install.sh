@@ -134,27 +134,29 @@ as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NOD
 # sinon on l'installe depuis updater/dist/ du présent clone (le dépôt dédié
 # homeserver-updater prendra le relais via HS_UPDATER_TARBALL_URL une fois publié).
 PAIR_DIR=/usr/local/lib/homeserver/updater
+install_pair_tarball() {
+  run_step "Installation du couple updater ($1)" bash \
+    -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\$(mktemp -d) \
+    && curl -fsSL '$1' -o \$tmp/pair.tar.gz \
+    && tar -xzf \$tmp/pair.tar.gz -C \$tmp \
+    && src=\"\$(find \$tmp -maxdepth 2 -name VERSION -printf '%h\\n' | head -1)\" \
+    && mkdir -p '$PAIR_DIR' && cp \$src/updater-core.sh \$src/updater.sh \$src/VERSION '$PAIR_DIR/' \
+    && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \$tmp"
+}
 if [ -x "$PAIR_DIR/updater-core.sh" ] && [ -x "$PAIR_DIR/updater.sh" ]; then
   echo -e "${DIM}  couple updater déjà présent ($PAIR_DIR) — conservé${RESET}"
 else
   LOCAL_TARBALL="$(ls -1 "$SCRIPT_DIR"/updater/dist/homeserver-updater-*.tar.gz 2>/dev/null | sort -rV | head -1 || true)"
-  if [ -n "$LOCAL_TARBALL" ]; then
-    run_step "Installation du couple updater (local: $LOCAL_TARBALL)" bash \
-      -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\\$(mktemp -d) \
-      && tar -xzf '$LOCAL_TARBALL' -C \\$tmp \
-      && src=\"\\$(find \\$tmp -maxdepth 2 -name VERSION -printf '%h\\n' | head -1)\" \
-      && mkdir -p '$PAIR_DIR' && cp \\$src/updater-core.sh \\$src/updater.sh \\$src/VERSION '$PAIR_DIR/' \
-      && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \\$tmp"
-  elif [ -n "${HS_UPDATER_TARBALL_URL:-}" ]; then
-    run_step "Installation du couple updater (dépôt dédié)" bash \
-      -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\\$(mktemp -d) \
-      && curl -fsSL '${HS_UPDATER_TARBALL_URL}' -o \\$tmp/pair.tar.gz \
-      && tar -xzf \\$tmp/pair.tar.gz -C \\$tmp \
-      && src=\"\\$(find \\$tmp -maxdepth 2 -name VERSION -printf '%h\\n' | head -1)\" \
-      && cp \\$src/updater-core.sh \\$src/updater.sh \\$src/VERSION '$PAIR_DIR/' \
-      && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \\$tmp"
+  if [ -n "${HS_UPDATER_TARBALL_URL:-}" ]; then
+    install_pair_tarball "$HS_UPDATER_TARBALL_URL"
+  elif [ -n "$LOCAL_TARBALL" ]; then
+    install_pair_tarball "$LOCAL_TARBALL"
   else
-    fail "Couple updater introuvable (ni updater/dist/, ni HS_UPDATER_TARBALL_URL)."
+    UPDATER_LATEST_URL="$(curl -fsSL https://api.github.com/repos/Harkhenon/homeserver-updater/releases/latest 2>/dev/null \
+      | grep -o '"browser_download_url": *"[^"]*homeserver-updater-[^"]*\.tar\.gz"' \
+      | head -1 | grep -o 'https[^"]*') || true"
+    [ -n "$UPDATER_LATEST_URL" ] || fail "Couple updater introuvable (dépôt homeserver-updater injoignable et pas de updater/dist/ local)."
+    install_pair_tarball "$UPDATER_LATEST_URL"
   fi
 fi
 cat > /etc/systemd/system/hs-updater-check.service <<UNIT
