@@ -154,7 +154,7 @@ else
   else
     UPDATER_LATEST_URL="$(curl -fsSL https://api.github.com/repos/Harkhenon/homeserver-updater/releases/latest 2>/dev/null \
       | grep -o '"browser_download_url": *"[^"]*homeserver-updater-[^"]*\.tar\.gz"' \
-      | head -1 | grep -o 'https[^"]*') || true"
+      | head -1 | grep -o 'https[^"]*')" || true
     [ -n "$UPDATER_LATEST_URL" ] || fail "Couple updater introuvable (dépôt homeserver-updater injoignable et pas de updater/dist/ local)."
     install_pair_tarball "$UPDATER_LATEST_URL"
   fi
