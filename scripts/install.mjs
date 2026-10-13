@@ -55,7 +55,16 @@ async function main() {
   ok(`Distro détectée : ${distro.pretty} (famille: ${distro.family})`);
 
   log('Test du helper privilégié...');
-  const echo = await callHelper({ action: 'echo' }).catch((e) => die(`Helper inaccessible (${e.message})`));
+  let echo = null;
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    try {
+      echo = await callHelper({ action: 'echo' });
+      break;
+    } catch (e) {
+      if (attempt === 15) die(`Helper inaccessible (${e.message})`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
   ok(`Helper opérationnel (famille: ${echo.family})`);
 
   const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
