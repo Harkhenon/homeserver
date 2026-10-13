@@ -183,13 +183,16 @@ test -f "$INSTALL_DIR/front/dist/index.html" || fail "front/dist/index.html intr
 RELEASES_DIR="$HS_HOME/releases"
 PANEL_VERSION="$("$HS_NODE_BIN" -e "console.log(require('$INSTALL_DIR/package.json').version)" 2>/dev/null || echo '0.0.0')"
 INITIAL_RELEASE_DIR="$RELEASES_DIR/$PANEL_VERSION"
+rm -rf "$INITIAL_RELEASE_DIR"
 mkdir -p "$INITIAL_RELEASE_DIR"
 tar -C "$INSTALL_DIR" \
-  --exclude='./node_modules' \
   --exclude='./.git' \
   --exclude='./.env' \
   --exclude='./front/node_modules' \
   -cf - . | tar -C "$INITIAL_RELEASE_DIR" -xf -
+test -d "$INITIAL_RELEASE_DIR/node_modules" || fail "node_modules manquant dans la release initiale."
+test -f "$INITIAL_RELEASE_DIR/server/dist/server/src/index.js" || fail "Build back manquant dans la release initiale."
+test -f "$INITIAL_RELEASE_DIR/front/dist/index.html" || fail "Build front manquant dans la release initiale."
 cp "$INSTALL_DIR/.env" "$INITIAL_RELEASE_DIR/.env" 2>/dev/null || true
 chown -R "$HS_USER:$HS_USER" "$INITIAL_RELEASE_DIR"
 printf '{"current": "%s", "previous": null, "history": [], "updatedAt": "%s"}' "$PANEL_VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RELEASES_DIR/installed.json"
