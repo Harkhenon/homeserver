@@ -66,5 +66,9 @@ pair_repair() {
 
 # Version du couple actuellement installé sur le disque.
 pair_local_version() {
-  cat "$PAIR_DIR/VERSION" 2>/dev/null | head -1 || echo "unknown"
+  # VERSION est un JSON {"version": "x.y.z", "panelMin": "..."} — extraire le semver.
+  local raw
+  raw="$(cat "$PAIR_DIR/VERSION" 2>/dev/null || true)"
+  if [ -z "$raw" ]; then echo "unknown"; return 0; fi
+  printf '%s' "$raw" | grep -o '"version": *"[^"]*"' | head -1 | grep -o '[0-9][^"]*' || echo "unknown"
 }

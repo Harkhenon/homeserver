@@ -91,6 +91,23 @@ mode_check() {
   echo $$ > "$LOCK_FILE"
   trap 'rm -f "$LOCK_FILE"' EXIT
   touch "$STATUS_FILE"
+  # Écraser un lastRun "running" obsolète (apply tué par timeout systemd sans ménage)
+  if [ -x "$NODE_BIN" ] || ensure_node 2>/dev/null; then
+    "$NODE_BIN" - "$STATUS_FILE" <<'NODEEOF' 2>/dev/null || true
+const fs = require('fs');
+const f = process.argv[2];
+try {
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (s.lastRun && s.lastRun.result === 'running') {
+    const started = Date.parse(s.lastRun.at);
+    if (Number.isFinite(started) && Date.now() - started > 15 * 60_000) {
+      s.lastRun = { at: s.lastRun.at, result: 'failed', message: 'apply interrompu (timeout) — état nettoyé par le check' };
+      fs.writeFileSync(f, JSON.stringify(s, null, 2));
+    }
+  }
+} catch {}
+NODEEOF
+  fi
   log "check démarré"
 
   # 1. Self-update du couple (l'outillage se répare sans attendre — Var 4/A)
@@ -98,6 +115,7 @@ mode_check() {
   pair_latest="$(github_latest "$UPDATER_REPO_API" version)"
   pair_local="$(pair_local_version)"
   local pair_updated="false"
+  local PAIR_VER
   if [ "$pair_latest" != "null" ] && [ -n "$pair_latest" ] && semver_gt "$pair_latest" "$pair_local"; then
     if pair_repair >/dev/null 2>&1; then
       pair_updated="true"
@@ -114,7 +132,8 @@ mode_check() {
     json_set "$STATUS_FILE" lastCheck "$(date -u +%FT%TZ)"
     json_set "$STATUS_FILE" available false
     json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"API GitHub injoignable (rate limit ou réseau) — nouvel essai au prochain check\"}"
-    json_set "$STATUS_FILE" updaterHealth "{\"core\": \"ok\", \"updater\": \"ok\", \"pairVersion\": \"$(pair_local_version)\", \"selfUpdated\": $pair_updated, \"checkedAt\": \"$(date -u +%FT%TZ)\"}"
+    PAIR_VER="$(pair_local_version)"
+    json_set "$STATUS_FILE" updaterHealth "{\"core\": \"ok\", \"updater\": \"ok\", \"pairVersion\": \"$PAIR_VER\", \"selfUpdated\": $pair_updated, \"checkedAt\": \"$(date -u +%FT%TZ)\"}"
     log "check échoué : API GitHub injoignable"
     cat "$STATUS_FILE"
     exit 0
@@ -136,7 +155,8 @@ mode_check() {
   else
     json_set "$STATUS_FILE" latest null
   fi
-  json_set "$STATUS_FILE" updaterHealth "{\"core\": \"ok\", \"updater\": \"ok\", \"pairVersion\": \"$(pair_local_version)\", \"selfUpdated\": $pair_updated, \"checkedAt\": \"$(date -u +%FT%TZ)\"}"
+  PAIR_VER="$(pair_local_version)"
+  json_set "$STATUS_FILE" updaterHealth "{\"core\": \"ok\", \"updater\": \"ok\", \"pairVersion\": \"$PAIR_VER\", \"selfUpdated\": $pair_updated, \"checkedAt\": \"$(date -u +%FT%TZ)\"}"
   log "check terminé: current=$current latest=$latest_version available=$available"
   cat "$STATUS_FILE"
 }
