@@ -46,8 +46,11 @@ semver_gt() { # a b -> true si a > b
   [ "$(printf '%s\n%s' "$2" "$1" | sort -V | tail -1)" = "$1" ] && [ "$1" != "$2" ]
 }
 
-github_latest() { # api_url champ
-  curl -fsSL "$1" 2>/dev/null | "$NODE_BIN" -e "
+github_latest() { # api_url — tolérant aux échecs (rate limit, réseau) : renvoie null
+  local out
+  out="$(curl -fsSL "$1" 2>/dev/null || true)"
+  if [ -z "$out" ]; then echo "null"; return 0; fi
+  printf '%s' "$out" | "$NODE_BIN" -e "
 let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
   try { const j=JSON.parse(d); console.log(JSON.stringify({version: j.tag_name.replace(/^v/,''), notes: j.body ?? '', assets: (j.assets ?? []).map(a => a.browser_download_url)})); }
   catch { console.log('null'); }
@@ -76,8 +79,17 @@ mode_state() {
 }
 
 # ---------------------------------------------------------------- MODE check
+LOCK_FILE="$HS_HOME/updater.lock"
+
 mode_check() {
   ensure_node
+  # Verrou : ne jamais checker pendant un apply (le panel poll, le timer aussi)
+  if [ -f "$LOCK_FILE" ] && kill -0 "$(cat "$LOCK_FILE" 2>/dev/null)" 2>/dev/null; then
+    log "check ignoré : apply en cours"
+    exit 0
+  fi
+  echo $$ > "$LOCK_FILE"
+  trap 'rm -f "$LOCK_FILE"' EXIT
   touch "$STATUS_FILE"
   log "check démarré"
 
@@ -98,6 +110,15 @@ mode_check() {
   # 2. Check panel
   local latest_json latest_version
   latest_json="$(github_latest "$PANEL_REPO_API" full)"
+  if [ "$latest_json" = "null" ]; then
+    json_set "$STATUS_FILE" lastCheck "$(date -u +%FT%TZ)"
+    json_set "$STATUS_FILE" available false
+    json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"API GitHub injoignable (rate limit ou réseau) — nouvel essai au prochain check\"}"
+    json_set "$STATUS_FILE" updaterHealth "{\"core\": \"ok\", \"updater\": \"ok\", \"pairVersion\": \"$(pair_local_version)\", \"selfUpdated\": $pair_updated, \"checkedAt\": \"$(date -u +%FT%TZ)\"}"
+    log "check échoué : API GitHub injoignable"
+    cat "$STATUS_FILE"
+    exit 0
+  fi
   latest_version="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})")"
   local current
   current="$(cat "$RELEASES_DIR/current/VERSION" 2>/dev/null || "$NODE_BIN" -e "try{console.log(require('$STATE_FILE').current||'unknown')}catch{console.log('unknown')}" 2>/dev/null || echo unknown)"
@@ -123,6 +144,12 @@ mode_check() {
 # ---------------------------------------------------------------- MODE apply
 mode_apply() {
   ensure_node
+  if [ -f "$LOCK_FILE" ] && kill -0 "$(cat "$LOCK_FILE" 2>/dev/null)" 2>/dev/null; then
+    log "apply ignoré : une autre instance tourne"
+    exit 1
+  fi
+  echo $$ > "$LOCK_FILE"
+  trap 'rm -f "$LOCK_FILE"' EXIT
   touch "$STATUS_FILE"
   log "apply démarré"
 

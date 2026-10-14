@@ -915,7 +915,22 @@ WantedBy=multi-user.target
       }
     }
     case 'panel_check': {
-      await exec('systemctl', ['start', 'hs-updater-check.service']);
+      // Throttling : le check GitHub n'est relancé que si l'état est absent ou vieux (> 30 min).
+      // Sinon on ne fait que lire update-status.json — le poll du front ne doit pas
+      // déclencher de requêtes API GitHub (rate limit 60 req/h en anonyme).
+      let stale = true;
+      try {
+        const st = readJsonState(STATUS_FILE, '');
+        const last = typeof st.lastCheck === 'string' ? Date.parse(st.lastCheck) : NaN;
+        stale = !Number.isFinite(last) || Date.now() - last > 30 * 60_000;
+      } catch { /* pas encore d'état */ }
+      if (stale) {
+        try {
+          await exec('systemctl', ['start', 'hs-updater-check.service']);
+        } catch {
+          // check en échec (réseau, rate limit) : on rend l'état tel quel, avec son erreur
+        }
+      }
       return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
     }
     case 'panel_update': {
