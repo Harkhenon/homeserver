@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Vérifier cohérence tag ↔ package.json
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "✗ Le tag ($TAG_VERSION) ne correspond pas à package.json ($PKG_VERSION)" >&2
+            echo "  Bumpe package.json avant de tagger." >&2
+            exit 1
+          fi
+          echo "✓ Tag v$TAG_VERSION cohérent avec package.json"
+
+      - name: Construire le tarball de release
+        run: bash scripts/make-release.sh "$GITHUB_REF_NAME"
+
+      - name: Notes de release (commits depuis le tag précédent)
+        run: |
+          PREV_TAG="$(git tag --sort=-v:refname | grep '^v' | sed -n 2p || true)"
+          if [ -n "$PREV_TAG" ]; then
+            git log --oneline --no-merges "$PREV_TAG..$GITHUB_REF_NAME" > /tmp/notes.md
+            echo "## Commits depuis $PREV_TAG" > /tmp/release-notes.md
+            cat /tmp/notes.md >> /tmp/release-notes.md
+          else
+            echo "Release initiale" > /tmp/release-notes.md
+          fi
+          printf '\n---\n_Notes generees automatiquement - modifiables sur la page de release._\n' >> /tmp/release-notes.md
+
+      - name: Publier la release avec les assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "v${GITHUB_REF_NAME#v}" \
+            --notes-file /tmp/release-notes.md \
+            dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz \
+            dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz.sha256
