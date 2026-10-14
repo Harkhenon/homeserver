@@ -139,7 +139,7 @@ install_pair_tarball() {
     -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\$(mktemp -d) \
     && curl -fsSL '$1' -o \$tmp/pair.tar.gz \
     && tar -xzf \$tmp/pair.tar.gz -C \$tmp \
-    && src=\"\$(find \$tmp -maxdepth 2 -name VERSION -printf '%h\\n' -print -quit)\" \
+    && src=\"\$(find \$tmp -maxdepth 2 -name VERSION -printf '%h\\n' -quit)\" \
     && mkdir -p '$PAIR_DIR' && cp \$src/updater-core.sh \$src/updater.sh \$src/VERSION '$PAIR_DIR/' \
     && chmod +x '$PAIR_DIR/updater-core.sh' '$PAIR_DIR/updater.sh' && rm -rf \$tmp"
 }

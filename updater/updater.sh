@@ -203,7 +203,7 @@ mode_apply() {
   curl -fsSL "$tar_url" -o "$tmp/panel.tar.gz" || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"téléchargement impossible\"}"; log "échec téléchargement"; exit 1; }
   tar -xzf "$tmp/panel.tar.gz" -C "$tmp" || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"archive illisible\"}"; exit 1; }
   local src_dir
-  src_dir="$(find "$tmp" -maxdepth 2 -name package.json -printf '%h\n' -print -quit 2>/dev/null)"
+  src_dir="$(find "$tmp" -maxdepth 2 -name package.json -printf '%h\n' -quit 2>/dev/null)"
   [ -n "$src_dir" ] || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"package.json introuvable\"}"; exit 1; }
 
   # 2. Panel minimum requis par le couple
