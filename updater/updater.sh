@@ -196,7 +196,8 @@ mode_apply() {
   log "apply: version cible $latest_version (courante $current)"
   # 1. Télécharger le tarball de la release du panel (asset, sinon archive du tag)
   local tar_url
-  tar_url="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const asset=(j.assets||[]).find(a=>a.includes('homeserver-v'));console.log(asset||`https://github.com/Harkhenon/homeserver/archive/refs/tags/v${j.version}.tar.gz`)})")"
+  # latest_json contient déjà les URLs sérialisées (github_latest mappe browser_download_url)
+  tar_url="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const asset=(j.assets||[]).find(u=>typeof u==='string'&&u.includes('homeserver-v'));console.log(asset||('https://github.com/Harkhenon/homeserver/archive/refs/tags/v'+j.version+'.tar.gz'))})")"
   local tmp
   tmp="$(mktemp -d)"
   log "apply: téléchargement $tar_url"
