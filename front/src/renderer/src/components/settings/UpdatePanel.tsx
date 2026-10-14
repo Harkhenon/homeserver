@@ -7,7 +7,6 @@ import {
   Group,
   ThemeIcon,
   Alert,
-  List,
   Accordion,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -41,12 +40,27 @@ interface PanelReleasesInfo {
   releases: string[];
   current: string | null;
   previous: string | null;
+  sizes?: Record<string, number>;
 }
 
 export function UpdatePanel() {
   const check = useModuleQuery<PanelCheckInfo>('system', 'panel.check');
   const releases = useModuleQuery<PanelReleasesInfo>('system', 'panel.releases');
   const action = useModuleAction('system');
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const deleteRelease = async (version: string) => {
+    setDeleting(version);
+    const res = await action.run<{ deleted?: boolean }>('panel.release.delete', { version });
+    setDeleting(null);
+    if (res !== null) {
+      notifications.show({ message: `Release ${version} supprimée`, color: 'green' });
+      void releases.reload();
+      void check.reload();
+    } else if (action.error) {
+      notifications.show({ message: action.error, color: 'red' });
+    }
+  };
   const [busy, setBusy] = useState<'update' | 'rollback' | null>(null);
 
   const reloadAll = () => {
@@ -166,25 +180,42 @@ export function UpdatePanel() {
             Releases présentes sur le serveur
           </Accordion.Control>
           <Accordion.Panel>
-            <List size="sm" spacing="xs">
-              {(releases.data?.releases ?? []).map((v) => (
-                <List.Item
-                  key={v}
-                  icon={v === current ? <IconCircleCheck size={14} stroke={1.5} /> : undefined}
-                >
-                  <Group gap="xs">
-                    <Text>{v}</Text>
-                    {v === current && <Badge size="sm" variant="light">active</Badge>}
-                    {v === releases.data?.previous && (
-                      <Badge size="sm" variant="light" color="orange">précédente</Badge>
+            <Stack gap="xs">
+              {(releases.data?.releases ?? []).map((v) => {
+                const isActive = v === current;
+                const isPrevious = v === releases.data?.previous;
+                const sizeMb = releases.data?.sizes?.[v];
+                return (
+                  <Group key={v} gap="xs" wrap="nowrap" justify="space-between">
+                    <Group gap="xs" wrap="nowrap">
+                      {isActive && <IconCircleCheck size={14} stroke={1.5} />}
+                      <Text size="sm" fw={isActive ? 600 : 400} c={isActive ? undefined : 'dimmed'}>{v}</Text>
+                      {isActive && <Badge size="sm" variant="light">active</Badge>}
+                      {isPrevious && (
+                        <Badge size="sm" variant="light" color="orange">précédente</Badge>
+                      )}
+                      {sizeMb !== undefined && (
+                        <Text size="xs" c="dimmed">{sizeMb >= 1024 ? `${(sizeMb / 1024).toFixed(1)} Go` : `${sizeMb} Mo`}</Text>
+                      )}
+                    </Group>
+                    {!isActive && !isPrevious && (
+                      <Button
+                        size="compact-xs"
+                        variant="light"
+                        color="red"
+                        loading={deleting === v}
+                        onClick={() => void deleteRelease(v)}
+                      >
+                        Supprimer
+                      </Button>
                     )}
                   </Group>
-                </List.Item>
-              ))}
+                );
+              })}
               {(releases.data?.releases ?? []).length === 0 && (
                 <Text size="sm" c="dimmed">Aucune release — le panel tourne encore en mode install initial.</Text>
               )}
-            </List>
+            </Stack>
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>

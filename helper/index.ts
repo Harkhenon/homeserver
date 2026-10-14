@@ -949,7 +949,27 @@ WantedBy=multi-user.target
     case 'panel_releases': {
       const res = await tryExec('bash', ['-c', `ls -1 '${RELEASES_DIR}' 2>/dev/null | grep -v installed.json | sort -rV || true`]);
       const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
-      return { releases: (res ?? '').trim().split('\n').filter(Boolean), current: state.current ?? null, previous: state.previous ?? null };
+      const sizes = await tryExec('bash', ['-c', `du -sm '${RELEASES_DIR}'/*/ 2>/dev/null | awk '{print $2, $1}'`]);
+      const sizeMap = new Map((sizes ?? '').trim().split('\n').filter(Boolean).map((l) => {
+        const m = l.replace(/\/$/, '').match(/^(\S+) (\d+)$/);
+        return m ? [m[1]?.split('/').pop() ?? '', Number(m[2] ?? 0)] : null;
+      }).filter((e): e is [string, number] => e !== null));
+      return {
+        releases: (res ?? '').trim().split('\n').filter(Boolean),
+        current: state.current ?? null,
+        previous: state.previous ?? null,
+        sizes: Object.fromEntries(sizeMap),
+      };
+    }
+    case 'panel_release_delete': {
+      const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
+      if (req.version === state.current) throw new Error('Impossible de supprimer la release active');
+      if (req.version === state.previous) throw new Error('Impossible de supprimer la release précédente (plan de retour arrière)');
+      const target = `${RELEASES_DIR}/${req.version}`;
+      const st = statSync(target, { throwIfNoEntry: false });
+      if (!st || !st.isDirectory()) throw new Error('Release introuvable');
+      rmSync(target, { recursive: true });
+      return { deleted: true, version: req.version };
     }
     case 'systemctl': {
       if (req.verb === 'status') {

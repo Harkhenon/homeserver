@@ -7,7 +7,7 @@ import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js
 import { callHelper } from '../../core/privileged/client.js';
 import type {
   PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult,
-  PanelRollbackResult, PanelReleasesResult,
+  PanelRollbackResult, PanelReleasesResult, PanelReleaseDeleteResult,
 } from '../../core/privileged/contract.js';
 
 const run = promisify(execFile);
@@ -188,8 +188,16 @@ const definition: ModuleDefinition = {
       handler: () => callHelper<PanelRollbackResult>({ action: 'panel_rollback' }),
     },
     'panel.releases': {
-      summary: 'Lister les releases du panel présentes sur le disque',
+      summary: 'Lister les releases du panel présentes sur le disque (avec tailles)',
       handler: () => callHelper<PanelReleasesResult>({ action: 'panel_releases' }),
+    },
+    'panel.release.delete': {
+      summary: 'Supprimer une release du panel (payload: { version }) — jamais l\'active ni la précédente',
+      handler: (payload) => {
+        const p = (payload ?? {}) as { version?: unknown };
+        if (typeof p.version !== 'string') throw new Error('version requise');
+        return callHelper<PanelReleaseDeleteResult>({ action: 'panel_release_delete', version: p.version });
+      },
     },
     'panel.version': {
       summary: 'Version courante du panel (package.json)',
