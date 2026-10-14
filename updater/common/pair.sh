@@ -45,7 +45,7 @@ pair_repair() {
   curl -fsSL "$tar_url" -o "$tmp/pair.tar.gz" || { echo "repair: téléchargement impossible"; return 1; }
   tar -xzf "$tmp/pair.tar.gz" -C "$tmp" || { echo "repair: archive illisible"; return 1; }
   local src_dir
-  src_dir="$(find "$tmp" -maxdepth 2 -name VERSION -printf '%h\n' | head -1)"
+  src_dir="$(find "$tmp" -maxdepth 2 -name VERSION -printf '%h\n' -print -quit 2>/dev/null)"
   [ -n "$src_dir" ] || { echo "repair: VERSION introuvable dans l'archive"; return 1; }
   # 3. Vérifier SHA256SUMS si présent
   if [ -f "$src_dir/SHA256SUMS" ]; then

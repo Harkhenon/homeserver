@@ -60,7 +60,7 @@ let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
 ensure_node() {
   if [ ! -x "$NODE_BIN" ]; then
     local nvm_node
-    nvm_node="$(find "$HS_HOME/.nvm/versions/node" -maxdepth 3 -name node -type f 2>/dev/null | sort -rV | head -1)"
+    nvm_node="$(find "$HS_HOME/.nvm/versions/node" -maxdepth 3 -name node -type f -print -quit 2>/dev/null)"
     [ -n "$nvm_node" ] && NODE_BIN="$nvm_node" && NPM_BIN="$(dirname "$nvm_node")/npm"
   fi
   [ -x "$NODE_BIN" ] || { echo "node introuvable" >&2; return 1; }
@@ -174,8 +174,10 @@ mode_apply() {
   log "apply démarré"
 
   json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"running\", \"message\": \"mise à jour en cours\"}"
+  log "apply: état running écrit"
 
   # 0. Garde-fous : disque + version dispo
+  log "apply: garde-fou disque"
   if ! disk_ok; then
     json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"espace disque insuffisant (< ${MIN_FREE_MB} Mo)\"}"
     log "échec: espace disque insuffisant"; exit 1
@@ -191,15 +193,17 @@ mode_apply() {
     log "rien à faire (current=$current)"; exit 0
   fi
 
+  log "apply: version cible $latest_version (courante $current)"
   # 1. Télécharger le tarball de la release du panel (asset, sinon archive du tag)
   local tar_url
   tar_url="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const asset=(j.assets||[]).find(a=>a.includes('homeserver-v'));console.log(asset||`https://github.com/Harkhenon/homeserver/archive/refs/tags/v${j.version}.tar.gz`)})")"
   local tmp
   tmp="$(mktemp -d)"
+  log "apply: téléchargement $tar_url"
   curl -fsSL "$tar_url" -o "$tmp/panel.tar.gz" || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"téléchargement impossible\"}"; log "échec téléchargement"; exit 1; }
   tar -xzf "$tmp/panel.tar.gz" -C "$tmp" || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"archive illisible\"}"; exit 1; }
   local src_dir
-  src_dir="$(find "$tmp" -maxdepth 2 -name package.json -printf '%h\n' | head -1)"
+  src_dir="$(find "$tmp" -maxdepth 2 -name package.json -printf '%h\n' -print -quit 2>/dev/null)"
   [ -n "$src_dir" ] || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"package.json introuvable\"}"; exit 1; }
 
   # 2. Panel minimum requis par le couple
@@ -218,7 +222,8 @@ mode_apply() {
     --exclude='./.git' --exclude='./.env' \
     --exclude='./node_modules' --exclude='./front/node_modules' \
     -cf - . | tar -C "$new_dir" -xf -
-  [ -f "$INSTALL_DIR/.env" ] && cp "$INSTALL_DIR/.env" "$new_dir/.env"
+  if [ -f "$INSTALL_DIR/.env" ]; then cp "$INSTALL_DIR/.env" "$new_dir/.env"; fi
+  log "apply: sources copiées, npm ci back"
 
   local hs_user
   hs_user="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
@@ -234,6 +239,7 @@ mode_apply() {
   echo "$latest_version" > "$new_dir/VERSION"
 
   # 4. Bascule + health-check + rollback automatique
+  log "apply: builds OK, bascule du symlink"
   ln -sfn "$new_dir" "$CURRENT_LINK"
   systemctl restart hs-helper homeserver
   sleep 5
