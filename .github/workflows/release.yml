@@ -26,7 +26,7 @@ jobs:
           echo "✓ Tag v$TAG_VERSION cohérent avec package.json"
 
       - name: Construire le tarball de release
-        run: bash scripts/make-release.sh "$GITHUB_REF_NAME"
+        run: bash scripts/make-release.sh "${GITHUB_REF_NAME#v}"
 
       - name: Notes de release (commits depuis le tag précédent)
         run: |
