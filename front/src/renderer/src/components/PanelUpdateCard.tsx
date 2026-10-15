@@ -3,19 +3,11 @@ import {
 } from '@mantine/core';
 import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp } from '@tabler/icons-react';
 import { useModuleQuery } from '../api/hooks';
-import { usePanelUpdate as usePanelUpdateHook } from '../api/usePanelUpdate';
+import { usePanelUpdateModal } from './PanelUpdateModal';
 
 interface PanelCheckInfo {
   available?: boolean;
   latest?: { version: string; notes?: string } | null;
-}
-
-interface PanelUpdateResult {
-  updated?: boolean;
-  current?: string;
-  latest?: string;
-  rolledBack?: boolean;
-  active?: boolean;
 }
 
 export function PanelUpdateCard() {
@@ -23,12 +15,10 @@ export function PanelUpdateCard() {
     refetchInterval: 60_000,
   });
   const versionQuery = useModuleQuery<{ version: string }>('system', 'panel.version');
-  const { applying: updating, apply } = usePanelUpdateHook();
-
+  const { open } = usePanelUpdateModal();
   const version = versionQuery.data?.version ?? '…';
   const available = check.data?.available ?? false;
   const loading = check.loading && !check.data;
-
   return (
     <Card withBorder p="md" h="100%">
       <Group justify="space-between" wrap="nowrap">
@@ -75,8 +65,7 @@ export function PanelUpdateCard() {
             size="compact-sm"
             color="orange"
             leftSection={<IconRocket size={14} stroke={1.5} />}
-            loading={updating}
-            onClick={() => void apply()}
+            onClick={open}
           >
             Mettre à jour
           </Button>

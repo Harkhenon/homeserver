@@ -19,6 +19,7 @@ import { NAV_SECTIONS } from './nav';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
 import { UpdateNotification } from '../components/UpdateNotification';
+import { PanelUpdateModalProvider } from '../components/PanelUpdateModal';
 import type { AccentColor } from '../theme/colors';
 import HomeserverLogo from '../assets/logo_homeserver.webp';
 
@@ -45,7 +46,8 @@ export function AppLayout({
   const navbarWidth = desktopCollapsed ? 76 : 250;
 
   return (
-    <AppShell
+    <PanelUpdateModalProvider>
+      <AppShell
       header={{ height: 60 }}
       navbar={{
         width: navbarWidth,
@@ -202,6 +204,7 @@ export function AppLayout({
         avatarSeed={avatarSeed}
         onAvatarChange={onAvatarChange}
       />
-    </AppShell>
+      </AppShell>
+    </PanelUpdateModalProvider>
   );
 }

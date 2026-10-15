@@ -11,23 +11,16 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconRefresh, IconDownload, IconCircleCheck, IconInfoCircle,
+  IconRefresh, IconRocket, IconCircleCheck, IconInfoCircle,
   IconHistory, IconArrowBackUp,
 } from '@tabler/icons-react';
 import { useModuleQuery, useModuleAction } from '../../api/hooks';
+import { usePanelUpdateModal } from '../PanelUpdateModal';
 
 interface PanelCheckInfo {
   available?: boolean;
   latest?: { version: string; notes?: string } | null;
   updaterHealth?: { core: string; updater: string; pairVersion?: string };
-}
-
-interface PanelUpdateResult {
-  updated?: boolean;
-  current?: string;
-  latest?: string;
-  rolledBack?: boolean;
-  active?: boolean;
 }
 
 interface PanelRollbackResult {
@@ -47,8 +40,8 @@ export function UpdatePanel() {
   const check = useModuleQuery<PanelCheckInfo>('system', 'panel.check');
   const releases = useModuleQuery<PanelReleasesInfo>('system', 'panel.releases');
   const action = useModuleAction('system');
+  const { open } = usePanelUpdateModal();
   const [deleting, setDeleting] = useState<string | null>(null);
-
   const deleteRelease = async (version: string) => {
     setDeleting(version);
     const res = await action.run<{ deleted?: boolean }>('panel.release.delete', { version });
@@ -61,41 +54,11 @@ export function UpdatePanel() {
       notifications.show({ message: action.error, color: 'red' });
     }
   };
-  const [busy, setBusy] = useState<'update' | 'rollback' | null>(null);
-
+  const [busy, setBusy] = useState<'rollback' | null>(null);
   const reloadAll = () => {
     void check.reload();
     void releases.reload();
   };
-
-  const applyUpdate = async () => {
-    setBusy('update');
-    notifications.show({
-      message: 'Mise à jour en cours — le panel redémarrera à la fin',
-      color: 'blue',
-    });
-    const res = await action.run<PanelUpdateResult>('panel.update');
-    setBusy(null);
-    if (res !== null) {
-      if (res.rolledBack) {
-        notifications.show({
-          message: 'Mise à jour échouée (health-check) — retour automatique à la version précédente',
-          color: 'orange',
-        });
-      } else if (res.updated) {
-        notifications.show({
-          message: `Panel mis à jour vers ${res.latest ?? '?'} — recharge la page`,
-          color: 'green',
-        });
-      } else {
-        notifications.show({ message: 'Le panel est déjà à jour', color: 'blue' });
-      }
-      reloadAll();
-    } else if (action.error) {
-      notifications.show({ message: action.error, color: 'red' });
-    }
-  };
-
   const rollback = async () => {
     setBusy('rollback');
     const res = await action.run<PanelRollbackResult>('panel.rollback');
@@ -110,11 +73,9 @@ export function UpdatePanel() {
       notifications.show({ message: action.error, color: 'red' });
     }
   };
-
   const current = releases.data?.current ?? '?';
   const available = check.data?.available ?? false;
   const canRollback = Boolean(releases.data?.previous);
-
   return (
     <Stack>
       <Group gap="sm" align="center">
@@ -131,7 +92,9 @@ export function UpdatePanel() {
             {!available && (
               <Group gap={4}>
                 <IconCircleCheck size={14} stroke={1.5} />
-                <Text size="xs" c="dimmed">À jour</Text>
+                <Text size="xs" c="dimmed">
+                  À jour
+                </Text>
               </Group>
             )}
           </Group>
@@ -156,9 +119,9 @@ export function UpdatePanel() {
         </Button>
         <Button
           size="sm"
-          leftSection={<IconDownload size={14} stroke={1.5} />}
-          loading={busy === 'update'}
-          onClick={() => void applyUpdate()}
+          leftSection={<IconRocket size={14} stroke={1.5} />}
+          disabled={!available}
+          onClick={open}
         >
           Mettre à jour le panel
         </Button>
@@ -168,7 +131,7 @@ export function UpdatePanel() {
           color="orange"
           leftSection={<IconArrowBackUp size={14} stroke={1.5} />}
           loading={busy === 'rollback'}
-          disabled={!canRollback || busy === 'update'}
+          disabled={!canRollback}
           onClick={() => void rollback()}
         >
           Version précédente
