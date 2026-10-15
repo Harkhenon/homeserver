@@ -202,7 +202,12 @@ const definition: ModuleDefinition = {
     'panel.version': {
       summary: 'Version courante du panel (package.json)',
       handler: () => {
-        const pkg = JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { version?: string };
+        const pkgPath = [
+          new URL('../../../../package.json', import.meta.url),
+          new URL('../../../../../../../package.json', import.meta.url),
+          new URL('file:///opt/homeserver/package.json'),
+        ].find((u) => existsSync(u)) ?? new URL('../../../../package.json', import.meta.url);
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string };
         return { version: pkg.version ?? 'unknown' };
       },
     },
