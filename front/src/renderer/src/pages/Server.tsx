@@ -1,5 +1,5 @@
 import { AreaChart } from '@mantine/charts';
-import { Table, Badge, Card, SimpleGrid, Text, Group, Stack, Divider } from '@mantine/core';
+import { Table, Badge, Card, SimpleGrid, Text, Group, Stack, Divider, SegmentedControl } from '@mantine/core';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock, StatCard } from '../components';
 import { IconServer } from '@tabler/icons-react';
@@ -51,7 +51,8 @@ export function ServerPage() {
   const info = useModuleQuery<SysInfo>('system', 'info');
   const mem = useModuleQuery<{ totalBytes: number; usedBytes: number; usagePercent: number }>('system', 'memory', undefined, { refetchInterval: 5000 });
   const cpu = useModuleQuery<{ cores: number; load: [number, number, number]; usagePercent: number }>('system', 'cpu', undefined, { refetchInterval: 5000 });
-  const procs = useModuleQuery<ProcInfo[]>('system', 'processes', { limit: 15 }, { refetchInterval: 5000 });
+  const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
+  const procs = useModuleQuery<ProcInfo[]>('system', 'processes', { sort: procSort, limit: 15 }, { refetchInterval: 5000 });
   const updates = useModuleQuery<UpdatesInfo>('system', 'updates');
   const history = useModuleQuery<{ samples: MonitorSample[] }>('monitor', 'history', { minutes: 60 });
   const latest = useModuleQuery<MonitorSample>('monitor', 'latest', undefined, { refetchInterval: 5000 });
@@ -193,7 +194,18 @@ export function ServerPage() {
         </SimpleGrid>
 
         <Card withBorder p="md">
-          <Text fw={600} mb="sm">Processus (top CPU)</Text>
+          <Group justify="space-between" mb="sm">
+            <Text fw={600}>Processus</Text>
+            <SegmentedControl
+              size="xs"
+              value={procSort}
+              onChange={(v) => setProcSort(v as 'cpu' | 'mem')}
+              data={[
+                { value: 'cpu', label: 'Top CPU' },
+                { value: 'mem', label: 'Top RAM' },
+              ]}
+            />
+          </Group>
           <Table.ScrollContainer minWidth={700}>
             <Table>
               <Table.Thead>
