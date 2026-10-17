@@ -142,9 +142,16 @@ as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NOD
 # homeserver-updater prendra le relais via HS_UPDATER_TARBALL_URL une fois publié).
 PAIR_DIR=/usr/local/lib/homeserver/updater
 install_pair_tarball() {
+  # $1 = URL (http/https) OU chemin local vers le tarball du couple
+  local fetch_cmd
+  case "$1" in
+    http://*|https://*) fetch_cmd="curl -fsSL '$1' -o \$tmp/pair.tar.gz" ;;
+    /*)                  fetch_cmd="cp '$1' \$tmp/pair.tar.gz" ;;
+    *)                   fail "install_pair_tarball: source invalide: $1" ;;
+  esac
   run_step "Installation du couple updater ($1)" bash \
     -c "mkdir -p '$PAIR_DIR' && rm -rf '$PAIR_DIR' && tmp=\$(mktemp -d) \
-    && curl -fsSL '$1' -o \$tmp/pair.tar.gz \
+    && $fetch_cmd \
     && tar -xzf \$tmp/pair.tar.gz -C \$tmp \
     && src=\"\$(find \$tmp -maxdepth 2 -name VERSION -printf '%h\\n' -quit)\" \
     && mkdir -p '$PAIR_DIR' && cp \$src/updater-core.sh \$src/updater.sh \$src/VERSION '$PAIR_DIR/' \
