@@ -170,8 +170,11 @@ if [ -n "$FORCE_VERSION" ]; then
   run_step "Téléchargement v$FORCE_VERSION" curl -fsSL "$TARBALL_URL" -o "$TMP_DIR/panel.tar.gz"
   run_step "Extraction" tar -xzf "$TMP_DIR/panel.tar.gz" -C "$TMP_DIR"
 
-  SRC="$TMP_DIR/homeserver-v$FORCE_VERSION"
-  [ -d "$SRC" ] || fail "Archive extraite inattendue (pas de $SRC)."
+  # Le préfixe du tarball peut varier (homeserver-X.Y.Z ou homeserver-vX.Y.Z) :
+  # on détecte dynamiquement le répertoire racine extrait.
+  SRC="$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  [ -n "$SRC" ] && [ -d "$SRC" ] || fail "Archive extraite inattendue (rien dans $TMP_DIR)."
+  [ -f "$SRC/package.json" ] || fail "L'archive extraite ne contient pas package.json (structure inattendue : $SRC)."
 
   RELEASE_DIR="$RELEASES_DIR/$FORCE_VERSION"
   run_step "Installation dans $RELEASE_DIR" bash -c "rm -rf '$RELEASE_DIR' && mkdir -p '$RELEASE_DIR' && cp -a '$SRC/.' '$RELEASE_DIR/'"
