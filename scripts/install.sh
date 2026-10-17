@@ -46,9 +46,10 @@ run_step() {
     echo -e "${GREEN}✓${RESET} $msg"
     return
   fi
-  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏') i=0 pid
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏') i=0 pid errfile
+  errfile="$(mktemp)"
   printf '%s  ' "$msg"
-  "$@" >/dev/null 2>&1 &
+  "$@" 2>"$errfile" &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     printf '\b%s' "${frames[$((i % 10))]}"
@@ -57,8 +58,14 @@ run_step() {
   done
   if wait "$pid"; then
     printf '\b\033[32m✓\033[0m\n'
+    rm -f "$errfile"
   else
     printf '\b\033[31m✗\033[0m\n'
+    if [ -s "$errfile" ]; then
+      echo -e "${DIM}  sortie d'erreur :${RESET}"
+      sed 's/^/    /' "$errfile"
+    fi
+    rm -f "$errfile"
     return 1
   fi
 }
@@ -155,8 +162,16 @@ else
     UPDATER_LATEST_URL="$(curl -fsSL https://api.github.com/repos/Harkhenon/homeserver-updater/releases/latest 2>/dev/null \
       | grep -o '"browser_download_url": *"[^"]*homeserver-updater-[^"]*\.tar\.gz"' \
       | head -1 | grep -o 'https[^"]*')" || true
-    [ -n "$UPDATER_LATEST_URL" ] || fail "Couple updater introuvable (dépôt homeserver-updater injoignable et pas de updater/dist/ local)."
-    install_pair_tarball "$UPDATER_LATEST_URL"
+    if [ -n "$UPDATER_LATEST_URL" ]; then
+      install_pair_tarball "$UPDATER_LATEST_URL"
+    elif [ -f "$SCRIPT_DIR/updater/make-release.sh" ]; then
+      # Hors-ligne : assembler le couple depuis les sources du clone
+      echo -e "${DIM}  réseau injoignable — assemblage du couple depuis les sources locales (updater/)${RESET}"
+      run_step "Assemblage du couple updater depuis les sources" bash "$SCRIPT_DIR/updater/make-release.sh" bootstrap 0.5.0
+      install_pair_tarball "$SCRIPT_DIR/updater/dist/homeserver-updater-bootstrap.tar.gz"
+    else
+      fail "Couple updater introuvable (dépôt homeserver-updater injoignable, pas de updater/dist/ local ni de sources updater/)."
+    fi
   fi
 fi
 cat > /etc/systemd/system/hs-updater-check.service <<UNIT
