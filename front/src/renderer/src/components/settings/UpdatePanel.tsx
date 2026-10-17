@@ -55,9 +55,18 @@ export function UpdatePanel() {
     }
   };
   const [busy, setBusy] = useState<'rollback' | null>(null);
-  const reloadAll = () => {
-    void check.reload();
+  const reloadAll = async () => {
+    await check.reload();
     void releases.reload();
+    if (check.error) {
+      notifications.show({ message: `Vérification impossible : ${check.error}`, color: 'red' });
+      return;
+    }
+    if (check.data?.available) {
+      notifications.show({ message: `Nouvelle version ${check.data?.latest?.version ?? '?'} disponible`, color: 'orange' });
+    } else {
+      notifications.show({ message: 'Le panel est à jour', color: 'green' });
+    }
   };
   const rollback = async () => {
     setBusy('rollback');
@@ -113,7 +122,7 @@ export function UpdatePanel() {
           variant="light"
           leftSection={<IconRefresh size={14} stroke={1.5} />}
           loading={check.loading || busy !== null}
-          onClick={reloadAll}
+          onClick={() => void reloadAll()}
         >
           Vérifier
         </Button>

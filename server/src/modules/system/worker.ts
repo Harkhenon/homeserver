@@ -285,12 +285,16 @@ const definition: ModuleDefinition = {
     'panel.version': {
       summary: 'Version courante du panel (package.json)',
       handler: () => {
-        const pkgPath = [
-          new URL('../../../../package.json', import.meta.url),
-          new URL('../../../../../../../package.json', import.meta.url),
-          new URL('file:///opt/homeserver/package.json'),
-        ].find((u) => existsSync(u)) ?? new URL('../../../../package.json', import.meta.url);
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string };
+        // En prod: le service tourne avec WorkingDirectory = racine du panel (cwd fiable).
+        // En dev: remonte depuis le fichier source (4 niveaux = racine du repo).
+        const candidates: Array<string | URL> = [
+          `${process.cwd()}/package.json`,
+          new URL('../../../../package.json', import.meta.url), // dev: server/src/modules/system -> racine
+          new URL('../../../../../package.json', import.meta.url), // prod: server/dist/server/src/modules/system -> racine
+        ];
+        const found = candidates.find((p) => existsSync(p));
+        if (!found) return { version: 'unknown' };
+        const pkg = JSON.parse(readFileSync(found, 'utf8')) as { version?: string };
         return { version: pkg.version ?? 'unknown' };
       },
     },

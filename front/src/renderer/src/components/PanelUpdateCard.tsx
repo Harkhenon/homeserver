@@ -1,7 +1,8 @@
 import {
   Card, Text, ThemeIcon, Badge, Button, Group, Stack,
 } from '@mantine/core';
-import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
+import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp, IconCircleX } from '@tabler/icons-react';
 import { useModuleQuery } from '../api/hooks';
 import { usePanelUpdateModal } from './PanelUpdateModal';
 
@@ -19,6 +20,35 @@ export function PanelUpdateCard() {
   const version = versionQuery.data?.version ?? '…';
   const available = check.data?.available ?? false;
   const loading = check.loading && !check.data;
+
+  // « Vérifier » : reload avec notification du résultat
+  const checkNow = async () => {
+    await check.reload();
+    // après le reload, relire l'état fraîchement chargé via un 2e call direct
+    // (check.data est déjà mis à jour par reload)
+    if (check.error) {
+      notifications.show({
+        message: `Vérification impossible : ${check.error}`,
+        color: 'red',
+        icon: <IconCircleX size={16} stroke={1.5} />,
+      });
+      return;
+    }
+    if (available) {
+      notifications.show({
+        message: `Nouvelle version v${check.data?.latest?.version ?? '?'} disponible`,
+        color: 'orange',
+        icon: <IconArrowUp size={16} stroke={1.5} />,
+      });
+    } else {
+      notifications.show({
+        message: 'Le panel est à jour',
+        color: 'green',
+        icon: <IconCircleCheck size={16} stroke={1.5} />,
+      });
+    }
+  };
+
   return (
     <Card withBorder p="md" h="100%">
       <Group justify="space-between" wrap="nowrap">
@@ -56,7 +86,7 @@ export function PanelUpdateCard() {
           color={available ? 'orange' : 'teal'}
           leftSection={<IconRefresh size={14} stroke={1.5} />}
           loading={check.loading}
-          onClick={() => void check.reload()}
+          onClick={() => void checkNow()}
         >
           Vérifier
         </Button>
