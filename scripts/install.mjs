@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -98,9 +98,14 @@ async function main() {
     `HS_ADMIN_PASSWORD=${adminPassword}`,
     `HS_USER=${user}`,
     `HS_MODULES=system,${modulesList},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
+    `# Auth : stockage du hash scrypt + secret TOTP (chmod 600)`,
+    `HS_AUTH_STORE=/var/lib/homeserver/auth.json`,
+    `# Cookies de session httpOnly Secure (désactive si le panel est en HTTP local/VPN)`,
+    `HS_SECURE_COOKIES=true`,
   ].join('\n') + '\n';
   writeFileSync(`${installDir}/.env`, env);
-  ok(`.env généré (${installDir}/.env)`);
+  chmodSync(`${installDir}/.env`, 0o600);
+  ok(`.env généré (${installDir}/.env, chmod 600)`);
 
   log('Découverte des versions de PHP disponibles...');
   let phpChoice = 'aucune';
@@ -129,6 +134,15 @@ async function main() {
     : [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : []), ...(extras ? ['mariadb-server', 'bind', 'certbot', certbotPlugin, 'cronie'] : [])];
   await callHelper({ action: 'install_packages', packages });
   ok(`Paquets installés: ${packages.join(', ')}`);
+  // --- Sécurité : unattended-upgrades (correctifs sécurité automatiques) ---
+  if (family === 'debian') {
+    try {
+      await callHelper({ action: 'install_packages', packages: ['unattended-upgrades'] });
+      ok('unattended-upgrades installé (correctifs sécurité automatiques)');
+    } catch (e) {
+      console.log(`\x1b[33m! unattended-upgrades ignoré: ${e.message}\x1b[0m`);
+    }
+  }
 
   log('Activation du service web (via helper)...');
   await callHelper({ action: 'systemctl', unit: webUnit, verb: 'enable' });

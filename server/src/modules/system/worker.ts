@@ -131,6 +131,89 @@ const definition: ModuleDefinition = {
   name: 'system',
   prefix: 'system',
   actions: {
+    'security.audit': {
+      summary: 'Audit de sécurité passif (SSH, fail2ban, unattended-upgrades, HTTPS)',
+      handler: async () => {
+        const checks: Array<{ id: string; label: string; status: 'ok' | 'warn' | 'info'; detail: string }> = [];
+
+        // --- SSH ---
+        let sshPasswordAuth = true;
+        let sshRootLogin = true;
+        try {
+          const { stdout } = await run('sshd', ['-T'], { timeout: 5000 });
+          const pwMatch = /^passwordauthentication\s+(\S+)/m.exec(stdout);
+          const rootMatch = /^permitrootlogin\s+(\S+)/m.exec(stdout);
+          sshPasswordAuth = pwMatch ? pwMatch[1] === 'yes' : true;
+          sshRootLogin = rootMatch ? rootMatch[1] !== 'no' : true;
+        } catch {
+          try {
+            const cfg = readFileSync('/etc/ssh/sshd_config', 'utf8');
+            const pw = /^\s*PasswordAuthentication\s+(\S+)/m.exec(cfg);
+            const root = /^\s*PermitRootLogin\s+(\S+)/m.exec(cfg);
+            sshPasswordAuth = pw ? pw[1] === 'yes' : true;
+            sshRootLogin = root ? root[1] !== 'no' : true;
+          } catch { /* fichier absent */ }
+        }
+        checks.push({
+          id: 'ssh-password',
+          label: 'SSH : authentification par mot de passe',
+          status: sshPasswordAuth ? 'warn' : 'ok',
+          detail: sshPasswordAuth
+            ? 'Activée — privilégie les clés (PasswordAuthentication no)'
+            : 'Désactivée (clés uniquement)',
+        });
+        checks.push({
+          id: 'ssh-root',
+          label: 'SSH : login root',
+          status: sshRootLogin ? 'warn' : 'ok',
+          detail: sshRootLogin ? 'Permis — recommandé : PermitRootLogin no' : 'Interdit',
+        });
+
+        // --- fail2ban ---
+        let f2bActive = false;
+        try {
+          await run('systemctl', ['is-active', 'fail2ban'], { timeout: 5000 });
+          f2bActive = true;
+        } catch { /* inactif ou absent */ }
+        checks.push({
+          id: 'fail2ban',
+          label: 'Fail2ban',
+          status: f2bActive ? 'ok' : 'warn',
+          detail: f2bActive ? 'Actif' : 'Inactif ou non installé — recommandé dès qu\'un service est exposé',
+        });
+
+        // --- unattended-upgrades ---
+        let unattended = false;
+        for (const unit of ['unattended-upgrades', 'unattended-upgrades.timer']) {
+          try {
+            await run('systemctl', ['is-active', unit], { timeout: 5000 });
+            unattended = true;
+            break;
+          } catch { /* essai suivant */ }
+        }
+        checks.push({
+          id: 'unattended-upgrades',
+          label: 'Mises à jour sécurité automatiques',
+          status: unattended ? 'ok' : 'info',
+          detail: unattended
+            ? 'unattended-upgrades actif'
+            : 'Inactif — active pour les correctifs sécurité automatiques',
+        });
+
+        // --- HTTPS du panel ---
+        const hasCertbotRenewal = existsSync('/etc/letsencrypt/renewal');
+        checks.push({
+          id: 'https-panel',
+          label: 'HTTPS du panel',
+          status: hasCertbotRenewal ? 'info' : 'warn',
+          detail: hasCertbotRenewal
+            ? 'Let\'s Encrypt présent — vérifie que le panel est servi en HTTPS via reverse-proxy'
+            : 'Aucun certificat — le panel doit rester accessible uniquement en local/VPN ou derrière un HTTPS',
+        });
+
+        return { checks, checkedAt: new Date().toISOString() };
+      },
+    },
     info: {
       summary: 'Informations générales du serveur (hostname, OS, uptime, noyau)',
       handler: () => ({

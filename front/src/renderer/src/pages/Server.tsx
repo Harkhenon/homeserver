@@ -8,6 +8,7 @@ import { health as fetchHealth } from '../api/client';
 import { notifications } from '@mantine/notifications';
 import type { ServiceStatus, MonitorSample } from '../types';
 import { PanelUpdateCard } from '../components/PanelUpdateCard';
+import { SecurityAuditCard } from '../components/SecurityAuditCard';
 
 interface SysInfo {
   hostname: string;
@@ -104,6 +105,7 @@ export function ServerPage() {
 
       <Stack gap="md">
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+          <SecurityAuditCard />
           <StatCard
             title="CPU"
             icon={IconServer}

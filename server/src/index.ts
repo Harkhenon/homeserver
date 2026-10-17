@@ -1,14 +1,19 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { config } from 'dotenv';
 import { ModuleWorker } from './core/broker.js';
 import { registerModuleRoutes } from './core/router.js';
 import { registerAuthRoutes } from './auth/routes.js';
+import { AuthStore } from './auth/store.js';
 import { logger } from './core/logger.js';
 import { platform } from './core/platform/index.js';
 
@@ -19,16 +24,33 @@ const isDev = !__dirname.includes(`${path.sep}dist${path.sep}`);
 const workerDir = path.join(__dirname, 'modules');
 const workerExt = isDev ? '.ts' : '.js';
 const workerExecArgv = isDev ? ['--import', 'tsx'] : [];
-
 const ENABLED_MODULES = (process.env.HS_MODULES ?? 'system,apache')
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean);
 
 const port = Number(process.env.HS_PORT ?? 3000);
-const jwtSecret = process.env.HS_JWT_SECRET ?? 'dev-secret-change-me';
+
+// --- Sécurité : secret JWT obligatoire en prod (fail-fast) -----------------------
+const jwtSecret = process.env.HS_JWT_SECRET ?? '';
+const INSECURE_SECRETS = new Set(['', 'dev-secret-change-me', 'changeme']);
+if (!isDev && INSECURE_SECRETS.has(jwtSecret)) {
+  logger.error("fatal: HS_JWT_SECRET absent ou valeur par défaut — refuse de démarrer en prod.");
+  logger.error("  génère un secret avec : openssl rand -hex 32  (fichier .env, chmod 600)");
+  process.exit(1);
+}
+if (isDev && INSECURE_SECRETS.has(jwtSecret)) {
+  logger.warn('dev: HS_JWT_SECRET manquant — secret éphémère généré pour cette session');
+}
+const effectiveJwtSecret = INSECURE_SECRETS.has(jwtSecret)
+  ? randomBytes(32).toString('hex') // secret éphémère en dev uniquement
+  : jwtSecret;
+
 const adminUser = process.env.HS_ADMIN_USER ?? 'admin';
 const adminPassword = process.env.HS_ADMIN_PASSWORD ?? 'changeme';
+const authStorePath = process.env.HS_AUTH_STORE ?? '/var/lib/homeserver/auth.json';
+const authStore = new AuthStore(authStorePath, adminUser, adminPassword);
+const secureCookies = (process.env.HS_SECURE_COOKIES ?? 'true') === 'true';
 
 const workers = new Map<string, ModuleWorker>();
 
@@ -57,8 +79,7 @@ async function startWorkers(): Promise<ModuleWorker[]> {
 
 async function main(): Promise<void> {
   logger.info(`plateforme: ${platform.prettyName} (${platform.family})`);
-  const app = Fastify({ logger: false });
-
+  const app = Fastify({ logger: false, trustProxy: true });
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
@@ -69,12 +90,45 @@ async function main(): Promise<void> {
     },
   );
 
+  // --- Sécurité : cookies, headers, rate-limit -----------------------------------
+  await app.register(cookie);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Mantine inline styles
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: process.env.HS_FORCE_HTTPS === 'true' ? [] : null,
+      },
+    },
+    hsts: process.env.HS_FORCE_HTTPS === 'true' ? { maxAge: 31536000, includeSubDomains: true } : false,
+  });
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+  });
+
   await app.register(cors, { origin: true });
-  await app.register(jwt, { secret: jwtSecret });
+  await app.register(jwt, { secret: effectiveJwtSecret });
 
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
     if (request.url === '/api/auth/login' || request.url === '/api/health') return;
+    // Cookie httpOnly en priorité, Bearer pour compat (updater / scripts)
+    const cookieToken = request.cookies?.['hs_session'];
+    if (cookieToken) {
+      try {
+        request.headers.authorization = `Bearer ${cookieToken}`;
+      } catch { /* ignore */ }
+    }
     try {
       await request.jwtVerify();
     } catch {
@@ -96,7 +150,8 @@ async function main(): Promise<void> {
     };
   });
 
-  registerAuthRoutes(app, adminUser, adminPassword);
+  registerAuthRoutes(app, authStore, { secureCookies });
+
   const started = await startWorkers();
   registerModuleRoutes(app, started);
 
