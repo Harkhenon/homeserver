@@ -122,6 +122,11 @@ export function registerAuthRoutes(
     return { attempts: store.getAttempts().slice(0, 50) };
   });
 
+  app.post('/api/auth/attempts/clear', async () => {
+    await store.clearAttempts();
+    return { ok: true };
+  });
+
   // --- 2FA ---
   app.post('/api/auth/totp/setup', async () => {
     const state = store.load();

@@ -182,6 +182,25 @@ export function SecurityPanel() {
       ) : (
         <Text size="sm" c="dimmed">Aucune tentative enregistrée.</Text>
       )}
+      {(attempts ?? []).length > 0 && (
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color="dimmed"
+          style={{ alignSelf: 'flex-start' }}
+          onClick={async () => {
+            try {
+              await authApi.clearAttempts();
+              setAttempts([]);
+              notifications.show({ message: 'Journal des tentatives purgé', color: 'green' });
+            } catch (err) {
+              notifications.show({ message: err instanceof Error ? err.message : 'Erreur', color: 'red' });
+            }
+          }}
+        >
+          Purger le journal
+        </Button>
+      )}
 
       <Modal opened={showDisable} onClose={() => setShowDisable(false)} title="Désactiver la 2FA" size="sm">
         <Stack>

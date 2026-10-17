@@ -135,4 +135,9 @@ export class AuthStore {
   getAttempts(): LoginAttempt[] {
     return this.load().recentAttempts;
   }
+
+  async clearAttempts(): Promise<void> {
+    const state = this.load();
+    await this.save({ ...state, recentAttempts: [] });
+  }
 }

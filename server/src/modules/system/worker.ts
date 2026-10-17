@@ -8,6 +8,7 @@ import { callHelper } from '../../core/privileged/client.js';
 import type {
   PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult,
   PanelRollbackResult, PanelReleasesResult, PanelReleaseDeleteResult,
+  SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult,
 } from '../../core/privileged/contract.js';
 
 const run = promisify(execFile);
@@ -244,6 +245,40 @@ const definition: ModuleDefinition = {
     disks: {
       summary: 'Disques : occupation réelle (df)',
       handler: () => readDisks(),
+    },
+    'security.ssh.status': {
+      summary: 'État SSH: mots de passe, root, clés par utilisateur (durcissement guidé)',
+      handler: () => callHelper<SshHardeningStatusResult>({ action: 'ssh_hardening_status' }),
+    },
+    'security.ssh.harden': {
+      summary: 'Durcir SSH (drop-in + sshd -t + garde-fou clés) — coupe les mots de passe',
+      handler: () => callHelper<SshHardeningApplyResult & { keysCount?: number }>({ action: 'ssh_hardening_apply' }),
+    },
+    'security.ssh.revert': {
+      summary: 'Retirer le durcissement SSH (réactive les mots de passe)',
+      handler: () => callHelper<SshHardeningApplyResult>({ action: 'ssh_hardening_revert' }),
+    },
+    'security.f2b.status': {
+      summary: 'État fail2ban (jails actifs, IP bannies)',
+      handler: () => callHelper<Fail2banStatusResult>({ action: 'fail2ban_status' }),
+    },
+    'security.f2b.setup': {
+      summary: 'Installer et configurer fail2ban (jails sshd + web)',
+      handler: () => callHelper<{ installed: boolean; active: boolean; jailFile?: string }>({ action: 'fail2ban_setup' }),
+    },
+    'security.f2b.unban': {
+      summary: 'Débannir une IP (payload: { ip })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as { ip?: unknown };
+        if (typeof p.ip !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(p.ip)) {
+          throw new Error('ip invalide');
+        }
+        return callHelper<{ unbanned: string[]; ip: string }>({ action: 'fail2ban_unban', ip: p.ip });
+      },
+    },
+    'security.unattended.enable': {
+      summary: 'Activer unattended-upgrades (correctifs sécurité automatiques)',
+      handler: () => callHelper<{ enabled: boolean }>({ action: 'unattended_upgrades_enable' }),
     },
     network: {
       summary: 'Interfaces réseau et adresses IP',

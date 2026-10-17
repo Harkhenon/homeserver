@@ -30,6 +30,7 @@ import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
+import type { SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
 const RELEASES_DIR = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/releases` : '/var/lib/homeserver/releases';
@@ -970,6 +971,200 @@ WantedBy=multi-user.target
       if (!st || !st.isDirectory()) throw new Error('Release introuvable');
       rmSync(target, { recursive: true });
       return { deleted: true, version: req.version };
+    }
+    case 'ssh_hardening_status': {
+      const dropinPath = '/etc/ssh/sshd_config.d/50-homeserver-hardening.conf';
+      let passwordAuth = true;
+      let rootLogin = true;
+      try {
+        const stdout = await exec('sshd', ['-T'], 5000);
+        const pw = /^passwordauthentication\s+(\S+)/m.exec(stdout);
+        const root = /^permitrootlogin\s+(\S+)/m.exec(stdout);
+        passwordAuth = pw ? pw[1] === 'yes' : true;
+        rootLogin = root ? root[1] !== 'no' : true;
+      } catch { /* sshd -T indisponible — laisser les défauts */ }
+      // Parcourir les authorized_keys des utilisateurs avec home répertorié
+      const users: Array<{ username: string; keyCount: number; fingerprints: string[] }> = [];
+      const passwd = readFileSync('/etc/passwd', 'utf8');
+      for (const line of passwd.split('\n')) {
+        const [name, , , , , home, shell] = line.split(':');
+        if (!name || !home || home.startsWith('/var/lib/homeserver')) continue;
+        if (shell === '/usr/sbin/nologin' || shell === '/bin/false') continue;
+        const akPath = `${home}/.ssh/authorized_keys`;
+        if (!existsSync(akPath)) continue;
+        try {
+          const content = readFileSync(akPath, 'utf8');
+          const keyLines = content.split('\n').filter((l) => l.trim().startsWith('ssh-') || l.trim().startsWith('ecdsa-'));
+          const fingerprints: string[] = [];
+          for (const kl of keyLines) {
+            try {
+              const stdout = await exec('ssh-keygen', ['-lf', akPath], 3000);
+              for (const fl of stdout.split('\n')) {
+                const m = /((?:sha256|MD5):[A-Za-z0-9+=\/]+)/.exec(fl);
+                if (m?.[1] && !fingerprints.includes(m[1])) fingerprints.push(m[1]);
+              }
+            } catch { /* ssh-keygen absent */ }
+          }
+          users.push({ username: name, keyCount: keyLines.length, fingerprints: fingerprints.slice(0, 5) });
+        } catch { /* non lisible */ }
+      }
+      return {
+        passwordAuth,
+        rootLogin,
+        dropinApplied: existsSync(dropinPath),
+        users,
+      } as SshHardeningStatusResult;
+    }
+    case 'ssh_hardening_apply': {
+      const dropinDir = '/etc/ssh/sshd_config.d';
+      const dropinPath = `${dropinDir}/50-homeserver-hardening.conf`;
+      // Garde-fou : au moins une clé enregistrée pour un utilisateur avec shell
+      let totalKeys = 0;
+      const passwd = readFileSync('/etc/passwd', 'utf8');
+      for (const line of passwd.split('\n')) {
+        const [name, , , , , home, shell] = line.split(':');
+        if (!name || !home || shell === '/usr/sbin/nologin' || shell === '/bin/false') continue;
+        const akPath = `${home}/.ssh/authorized_keys`;
+        if (!existsSync(akPath)) continue;
+        try {
+          const content = readFileSync(akPath, 'utf8');
+          totalKeys += content.split('\n').filter((l) => l.trim().startsWith('ssh-') || l.trim().startsWith('ecdsa-')).length;
+        } catch { /* non lisible */ }
+      }
+      if (totalKeys === 0) {
+        throw new Error('Aucune clé SSH enregistrée — ajoute une clé avant de couper les mots de passe (sinon tu perds l\'accès distant).');
+      }
+      mkdirSync(dropinDir, { recursive: true });
+      writeFileSync(dropinPath, [
+        '# Généré par Homeserver — durcissement SSH',
+        '# La console physique/VPS reste accessible par mot de passe.',
+        'PasswordAuthentication no',
+        'PermitRootLogin no',
+        'KbdInteractiveAuthentication no',
+        '',
+      ].join('\n'), { mode: 0o644 });
+      // Vérifier la syntaxe avant de recharger
+      try {
+        await exec('sshd', ['-t'], 5000);
+      } catch (e) {
+        // Rollback immédiat : le drop-in casse la config — ne jamais laisser sshd cassé
+        try { unlinkSync(dropinPath); } catch { /* tant pis */ }
+        throw new Error(`Test sshd -t échoué — drop-in annulé : ${(e as Error).message}`);
+      }
+      try {
+        await exec('systemctl', ['reload', 'sshd'], 5000);
+      } catch {
+        try { await exec('systemctl', ['reload', 'ssh'], 5000); } catch { /* nom d'unité variable */ }
+      }
+      log(`SSH durci (drop-in ${dropinPath}, ${totalKeys} clé(s) enregistrée(s))`);
+      return { applied: true, passwordAuth: false, rootLogin: false, keysCount: totalKeys } as SshHardeningApplyResult & { keysCount: number };
+    }
+    case 'ssh_hardening_revert': {
+      const dropinPath = '/etc/ssh/sshd_config.d/50-homeserver-hardening.conf';
+      if (!existsSync(dropinPath)) {
+        return { applied: false, passwordAuth: true, rootLogin: true, reason: 'aucun drop-in à supprimer' } as SshHardeningApplyResult;
+      }
+      unlinkSync(dropinPath);
+      try {
+        await exec('sshd', ['-t'], 5000);
+      } catch (e) {
+        // Ne devrait pas arriver (on ne fait que supprimer), mais on vérifie
+        throw new Error(`Test sshd -t échoué après suppression : ${(e as Error).message}`);
+      }
+      try {
+        await exec('systemctl', ['reload', 'sshd'], 5000);
+      } catch {
+        try { await exec('systemctl', ['reload', 'ssh'], 5000); } catch { /* nom d'unité variable */ }
+      }
+      log('SSH durcissement retiré (mots de passe réactivés)');
+      return { applied: false, passwordAuth: true, rootLogin: true } as SshHardeningApplyResult;
+    }
+    case 'fail2ban_setup': {
+      // Installer fail2ban si absent
+      try {
+        await exec('fail2ban-client', ['version'], 5000);
+      } catch {
+        await exec('apt-get', ['install', '-y', 'fail2ban'], 300_000);
+      }
+      // Jails : sshd + nginx/apache (le serveur web principal du panel)
+      const jailConf = '/etc/fail2ban/jail.d/homeserver.conf';
+      const webLog = existsSync('/var/log/nginx') ? 'nginx' : 'apache';
+      const jailContent = [
+        '# Généré par Homeserver — jails de base',
+        '[sshd]',
+        'enabled = true',
+        '',
+        `[${webLog}-auth]`,
+        ...(webLog === 'nginx' ? ['enabled = true', 'port = http,https', 'logpath = /var/log/nginx/*error*.log'] : ['enabled = true', 'port = http,https', 'logpath = /var/log/apache2/*error*.log']),
+        '',
+      ].join('\n');
+      writeFileSync(jailConf, jailContent, { mode: 0o644 });
+      try {
+        await exec('systemctl', ['enable', 'fail2ban'], 10_000);
+        await exec('systemctl', ['restart', 'fail2ban'], 30_000);
+      } catch (e) {
+        throw new Error(`Échec activation fail2ban : ${(e as Error).message}`);
+      }
+      log(`fail2ban configuré (jails sshd + ${webLog}-auth)`);
+      return { installed: true, active: true, jailFile: jailConf };
+    }
+    case 'fail2ban_status': {
+      const result: Fail2banStatusResult = { installed: false, active: false, jails: [] };
+      try {
+        await exec('fail2ban-client', ['version'], 5000);
+        result.installed = true;
+      } catch { return result; }
+      try {
+        const stdout = await exec('systemctl', ['is-active', 'fail2ban'], 5000);
+        result.active = stdout.trim() === 'active';
+      } catch { /* inactif */ }
+      if (!result.active) return result;
+      try {
+        const stdout = await exec('fail2ban-client', ['status'], 5000);
+        const jailNames = stdout.split('\n').map((l) => l.replace(/^Jail list:\s*/, '').trim()).filter((l) => l && l !== 'Status' && !l.startsWith('|-'));
+        // fail2ban-client status affiche "Jail list:	sshd, nginx-auth" sur une seule ligne
+        const listLine = stdout.split('\n').find((l) => l.includes('Jail list'));
+        const jails = listLine ? listLine.replace(/^.*Jail list:\s*/, '').split(',').map((j) => j.trim()).filter(Boolean) : [];
+        for (const j of jails) {
+          try {
+            const js = await exec('fail2ban-client', ['status', j], 5000);
+            const banned = /Currently banned:\s+(\d+)/.exec(js);
+            const total = /Total banned:\s+(\d+)/.exec(js);
+            result.jails.push({ name: j, currentlyBanned: banned ? Number(banned[1]) : 0, totalBanned: total ? Number(total[1]) : 0 });
+          } catch { /* jail illisible */ }
+        }
+      } catch { /* status illisible */ }
+      return result;
+    }
+    case 'fail2ban_unban': {
+      try {
+        // Trouver les jails qui bannissent cette IP
+        const stdout = await exec('fail2ban-client', ['status'], 5000);
+        const listLine = stdout.split('\n').find((l) => l.includes('Jail list'));
+        const jails = listLine ? listLine.replace(/^.*Jail list:\s*/, '').split(',').map((j) => j.trim()).filter(Boolean) : ['sshd'];
+        const unbanned: string[] = [];
+        for (const j of jails) {
+          try {
+            await exec('fail2ban-client', ['set', j, 'unbanip', req.ip], 5000);
+            unbanned.push(j);
+          } catch { /* jail sans cette IP */ }
+        }
+        return { unbanned, ip: req.ip };
+      } catch (e) {
+        throw new Error(`unban impossible : ${(e as Error).message}`);
+      }
+    }
+    case 'unattended_upgrades_enable': {
+      try {
+        await exec('apt-get', ['install', '-y', 'unattended-upgrades'], 300_000);
+      } catch (e) {
+        throw new Error(`Installation impossible : ${(e as Error).message}`);
+      }
+      try {
+        await exec('systemctl', ['enable', '--now', 'unattended-upgrades.timer'], 15_000);
+      } catch { /* timer peut déjà tourner */ }
+      log('unattended-upgrades activé');
+      return { enabled: true };
     }
     case 'systemctl': {
       if (req.verb === 'status') {

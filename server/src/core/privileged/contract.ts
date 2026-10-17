@@ -67,7 +67,14 @@ export type PrivilegedRequest =
   | { action: 'panel_rollback' }
   | { action: 'panel_releases' }
   | { action: 'panel_release_delete'; version: string }
-  | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb };
+  | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb }
+  | { action: 'ssh_hardening_status' }
+  | { action: 'ssh_hardening_apply' }
+  | { action: 'ssh_hardening_revert' }
+  | { action: 'fail2ban_setup' }
+  | { action: 'fail2ban_status' }
+  | { action: 'fail2ban_unban'; ip: string }
+  | { action: 'unattended_upgrades_enable' };
 
 export type PrivilegedResponse<T = unknown> =
   | { ok: true; data: T; contract_version: number }
@@ -114,6 +121,30 @@ export interface PanelReleasesResult {
 export interface PanelReleaseDeleteResult {
   deleted: boolean;
   version: string;
+}
+
+export interface SshHardeningStatusResult {
+  passwordAuth: boolean;      // true si SSH accepte encore les mots de passe
+  rootLogin: boolean;        // true si root peut se connecter
+  dropinApplied: boolean;    // notre drop-in 50-homeserver-hardening.conf est actif
+  users: Array<{
+    username: string;
+    keyCount: number;
+    fingerprints: string[];   // empreintes courtes (sha256:xxxx…), jamais la clé complète
+  }>;
+}
+
+export interface SshHardeningApplyResult {
+  applied: boolean;
+  passwordAuth: boolean;
+  rootLogin: boolean;
+  reason?: string;
+}
+
+export interface Fail2banStatusResult {
+  installed: boolean;
+  active: boolean;
+  jails: Array<{ name: string; currentlyBanned: number; totalBanned: number }>;
 }
 
 export interface ServiceStatusResult {
@@ -441,6 +472,22 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;
       return { action: 'systemctl', unit: raw.unit, verb: raw.verb as ServiceVerb };
+    case 'ssh_hardening_status':
+      return { action: 'ssh_hardening_status' };
+    case 'ssh_hardening_apply':
+      return { action: 'ssh_hardening_apply' };
+    case 'ssh_hardening_revert':
+      return { action: 'ssh_hardening_revert' };
+    case 'fail2ban_setup':
+      return { action: 'fail2ban_setup' };
+    case 'fail2ban_status':
+      return { action: 'fail2ban_status' };
+    case 'fail2ban_unban':
+      if (typeof raw.ip !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(raw.ip)) return null;
+      if (raw.ip.split('.').some((n) => Number(n) > 255)) return null;
+      return { action: 'fail2ban_unban', ip: raw.ip };
+    case 'unattended_upgrades_enable':
+      return { action: 'unattended_upgrades_enable' };
     default:
       return null;
   }

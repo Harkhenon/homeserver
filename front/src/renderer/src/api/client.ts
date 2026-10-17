@@ -68,6 +68,8 @@ export const authApi = {
     request<{ username: string; totpEnabled: boolean }>('/api/auth/me'),
   attempts: (): Promise<{ attempts: Array<{ at: string; ip: string; username: string; success: boolean }> }> =>
     request<{ attempts: Array<{ at: string; ip: string; username: string; success: boolean }> }>('/api/auth/attempts'),
+  clearAttempts: (): Promise<{ ok: boolean }> =>
+    request<{ ok: boolean }>('/api/auth/attempts/clear', {}),
   totpSetup: (): Promise<{ secret?: string; otpauthUrl?: string; error?: string }> =>
     request<{ secret: string; otpauthUrl: string }>('/api/auth/totp/setup', {}),
   totpEnable: (secret: string, code: string): Promise<{ ok: boolean }> =>
