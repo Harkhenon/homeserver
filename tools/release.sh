@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# dev/release.sh — automatise la mise à jour (release) du panel ou de l'updater.
+# tools/release.sh — automatise la mise à jour (release) du panel ou de l'updater.
 # Usage :
-#   bash dev/release.sh panel <version>              # ex: bash dev/release.sh panel 0.7.0
-#   bash dev/release.sh updater <version> [panelMin] # ex: bash dev/release.sh updater 1.0.6 0.6.0
+#   bash tools/release.sh panel <version>              # ex: bash tools/release.sh panel 0.7.0
+#   bash tools/release.sh updater <version> [panelMin] # ex: bash tools/release.sh updater 1.0.6 0.6.0
 #
 # panel  : bumpe package.json, commit, tag vX.Y.Z, push (la CI construit et publie la release).
 # updater: tag vX.Y.Z sur le dépôt homeserver-updater, push (la CI assemble le couple et publie).
 #          panelMin (optionnel) met à jour la version minimale du panel requise par le couple.
 #
-# Ce script n'existe que sur la branche dev et n'est jamais embarqué dans les releases
-# (le tarball du panel est construit via `git archive` du tag, dev/ est exclu si absent du tag).
+# Prés sur les branches main et dev — sans impact sur les releases (outil de dev local).
 
 set -euo pipefail
 
 VERSION_RE='^[0-9]+\.[0-9]+(\.[0-9]+)?$'
 
 usage() {
-  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
