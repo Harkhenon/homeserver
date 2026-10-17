@@ -935,7 +935,10 @@ WantedBy=multi-user.target
       return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
     }
     case 'panel_update': {
-      await exec('systemctl', ['start', 'hs-updater-apply.service']);
+      // Lancement NON BLOQUANT : l'apply (npm ci + builds) prend plusieurs minutes.
+      // On démarre le service en arrière-plan et on rend la main immédiatement —
+      // le front suit la progression via panel.check (lastRun.result === 'running').
+      await exec('systemctl', ['start', '--no-block', 'hs-updater-apply.service'], 30_000);
       return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
     }
     case 'panel_rollback': {
