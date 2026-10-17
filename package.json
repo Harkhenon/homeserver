@@ -1,6 +1,6 @@
 {
   "name": "homeserver",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Panel de gestion de serveur web/hébergement",
   "private": true,
   "type": "module",
