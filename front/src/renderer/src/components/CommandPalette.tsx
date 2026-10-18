@@ -219,7 +219,8 @@ export function CommandPalette({ opened, onClose }: CommandPaletteProps) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, filteredData.length, filteredCommands.length, cursor]);
 
   const renderItem = (key: string, label: string, detail: string, IconCmp: typeof IconSearch, i: number) => (
     <UnstyledButton

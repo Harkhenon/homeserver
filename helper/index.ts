@@ -731,6 +731,7 @@ WantedBy=multi-user.target
     }
     case 'db_admin': {
       const sql = (s: string) => exec('mariadb', ['-e', s]);
+      const q = (v: string) => v.replace(/'/g, "''");
       switch (req.op) {
         case 'create_db':
           await sql(`CREATE DATABASE IF NOT EXISTS \`${req.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
@@ -739,8 +740,8 @@ WantedBy=multi-user.target
           await sql(`DROP DATABASE IF EXISTS \`${req.database}\`;`);
           return { database: req.database, dropped: true };
         case 'create_user': {
-          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'%' IDENTIFIED BY '${req.password}';`);
-          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'localhost' IDENTIFIED BY '${req.password}';`);
+          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'%' IDENTIFIED BY '${q(req.password ?? '')}';`);
+          await sql(`CREATE USER IF NOT EXISTS '${req.username}'@'localhost' IDENTIFIED BY '${q(req.password ?? '')}';`);
           return { username: req.username, created: true };
         }
         case 'drop_user':
@@ -758,8 +759,8 @@ WantedBy=multi-user.target
           await sql('FLUSH PRIVILEGES;');
           return { database: req.database, username: req.username, revoked: true };
         case 'set_password':
-          await sql(`ALTER USER '${req.username}'@'%' IDENTIFIED BY '${req.password}';`);
-          await sql(`ALTER USER '${req.username}'@'localhost' IDENTIFIED BY '${req.password}';`);
+          await sql(`ALTER USER '${req.username}'@'%' IDENTIFIED BY '${q(req.password ?? '')}';`);
+          await sql(`ALTER USER '${req.username}'@'localhost' IDENTIFIED BY '${q(req.password ?? '')}';`);
           return { username: req.username, updated: true };
       }
       throw Object.assign(new Error('Opération inconnue'), { code: 'UNKNOWN_ACTION' });
