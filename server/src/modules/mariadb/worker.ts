@@ -2,6 +2,7 @@ import { parentPort } from 'node:worker_threads';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import type { ServiceStatusResult } from '../../core/privileged/contract.js';
+import { validatePasswordPolicy } from '../../core/password-policy.js';
 
 const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
 const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
@@ -22,9 +23,7 @@ function validateDbUser(payload: Record<string, unknown>): string {
 }
 
 function validatePassword(payload: Record<string, unknown>): string {
-  const password = typeof payload.password === 'string' ? payload.password : '';
-  if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
-  return password;
+  return validatePasswordPolicy(typeof payload.password === 'string' ? payload.password : '');
 }
 
 const definition: ModuleDefinition = {

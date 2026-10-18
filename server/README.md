@@ -43,6 +43,17 @@ TOKEN=$(curl -s -X POST localhost:3000/api/auth/login \
 curl -s -X POST localhost:3000/api/system/cpu -H "authorization: Bearer $TOKEN"
 ```
 
+## Sécurité — variables d'environnement
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `HS_JWT_SECRET` | (obligatoire en prod) | Secret de signature des JWT. En dev uniquement, un secret éphémère est généré à chaque démarrage (les sessions ne survivent pas à un restart). En prod, un secret absent ou faible fait échouer le démarrage (fail-fast). |
+| `HS_HOST` | `127.0.0.1` | Interface d'écoute. Le panel écoute en local par défaut — expose-le via un reverse-proxy nginx/Apache avec TLS. `0.0.0.0` déclenche un avertissement si `HS_FORCE_HTTPS` n'est pas actif. |
+| `HS_ALLOWED_ORIGIN` | (désactivé) | Origines CORS autorisées, séparées par des virgules. Vide = CORS désactivé (même origine). |
+| `HS_FORCE_HTTPS` | `false` | Active HSTS + `upgrade-insecure-requests` dès que le panel est servi en HTTPS (reverse-proxy). |
+
+Sessions : JWT signés avec expiration 12h + génération de session (révocable via `POST /api/auth/logout-all`). Anti-bruteforce persistant (IP + utilisateur, 5 essais / 15 min). 2FA TOTP avec anti-replay. CSRF double-submit sur les requêtes authentifiées par cookie (header `x-csrf-token`).
+
 ## Développement
 
 ```bash
