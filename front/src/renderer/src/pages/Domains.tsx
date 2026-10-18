@@ -1,8 +1,9 @@
-import { Table, Badge, Button, Group, Text, ThemeIcon, Stack } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Table, Badge, Button, Group, Text, ThemeIcon, Stack, TextInput } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconBinaryTree, IconWorld, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { IconBinaryTree, IconWorld, IconChevronRight, IconPlus, IconSearch } from '@tabler/icons-react';
 import { PageHeader, LoadingBlock, ErrorBlock, SslToggle } from '../components';
 import type { Zone } from '../types';
 
@@ -10,6 +11,7 @@ export function DomainsPage() {
   const zones = useModuleQuery<Zone[]>('bind9', 'zones.list');
   const action = useModuleAction('bind9');
   const navigate = useNavigate();
+  const [search, setSearch] = useState('');
 
   const remove = async (zone: Zone) => {
     const res = await action.run(zone.external ? 'external.delete' : 'zones.delete', { id: zone.id });
@@ -24,7 +26,12 @@ export function DomainsPage() {
   if (zones.loading) return <LoadingBlock />;
   if (zones.error) return <ErrorBlock error={zones.error} />;
 
-  const list = zones.data ?? [];
+  const all = zones.data ?? [];
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((z) => z.domain.toLowerCase().includes(q));
+  }, [all, search]);
 
   return (
     <div>
@@ -38,7 +45,20 @@ export function DomainsPage() {
           </Button>
         }
       />
+      <TextInput
+        placeholder="Rechercher un domaine…"
+        value={search}
+        onChange={(e) => setSearch(e.currentTarget.value)}
+        leftSection={<IconSearch size={16} stroke={1.5} />}
+        w={280}
+        mb="sm"
+      />
       <Stack gap="xs">
+        {list.length === 0 && search && (
+          <Text c="dimmed" size="sm" px="md" py="lg" ta="center">
+            Aucun domaine ne correspond à « {search} »
+          </Text>
+        )}
         {list.map((zone) => (
           <Group
             key={zone.id}

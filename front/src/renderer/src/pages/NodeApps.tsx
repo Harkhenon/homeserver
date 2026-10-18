@@ -1,17 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Badge, Button, Modal, TextInput, Stack, Group, Anchor } from '@mantine/core';
+import { Table, Badge, Button, Modal, TextInput, Stack, Group, Anchor, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { UserPicker } from '../components/UserPicker';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
-import { IconBrandNodejs } from '@tabler/icons-react';
+import { IconBrandNodejs, IconSearch } from '@tabler/icons-react';
 import type { NodeApp } from '../types';
 
 export function NodeAppsPage() {
   const apps = useModuleQuery<{ apps: NodeApp[] }>('node', 'apps.list');
   const action = useModuleAction('node');
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
   const service = async (name: string, verb: 'start' | 'stop' | 'restart') => {
@@ -37,12 +38,27 @@ export function NodeAppsPage() {
   if (apps.loading) return <LoadingBlock />;
   if (apps.error) return <ErrorBlock error={apps.error} />;
 
+  const allApps = apps.data?.apps ?? [];
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allApps;
+    return allApps.filter((a) => a.name.toLowerCase().includes(q));
+  }, [allApps, search]);
+
   return (
     <div>
       <PageHeader
 icon={IconBrandNodejs}         title="Applications Node"
         description="Services systemd hs-app-* avec port dédié"
         actions={<Button onClick={() => setCreateOpen(true)}>Nouvelle app</Button>}
+      />
+      <TextInput
+        placeholder="Rechercher une app…"
+        value={search}
+        onChange={(e) => setSearch(e.currentTarget.value)}
+        leftSection={<IconSearch size={16} stroke={1.5} />}
+        w={280}
+        mb="sm"
       />
       <Table.ScrollContainer minWidth={700}>
         <Table>
@@ -56,7 +72,16 @@ icon={IconBrandNodejs}         title="Applications Node"
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {(apps.data?.apps ?? []).map((app) => (
+            {list.length === 0 && search && (
+              <Table.Tr>
+                <Table.Td colSpan={5}>
+                  <Text c="dimmed" size="sm" ta="center" py="lg">
+                    Aucune app ne correspond à « {search} »
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+            {list.map((app) => (
               <Table.Tr key={app.name}>
                 <Table.Td><Anchor fw={600} onClick={(e) => { e.preventDefault(); navigate(`/node/${encodeURIComponent(app.name)}`); }} c="var(--mantine-color-dark-0)">{app.name}</Anchor></Table.Td>
                 <Table.Td>{app.port}</Table.Td>
