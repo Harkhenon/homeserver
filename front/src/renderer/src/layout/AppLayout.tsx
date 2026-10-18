@@ -16,6 +16,7 @@ import {
 import { NavLink, Outlet } from 'react-router-dom';
 import { IconServer2, IconLayoutSidebar } from '@tabler/icons-react';
 import { NAV_SECTIONS } from './nav';
+import { useModuleQuery } from '../api/hooks';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
 import { UpdateNotification } from '../components/UpdateNotification';
@@ -29,6 +30,18 @@ interface AppLayoutProps {
   username: string;
   avatarSeed: string;
   onAvatarChange: (seed: string) => void;
+}
+
+function PanelVersionText() {
+  const version = useModuleQuery<{ version: string; source?: string }>('system', 'panel.version');
+  return (
+    <Text
+      size='xs'
+      c='dimmed'
+      visibleFrom='sm'>
+      v{version.data?.version ?? '…'}
+    </Text>
+  );
 }
 
 export function AppLayout({
@@ -96,12 +109,7 @@ export function AppLayout({
               />
             </ThemeIcon>
             <Title order={4}>Homeserver</Title>
-            <Text
-              size='xs'
-              c='dimmed'
-              visibleFrom='sm'>
-              v0.5.0
-            </Text>
+            <PanelVersionText />
           </Group>
           <Group gap="sm" wrap="nowrap">
             <Box miw={200} visibleFrom="xs">

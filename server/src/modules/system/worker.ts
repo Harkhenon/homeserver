@@ -318,8 +318,28 @@ const definition: ModuleDefinition = {
       },
     },
     'panel.version': {
-      summary: 'Version courante du panel (package.json)',
+      summary: 'Version courante du panel (release active, fallback package.json)',
       handler: () => {
+        // Source de vérité : la RELEASE ACTIVE (installed.json -> releases/<v>/VERSION).
+        // C'est la version du symlink current — celle vue par les Réglages — donc
+        // cohérente partout (header, Supervision, Réglages), même juste après une
+        // bascule de release.
+        const releasesDir = process.env.HS_DATA_DIR
+          ? `${process.env.HS_DATA_DIR}/releases`
+          : '/var/lib/homeserver/releases';
+        try {
+          const installed = JSON.parse(readFileSync(`${releasesDir}/installed.json`, 'utf8')) as {
+            current?: string | null;
+          };
+          if (installed.current) {
+            const versionFile = `${releasesDir}/${installed.current}/VERSION`;
+            if (existsSync(versionFile)) {
+              const v = readFileSync(versionFile, 'utf8').trim();
+              if (v) return { version: v, source: 'release' };
+            }
+          }
+        } catch { /* pas d'installed.json (install initiale) — fallback */}
+        // Fallback : package.json (install initiale ou dev)
         // En prod: le service tourne avec WorkingDirectory = racine du panel (cwd fiable).
         // En dev: remonte depuis le fichier source (4 niveaux = racine du repo).
         const candidates: Array<string | URL> = [
@@ -330,7 +350,7 @@ const definition: ModuleDefinition = {
         const found = candidates.find((p) => existsSync(p));
         if (!found) return { version: 'unknown' };
         const pkg = JSON.parse(readFileSync(found, 'utf8')) as { version?: string };
-        return { version: pkg.version ?? 'unknown' };
+        return { version: pkg.version ?? 'unknown', source: 'package.json' };
       },
     },
     upgrade: {
