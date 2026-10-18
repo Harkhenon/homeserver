@@ -96,7 +96,10 @@ async function main(): Promise<void> {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        // En dev, Vite (@vitejs/plugin-react) injecte un script inline (preamble
+        // react-refresh) dans index.html — bloqué par script-src 'self'.
+        // On autorise ce cas en dev uniquement ; la prod (build Vite) reste strict 'self'.
+        scriptSrc: isDev ? ["'self'", "'unsafe-inline'"] : ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"], // Mantine inline styles
         imgSrc: ["'self'", 'data:', 'blob:'],
         fontSrc: ["'self'"],
