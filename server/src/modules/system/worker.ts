@@ -9,6 +9,7 @@ import type {
   PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult,
   PanelRollbackResult, PanelReleasesResult, PanelReleaseDeleteResult,
   SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult,
+  PanelAccessStatusResult, PanelAccessSetResult,
 } from '../../core/privileged/contract.js';
 
 const run = promisify(execFile);
@@ -315,6 +316,18 @@ const definition: ModuleDefinition = {
         const p = (payload ?? {}) as { version?: unknown };
         if (typeof p.version !== 'string') throw new Error('version requise');
         return callHelper<PanelReleaseDeleteResult>({ action: 'panel_release_delete', version: p.version });
+      },
+    },
+    'access.status': {
+      summary: 'Accès réseau du panel : interface d\'écoute, port, cookies Secure (via helper)',
+      handler: () => callHelper<PanelAccessStatusResult>({ action: 'panel_access_status' }),
+    },
+    'access.set': {
+      summary: "Modifier l'accès réseau du panel (payload: { host: '0.0.0.0' | '127.0.0.1' }) — écrit .env + redémarre",
+      handler: (payload) => {
+        const p = (payload ?? {}) as { host?: unknown };
+        if (p.host !== '0.0.0.0' && p.host !== '127.0.0.1') throw new Error("host doit être '0.0.0.0' ou '127.0.0.1'");
+        return callHelper<PanelAccessSetResult>({ action: 'panel_access_set', host: p.host });
       },
     },
     'panel.version': {

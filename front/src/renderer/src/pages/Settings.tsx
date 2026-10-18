@@ -16,6 +16,7 @@ import { ACCENT_COLORS, type AccentColor } from '../theme/colors';
 import { VersionsPanel } from '../components/settings/VersionsPanel';
 import { UpdatePanel } from '../components/settings/UpdatePanel';
 import { SecurityPanel } from '../components/settings/SecurityPanel';
+import { AccessPanel } from '../components/settings/AccessPanel';
 
 const LANGUAGES = [
   { value: 'fr', label: 'Français' },
@@ -55,6 +56,7 @@ export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
           <Tabs.Tab value="appearance">Apparence</Tabs.Tab>
           <Tabs.Tab value="update">Mise à jour</Tabs.Tab>
           <Tabs.Tab value="security">Sécurité</Tabs.Tab>
+          <Tabs.Tab value="access">Accès réseau</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="versions" pt="md">
@@ -111,6 +113,9 @@ export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
         </Tabs.Panel>
         <Tabs.Panel value="security" pt="md">
           <SecurityPanel />
+        </Tabs.Panel>
+        <Tabs.Panel value="access" pt="md">
+          <AccessPanel />
         </Tabs.Panel>
       </Tabs>
     </div>
