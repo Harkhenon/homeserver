@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Stack, Text, Badge, Button, Group, ThemeIcon, Alert, Divider, Code, Table, PinInput, Modal,
 } from '@mantine/core';
@@ -37,7 +37,6 @@ export function SecurityPanel() {
   const loadMe = async () => {
     try { setMe(await authApi.me()); } catch { /* 401 géré globalement */ }
   };
-  if (me === null) void loadMe();
 
   const loadAttempts = async () => {
     try {
@@ -45,7 +44,12 @@ export function SecurityPanel() {
       setAttempts(res.attempts);
     } catch { /* ignore */ }
   };
-  if (attempts === null) void loadAttempts();
+
+  useEffect(() => {
+    if (me === null) void loadMe();
+    if (attempts === null) void loadAttempts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startSetup = async () => {
     setBusy(true);

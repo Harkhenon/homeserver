@@ -10,8 +10,7 @@ export function SslPage() {
   const certs = useModuleQuery<{ domains: string[]; count: number }>('ssl', 'certs.list');
   const action = useModuleAction('ssl');
   const [issueOpen, setIssueOpen] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const info = useModuleQuery<CertInfo>('ssl', 'certs.info', selected ? { domain: selected } : undefined);
+
 
   const renew = async (domain: string) => {
     const res = await action.run('certs.renew', { domain });

@@ -42,9 +42,10 @@ export function SiteDetailPage() {
   }
 
   const remove = async () => {
-    const res = await removeAction.run('vhosts.delete', { id: vhost!.id });
+    if (!vhost) return;
+    const res = await removeAction.run('vhosts.delete', { id: vhost.id });
     if (res !== null) {
-      notifications.show({ message: `Site ${vhost!.domain} supprimé`, color: 'green' });
+      notifications.show({ message: `Site ${vhost.domain} supprimé`, color: 'green' });
       navigate('/sites');
     } else if (removeAction.error) {
       notifications.show({ message: removeAction.error, color: 'red' });

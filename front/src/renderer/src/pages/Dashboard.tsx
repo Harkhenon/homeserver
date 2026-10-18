@@ -73,7 +73,8 @@ export function DashboardPage() {
   });
   const [health, setHealth] = useState<Health | null>(null);
   useEffect(() => {
-    fetchHealth().then(setHealth).catch(() => setHealth(null));
+    let cancelled = false;
+    fetchHealth().then((h) => { if (!cancelled) setHealth(h); }).catch(() => { if (!cancelled) setHealth(null); });
     (async () => {
       const [apache, nginx, zones, apps, users] = await Promise.allSettled([
         call<Vhost[]>('apache', 'vhosts.list'),
@@ -82,14 +83,17 @@ export function DashboardPage() {
         call<{ apps: unknown[] }>('node', 'apps.list'),
         call<unknown[]>('users', 'users.list'),
       ]);
-      setCounts({
-        sites: (apache.status === 'fulfilled' ? apache.value.length : 0)
-          + (nginx.status === 'fulfilled' ? nginx.value.length : 0),
-        domains: zones.status === 'fulfilled' ? zones.value.length : 0,
-        apps: apps.status === 'fulfilled' ? apps.value.apps.length : 0,
-        users: users.status === 'fulfilled' ? users.value.length : 0,
-      });
+      if (!cancelled) {
+        setCounts({
+          sites: (apache.status === 'fulfilled' ? apache.value.length : 0)
+            + (nginx.status === 'fulfilled' ? nginx.value.length : 0),
+          domains: zones.status === 'fulfilled' ? zones.value.length : 0,
+          apps: apps.status === 'fulfilled' ? apps.value.apps.length : 0,
+          users: users.status === 'fulfilled' ? users.value.length : 0,
+        });
+      }
     })().catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     fetchHealth().then(setHealth).catch(() => setHealth(null));
