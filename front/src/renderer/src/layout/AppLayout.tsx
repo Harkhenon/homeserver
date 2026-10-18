@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDisclosure } from '@mantine/hooks';
 import {
   AppShell,
@@ -13,12 +13,13 @@ import {
   Image,
 } from '@mantine/core';
 import { Outlet } from 'react-router-dom';
-import { IconServer2, IconLayoutSidebar } from '@tabler/icons-react';
+import { IconServer2, IconLayoutSidebar, IconSearch } from '@tabler/icons-react';
 import { SideNav } from './SideNav';
 import { useModuleQuery } from '../api/hooks';
 import { UserMenu } from './UserMenu';
 import { SettingsModal } from './SettingsModal';
 import { UpdateNotification } from '../components/UpdateNotification';
+import { CommandPalette } from '../components/CommandPalette';
 import { PanelUpdateModalProvider } from '../components/PanelUpdateModal';
 import type { AccentColor } from '../theme/colors';
 import HomeserverLogo from '../assets/logo_homeserver.webp';
@@ -54,6 +55,19 @@ export function AppLayout({
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [settingsOpened, { open: openSettings, close: closeSettings }] =
     useDisclosure(false);
+  const [paletteOpened, { open: openPalette, close: closePalette }] =
+    useDisclosure(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openPalette();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openPalette]);
 
   const navbarWidth = desktopCollapsed ? 76 : 250;
 
@@ -111,6 +125,11 @@ export function AppLayout({
             <PanelVersionText />
           </Group>
           <Group gap="sm" wrap="nowrap">
+            <Tooltip label='Rechercher (Ctrl+K)' position='bottom' withinPortal>
+              <ActionIcon variant='subtle' size='lg' onClick={openPalette}>
+                <IconSearch size={18} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
             <Box miw={200} visibleFrom="xs">
               <UpdateNotification />
             </Box>
@@ -130,6 +149,7 @@ export function AppLayout({
         <Outlet />
       </AppShell.Main>
 
+      <CommandPalette opened={paletteOpened} onClose={closePalette} />
       <SettingsModal
         opened={settingsOpened}
         onClose={closeSettings}

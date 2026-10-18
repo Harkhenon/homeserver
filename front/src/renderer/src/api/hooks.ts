@@ -9,12 +9,18 @@ interface QueryState<T> {
 
 interface QueryOptions {
   refetchInterval?: number;
+  enabled?: boolean;
 }
 
 export function useModuleQuery<T>(prefix: string, action: string, payload?: unknown, options?: QueryOptions) {
   const [state, setState] = useState<QueryState<T>>({ data: null, loading: true, error: null });
+  const enabled = options?.enabled !== false;
 
   const reload = useCallback(async (silent = false) => {
+    if (!enabled) {
+      setState({ data: null, loading: false, error: null });
+      return;
+    }
     setState((s) => ({ ...s, loading: silent ? false : true, error: silent ? s.error : null }));
     try {
       const data = await call<T>(prefix, action, payload);
@@ -22,7 +28,7 @@ export function useModuleQuery<T>(prefix: string, action: string, payload?: unkn
     } catch (err) {
       setState({ data: null, loading: false, error: err instanceof Error ? err.message : 'Erreur' });
     }
-  }, [prefix, action, JSON.stringify(payload)]);
+  }, [prefix, action, JSON.stringify(payload), enabled]);
 
   useEffect(() => {
     void reload();

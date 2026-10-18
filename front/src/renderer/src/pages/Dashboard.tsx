@@ -5,7 +5,7 @@ import {
 } from '@tabler/icons-react';
 import { useModuleQuery } from '../api/hooks';
 import { health as fetchHealth } from '../api/client';
-import { PageHeader, LoadingBlock, ErrorBlock, StatCard, WelcomeCard, StatusBadge } from '../components';
+import { PageHeader, LoadingBlock, ErrorBlock, StatCard, WelcomeCard, StatusBadge, ServicesGrid } from '../components';
 
 interface SysInfo {
   hostname: string;
@@ -134,6 +134,8 @@ export function DashboardPage() {
             sub={`Noyau ${infoData?.kernel}`}
           />
         </SimpleGrid>
+
+        <ServicesGrid />
 
         {modules.length > 0 && (
           <Card withBorder p="md">

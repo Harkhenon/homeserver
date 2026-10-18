@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
-  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip, SegmentedControl,
+  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip, SegmentedControl, Anchor,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
+import { Link } from 'react-router-dom';
 import { PageHeader, LoadingBlock, ErrorBlock, UserPicker } from '../components';
 import { IconWorld } from '@tabler/icons-react';
 import type { Vhost, NginxVhost, Zone } from '../types';
@@ -133,7 +134,16 @@ export function SitesPage() {
                     {SERVER_BADGE[row.server].label}
                   </Badge>
                 </Table.Td>
-                <Table.Td fw={600}>{row.domain}</Table.Td>
+                <Table.Td fw={600}>
+                  <Anchor
+                    component={Link}
+                    to={`/sites/${row.server}/${encodeURIComponent(row.id)}`}
+                    underline="never"
+                    c="var(--mantine-color-dark-0)"
+                  >
+                    {row.domain}
+                  </Anchor>
+                </Table.Td>
                 <Table.Td c="dimmed">{row.docroot || <Text c="dimmed">proxy</Text>}</Table.Td>
                 <Table.Td>{row.phpVersion ?? <Text c="dimmed">—</Text>}</Table.Td>
                 <Table.Td>{row.nodePort ?? <Text c="dimmed">—</Text>}</Table.Td>
