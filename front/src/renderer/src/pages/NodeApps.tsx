@@ -35,15 +35,15 @@ export function NodeAppsPage() {
     }
   };
 
-  if (apps.loading) return <LoadingBlock />;
-  if (apps.error) return <ErrorBlock error={apps.error} />;
-
   const allApps = apps.data?.apps ?? [];
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return allApps;
     return allApps.filter((a) => a.name.toLowerCase().includes(q));
   }, [allApps, search]);
+
+  if (apps.loading) return <LoadingBlock />;
+  if (apps.error) return <ErrorBlock error={apps.error} />;
 
   return (
     <div>

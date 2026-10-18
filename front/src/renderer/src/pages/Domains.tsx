@@ -23,15 +23,15 @@ export function DomainsPage() {
     }
   };
 
-  if (zones.loading) return <LoadingBlock />;
-  if (zones.error) return <ErrorBlock error={zones.error} />;
-
   const all = zones.data ?? [];
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return all;
     return all.filter((z) => z.domain.toLowerCase().includes(q));
   }, [all, search]);
+
+  if (zones.loading) return <LoadingBlock />;
+  if (zones.error) return <ErrorBlock error={zones.error} />;
 
   return (
     <div>
