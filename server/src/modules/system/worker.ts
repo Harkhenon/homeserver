@@ -330,6 +330,22 @@ const definition: ModuleDefinition = {
         return callHelper<PanelAccessSetResult>({ action: 'panel_access_set', host: p.host });
       },
     },
+    'https.status': {
+      summary: 'État HTTPS du panel : vhost Apache, domaine, certificat actif',
+      handler: () => callHelper<{ enabled: boolean; domain: string | null }>({ action: 'panel_https_status' }),
+    },
+    'https.setup': {
+      summary: 'Passer le panel en HTTPS (payload: { domain, email }) — vhost Apache + Let\'s Encrypt + bascule .env',
+      handler: (payload) => {
+        const p = (payload ?? {}) as { domain?: unknown; email?: unknown };
+        if (typeof p.domain !== 'string' || typeof p.email !== 'string') throw new Error('domain et email requis');
+        return callHelper<{ domain: string; https: boolean; url: string }>({ action: 'panel_https_setup', domain: p.domain, email: p.email });
+      },
+    },
+    'https.revert': {
+      summary: 'Retirer le HTTPS du panel (retour HTTP sur IP, vhost supprimé)',
+      handler: () => callHelper<{ https: boolean }>({ action: 'panel_https_revert' }),
+    },
     'panel.version': {
       summary: 'Version courante du panel (release active, fallback package.json)',
       handler: () => {

@@ -51,6 +51,7 @@ curl -s -X POST localhost:3000/api/system/cpu -H "authorization: Bearer $TOKEN"
 | `HS_HOST` | `0.0.0.0` (install) / `127.0.0.1` (sans `.env`) | Interface d'écoute. L'installateur propose `0.0.0.0` par défaut (accès direct via `IP:3000`, cookies `Secure` désactivés en HTTP) ou `127.0.0.1` derrière un reverse-proxy nginx/Apache avec TLS. Modifiable à chaud depuis le panel : **Paramètres → Accès réseau** (`system.access.status` / `system.access.set` — écrit le `.env`, ajuste `HS_SECURE_COOKIES` et redémarre le service). `0.0.0.0` déclenche un avertissement si `HS_FORCE_HTTPS` n'est pas actif. |
 | `HS_ALLOWED_ORIGIN` | (désactivé) | Origines CORS autorisées, séparées par des virgules. Vide = CORS désactivé (même origine). |
 | `HS_FORCE_HTTPS` | `false` | Active HSTS + `upgrade-insecure-requests` dès que le panel est servi en HTTPS (reverse-proxy). |
+| `HS_PANEL_DOMAIN` | (vide) | Domaine du panel quand le HTTPS est actif (vhost Apache + Let's Encrypt). Géré par Paramètres → Accès réseau (`system.https.setup` / `https.revert`). |
 
 Sessions : JWT signés avec expiration 12h + génération de session (révocable via `POST /api/auth/logout-all`). Anti-bruteforce persistant (IP + utilisateur, 5 essais / 15 min). 2FA TOTP avec anti-replay. CSRF double-submit sur les requêtes authentifiées par cookie (header `x-csrf-token`).
 

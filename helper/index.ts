@@ -1016,6 +1016,106 @@ WantedBy=multi-user.target
       await exec('systemctl', ['restart', 'homeserver'], 30_000);
       return { host: req.host, secureCookies, envFile, restarted: true };
     }
+    case 'panel_https_status': {
+      const confPath = '/etc/apache2/sites-available/homeserver-panel.conf';
+      const httpdConfPath = '/etc/httpd/conf.d/homeserver-panel.conf';
+      const confExists = existsSync(confPath) || existsSync(httpdConfPath);
+      let liveDomain: string | null = null;
+      try {
+        const envFile = findPanelEnv();
+        const env = envFile ? readFileSync(envFile, 'utf8') : '';
+        liveDomain = env.match(/^HS_PANEL_DOMAIN=(.+)$/m)?.[1]?.trim() ?? null;
+      } catch { /* pas de .env */ }
+      return { enabled: confExists, domain: liveDomain };
+    }
+    case 'panel_https_setup': {
+      // 1. Vhost Apache 80 pour le domaine (prérequis validation ACME)
+      const isDebian = existsSync('/etc/apache2');
+      const confDir = isDebian ? '/etc/apache2/sites-available' : '/etc/httpd/conf.d';
+      const confPath = `${confDir}/homeserver-panel.conf`;
+      const port = Number(process.env.HS_PORT ?? 3000) || 3000;
+      const httpConf = [
+        `<VirtualHost *:80>`,
+        `  ServerName ${req.domain}`,
+        `  ProxyPreserveHost On`,
+        `  ProxyPass / http://127.0.0.1:${port}/`,
+        `  ProxyPassReverse / http://127.0.0.1:${port}/`,
+        `</VirtualHost>`,
+      ].join('\n') + '\n';
+      writeFileSync(confPath, httpConf, { mode: 0o644 });
+      if (isDebian) {
+        const enabledPath = `/etc/apache2/sites-enabled/homeserver-panel.conf`;
+        try { symlinkSync(confPath, enabledPath); } catch { /* existe déjà */ }
+      }
+      await exec('apache2ctl', ['-t'], 10_000).catch(async () => exec('httpd', ['-t'], 10_000));
+      await exec('systemctl', ['reload', isDebian ? 'apache2' : 'httpd'], 30_000);
+      // 2. Certificat Let's Encrypt (validation via le vhost 80)
+      const args = ['certonly', '--apache', '-d', req.domain, '--non-interactive', '--agree-tos', '-m', req.email, '--keep-until-expiring'];
+      await exec('certbot', args, 300_000);
+      // 3. Vhost 443 proxy vers le panel + redirection 80 -> 443
+      const sslConf = [
+        `<VirtualHost *:80>`,
+        `  ServerName ${req.domain}`,
+        `  Redirect permanent / https://${req.domain}/`,
+        `</VirtualHost>`,
+        `<VirtualHost *:443>`,
+        `  ServerName ${req.domain}`,
+        `  ProxyPreserveHost On`,
+        `  ProxyPass / http://127.0.0.1:${port}/`,
+        `  ProxyPassReverse / http://127.0.0.1:${port}/`,
+        `  SSLEngine on`,
+        `  SSLCertificateFile /etc/letsencrypt/live/${req.domain}/fullchain.pem`,
+        `  SSLCertificateKeyFile /etc/letsencrypt/live/${req.domain}/privkey.pem`,
+        `</VirtualHost>`,
+      ].join('\n') + '\n';
+      writeFileSync(confPath, sslConf, { mode: 0o644 });
+      await exec('apache2ctl', ['-t'], 10_000).catch(async () => exec('httpd', ['-t'], 10_000));
+      await exec('systemctl', ['reload', isDebian ? 'apache2' : 'httpd'], 30_000);
+      // 4. Bascule .env : écoute locale + cookies Secure + domaine mémorisé
+      const envFile = findPanelEnv();
+      if (envFile) {
+        let env = readFileSync(envFile, 'utf8');
+        const setVar = (key: string, value: string): void => {
+          const re = new RegExp(`^${key}=.*$`, 'm');
+          if (re.test(env)) env = env.replace(re, `${key}=${value}`);
+          else env += `${env.endsWith('\n') ? '' : '\n'}${key}=${value}\n`;
+        };
+        setVar('HS_HOST', '127.0.0.1');
+        setVar('HS_SECURE_COOKIES', 'true');
+        setVar('HS_FORCE_HTTPS', 'true');
+        setVar('HS_PANEL_DOMAIN', req.domain);
+        const st = statSync(envFile);
+        writeFileSync(envFile, env, { mode: 0o600 });
+        chmodSync(envFile, 0o600);
+        try { chownSync(envFile, st.uid, st.gid); } catch { /* noop */ }
+        await exec('systemctl', ['restart', 'homeserver'], 30_000);
+      }
+      return { domain: req.domain, https: true, url: `https://${req.domain}` };
+    }
+    case 'panel_https_revert': {
+      const isDebian = existsSync('/etc/apache2');
+      const confPath = isDebian ? '/etc/apache2/sites-available/homeserver-panel.conf' : '/etc/httpd/conf.d/homeserver-panel.conf';
+      if (existsSync(confPath)) {
+        unlinkSync(confPath);
+        if (isDebian) {
+          const enabledPath = '/etc/apache2/sites-enabled/homeserver-panel.conf';
+          if (existsSync(enabledPath)) unlinkSync(enabledPath);
+        }
+        await exec('systemctl', ['reload', isDebian ? 'apache2' : 'httpd'], 30_000).catch(() => undefined);
+      }
+      const envFile = findPanelEnv();
+      if (envFile) {
+        let env = readFileSync(envFile, 'utf8');
+        env = env.replace(/^HS_PANEL_DOMAIN=.*\n?/m, '').replace(/^HS_FORCE_HTTPS=.*\n?/m, '');
+        env = env.replace(/^HS_HOST=.*$/m, 'HS_HOST=0.0.0.0').replace(/^HS_SECURE_COOKIES=.*$/m, 'HS_SECURE_COOKIES=false');
+        const st = statSync(envFile);
+        writeFileSync(envFile, env, { mode: 0o600 });
+        chmodSync(envFile, 0o600);
+        try { chownSync(envFile, st.uid, st.gid); } catch { /* noop */ }
+        await exec('systemctl', ['restart', 'homeserver'], 30_000);
+      }
+      return { https: false };
+    }
     case 'ssh_hardening_status': {
       const dropinPath = '/etc/ssh/sshd_config.d/50-homeserver-hardening.conf';
       let passwordAuth = true;

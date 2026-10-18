@@ -79,6 +79,19 @@ async function main() {
   const existingModules = existingEnv?.match(/^HS_MODULES=(.+)$/m)?.[1] ?? null;
 
   const port = existingPort ?? ((await rl.question("Port de l'API [3000]: ")) || '3000');
+  let panelDomain = existingEnv?.match(/^HS_PANEL_DOMAIN=(.+)$/m)?.[1] ?? null;
+  if (!panelDomain) {
+    const d = await rl.question('Domaine du panel pour HTTPS Let\'s Encrypt (vide = HTTP sur IP) : ');
+    if (d.trim() !== '' && d.includes('.')) panelDomain = d.trim().toLowerCase();
+  }
+  let letsencryptEmail = null;
+  if (panelDomain) {
+    letsencryptEmail = (await rl.question(`Email pour le certificat de ${panelDomain} : `)).trim();
+    if (!letsencryptEmail.includes('@')) {
+      console.log('\x1b[33m! Email invalide — HTTPS ignoré (activable plus tard dans Paramètres → Accès réseau)\x1b[0m');
+      panelDomain = null;
+    }
+  }
   const hostAnswer = existingHost ?? ((await rl.question("Interface d'écoute [1=Toutes (0.0.0.0), 2=Local (127.0.0.1, derrière reverse-proxy TLS)] [1]: ")) || '1');
   const host = hostAnswer === '2' || hostAnswer === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
   const secureCookies = existingSecure ?? (host === '127.0.0.1' ? 'true' : 'false');
@@ -160,9 +173,22 @@ async function main() {
   await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'enable' });
   ok('Panel démarré et activé au boot');
 
+  if (panelDomain && letsencryptEmail) {
+    log(`Passage du panel en HTTPS (${panelDomain}) — émission du certificat Let's Encrypt...`);
+    try {
+      const res = await callHelper({ action: 'panel_https_setup', domain: panelDomain, email: letsencryptEmail });
+      ok(`Panel en HTTPS : ${res.url}`);
+    } catch (e) {
+      console.log(`\x1b[33m! HTTPS ignoré (${e.message}) — vérifie que le domaine pointe vers ce serveur. Activable plus tard dans Paramètres → Accès réseau\x1b[0m`);
+    }
+  }
+
   console.log(`\n\x1b[32mInstallation terminée !\x1b[0m`);
   console.log(`  Admin      : ${adminUser} / ${adminPassword}`);
-  console.log(`  API        : http://${host === '0.0.0.0' ? '<IP-serveur>' : 'localhost'}:${port}/api`);
+  const apiLine = panelDomain
+    ? `https://${panelDomain}/api`
+    : `http://${host === '0.0.0.0' ? '<IP-serveur>' : 'localhost'}:${port}/api`;
+  console.log(`  API        : ${apiLine}`);
   console.log(`  Utilisateur système : ${user} (accès admin: sudo -u ${user} <cmd>)\n`);
   rl.close();
 }
