@@ -46,6 +46,7 @@ function DomainTabs({ zoneId }: { zoneId: string }) {
     <div>
       <PageHeader
         icon={IconWorld}
+        breadcrumbs={[{ label: 'Domaines', to: '/domains' }]}
         title={data?.domain ?? zoneId}
         description={`Zone Bind9 — serial ${data?.serial ?? '?'} — ${data?.records?.length ?? 0} enregistrement(s)`}
       />
