@@ -221,7 +221,7 @@ export function CommandPalette({ opened, onClose }: CommandPaletteProps) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const renderItem = (key: string, label: string, detail: string, icon: typeof IconSearch, i: number) => (
+  const renderItem = (key: string, label: string, detail: string, IconCmp: typeof IconSearch, i: number) => (
     <UnstyledButton
       key={key}
       onClick={() => void executeAt(i)}
@@ -240,7 +240,7 @@ export function CommandPalette({ opened, onClose }: CommandPaletteProps) {
           radius="md"
           color={i === cursor ? undefined : 'gray'}
         >
-          {icon({ size: 15, stroke: 1.5 })}
+          <IconCmp size={15} stroke={1.5} />
         </ThemeIcon>
         <Group gap="xs" wrap="nowrap">
           <Text size="sm" c={i === cursor ? 'white' : undefined}>{label}</Text>
