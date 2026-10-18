@@ -112,19 +112,39 @@ export function generateTotpSecret(label: string, issuer = 'Homeserver'): { secr
 
 /**
  * Vérifie un code TOTP avec fenêtre de tolérance ±1 période (30s).
+ * Renvoie le compteur TOTP du code accepté (pour l'anti-replay), ou null si invalide.
  */
-export function verifyTotp(secretBase32: string, code: string, windowSteps = 1): boolean {
-  if (!/^\d{6}$/.test(code)) return false;
+export function verifyTotp(
+  secretBase32: string,
+  code: string,
+  windowSteps = 1,
+): number | null {
+  if (!/^\d{6}$/.test(code)) return null;
   let secret: Buffer;
   try {
     secret = base32Decode(secretBase32);
   } catch {
-    return false;
+    return null;
   }
   const counter = Math.floor(Date.now() / 1000 / 30);
   for (let i = -windowSteps; i <= windowSteps; i++) {
     const expected = createHmacBuf(secret, counter + i, 6).value;
-    if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return true;
+    if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return counter + i;
   }
-  return false;
+  return null;
+}
+
+/**
+ * Vérification factice contre un hash scrypt constant — égalise le timing de réponse
+ * quand le nom d'utilisateur n'existe pas (anti user-enumeration).
+ */
+let dummyHashPromise: Promise<string> | null = null;
+function dummyHash(): Promise<string> {
+  if (!dummyHashPromise) dummyHashPromise = hashPassword('timing-equalizer-dummy');
+  return dummyHashPromise;
+}
+
+export async function verifyDummyPassword(password: string): Promise<void> {
+  const hash = await dummyHash();
+  await verifyPassword(password, hash);
 }

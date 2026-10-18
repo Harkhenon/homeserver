@@ -111,7 +111,7 @@ async function main(): Promise<void> {
         upgradeInsecureRequests: process.env.HS_FORCE_HTTPS === 'true' ? [] : null,
       },
     },
-    hsts: process.env.HS_FORCE_HTTPS === 'true' ? { maxAge: 31536000, includeSubDomains: true } : false,
+    hsts: process.env.HS_FORCE_HTTPS === 'true' ? { maxAge: 31536000, includeSubDomains: true } : false, // activer HS_FORCE_HTTPS dès que le panel est derrière du TLS
   });
   await app.register(rateLimit, {
     global: true,
@@ -119,12 +119,28 @@ async function main(): Promise<void> {
     timeWindow: '1 minute',
   });
 
-  await app.register(cors, { origin: true });
+  // CORS restreint : origine explicite via HS_ALLOWED_ORIGIN, sinon même origine uniquement
+  const allowedOrigin = process.env.HS_ALLOWED_ORIGIN ?? '';
+  await app.register(cors, allowedOrigin ? { origin: allowedOrigin.split(',').map((o) => o.trim()), credentials: true } : { origin: false });
   await app.register(jwt, { secret: effectiveJwtSecret });
+
+  const CSRF_COOKIE = 'hs_csrf';
 
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
-    if (request.url === '/api/auth/login' || request.url === '/api/health') return;
+    if (request.url === '/api/auth/login' || request.url === '/api/health') {
+      // Cookie CSRF (double-submit) émis dès l'arrivée sur le login
+      if (!request.cookies?.[CSRF_COOKIE]) {
+        reply.setCookie(CSRF_COOKIE, randomBytes(16).toString('hex'), {
+          httpOnly: false, // lisible par le JS du panel pour être renvoyé en header
+          sameSite: 'strict',
+          secure: secureCookies,
+          path: '/',
+          maxAge: 12 * 60 * 60,
+        });
+      }
+      return;
+    }
     // Cookie httpOnly en priorité, Bearer pour compat (updater / scripts)
     const cookieToken = request.cookies?.['hs_session'];
     if (cookieToken) {
@@ -136,6 +152,19 @@ async function main(): Promise<void> {
       await request.jwtVerify();
     } catch {
       return reply.code(401).send({ error: 'Non authentifié' });
+    }
+    // Révocation : les JWT émis avant la génération courante sont invalides (logout-all)
+    const { gen } = (request.user ?? {}) as { gen?: number };
+    if (typeof gen !== 'number' || gen < authStore.getSessionGen()) {
+      return reply.code(401).send({ error: 'Session révoquée' });
+    }
+    // CSRF double-submit pour les requêtes avec cookie httpOnly (les Bearer sont immunisés)
+    if (cookieToken && request.method !== 'GET') {
+      const csrfCookie = request.cookies?.[CSRF_COOKIE] ?? '';
+      const csrfHeader = request.headers['x-csrf-token'];
+      if (!csrfCookie || csrfCookie !== (Array.isArray(csrfHeader) ? csrfHeader[0] : csrfHeader)) {
+        return reply.code(403).send({ error: 'CSRF invalide' });
+      }
     }
   });
 
@@ -170,8 +199,14 @@ async function main(): Promise<void> {
     });
   }
 
-  await app.listen({ port, host: '0.0.0.0' });
-  logger.info(`API Homeserver à l'écoute sur :${port}`);
+  // Écoute : 127.0.0.1 par défaut (derrière reverse-proxy nginx/Apache avec TLS).
+  // HS_HOST=0.0.0.0 pour exposer directement — fortement déconseillé sans HTTPS.
+  const host = process.env.HS_HOST ?? '127.0.0.1';
+  await app.listen({ port, host });
+  logger.info(`API Homeserver à l'écoute sur ${host}:${port}`);
+  if (host === '0.0.0.0' && process.env.HS_FORCE_HTTPS !== 'true') {
+    logger.warn('sécurité: écoute sur 0.0.0.0 en HTTP — utilise un reverse-proxy TLS ou HS_FORCE_HTTPS=true');
+  }
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
