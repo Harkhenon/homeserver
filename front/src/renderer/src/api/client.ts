@@ -8,6 +8,13 @@ export function setToken(newToken: string | null): void {
   else localStorage.removeItem('hs_token');
 }
 
+
+// Double-submit CSRF : renvoie le cookie hs_csrf (émis par le serveur, non httpOnly)
+function getCsrfCookie(): string {
+  const match = document.cookie.match(/(?:^|;\s*)hs_csrf=([^;]+)/);
+  return match?.[1] ?? '';
+}
+
 export function getToken(): string | null {
   return token;
 }
@@ -24,6 +31,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     headers: {
       'content-type': 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { 'x-csrf-token': getCsrfCookie() } : {}),
     },
     credentials: 'include', // cookie httpOnly hs_session
     body: body === undefined ? undefined : JSON.stringify(body ?? {}),

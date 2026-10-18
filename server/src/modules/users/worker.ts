@@ -2,6 +2,7 @@ import { parentPort } from 'node:worker_threads';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import type { UserInfo } from '../../core/privileged/contract.js';
+import { validatePasswordPolicy } from '../../core/password-policy.js';
 
 const USERNAME_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
 const SFTP_SHELL = '/usr/sbin/nologin';
@@ -50,8 +51,7 @@ const definition: ModuleDefinition = {
       handler: async (payload) => {
         const username = validateUsername(payload);
         const p = (payload ?? {}) as Record<string, unknown>;
-        const password = typeof p.password === 'string' ? p.password : '';
-        if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
+        const password = validatePasswordPolicy(typeof p.password === 'string' ? p.password : '');
         const shell = p.shell === '/bin/bash' ? '/bin/bash' : SFTP_SHELL;
         const users = await listUsers();
         if (users.some((u) => u.username === username)) throw new Error(`L'utilisateur ${username} existe déjà`);
@@ -134,8 +134,7 @@ const definition: ModuleDefinition = {
       handler: async (payload) => {
         const username = validateUsername(payload);
         const p = (payload ?? {}) as Record<string, unknown>;
-        const password = typeof p.password === 'string' ? p.password : '';
-        if (password.length < 8) throw new Error('Mot de passe trop court (8 min.)');
+        const password = validatePasswordPolicy(typeof p.password === 'string' ? p.password : '');
         const users = await listUsers();
         if (!users.some((u) => u.username === username)) throw new Error(`Utilisateur introuvable: ${username}`);
         return callHelper({ action: 'user_set_password', username, password });

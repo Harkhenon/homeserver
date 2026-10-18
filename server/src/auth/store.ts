@@ -15,6 +15,8 @@ export interface AuthState {
   passwordHash: string; // scrypt$N$r$p$salt$hash
   totpSecret?: string | undefined; // base32, si 2FA activée
   totpEnabledAt?: string | undefined;
+  totpLastCounter?: number | undefined; // anti-replay TOTP : dernier compteur consommé
+  sessionGen?: number | undefined; // incrémenté à chaque logout → révoque tous les JWT émis avant
   recentAttempts: LoginAttempt[]; // 100 derniers
 }
 
@@ -54,6 +56,8 @@ export class AuthStore {
             passwordHash: raw.passwordHash,
             totpSecret: typeof raw.totpSecret === 'string' ? raw.totpSecret : undefined,
             totpEnabledAt: typeof raw.totpEnabledAt === 'string' ? raw.totpEnabledAt : undefined,
+            totpLastCounter: typeof raw.totpLastCounter === 'number' ? raw.totpLastCounter : undefined,
+            sessionGen: typeof raw.sessionGen === 'number' ? raw.sessionGen : 0,
             recentAttempts: Array.isArray(raw.recentAttempts) ? raw.recentAttempts : [],
           };
         }
@@ -119,17 +123,70 @@ export class AuthStore {
     if (secret) {
       next.totpSecret = secret;
       next.totpEnabledAt = new Date().toISOString();
+      next.totpLastCounter = undefined;
     } else {
       delete next.totpSecret;
       delete next.totpEnabledAt;
+      delete next.totpLastCounter;
     }
     await this.save(next);
+  }
+
+  async setTotpLastCounter(counter: number): Promise<void> {
+    const state = this.load();
+    if ((state.totpLastCounter ?? -1) >= counter) return;
+    await this.save({ ...state, totpLastCounter: counter });
+  }
+
+  getTotpLastCounter(): number | undefined {
+    return this.load().totpLastCounter;
+  }
+
+  /**
+   * Invalide toutes les sessions JWT émises jusqu'ici (logout « partout »).
+   * Le payload des JWT contient la génération au moment de l'émission.
+   */
+  async bumpSessionGen(): Promise<number> {
+    const state = this.load();
+    const gen = (state.sessionGen ?? 0) + 1;
+    await this.save({ ...state, sessionGen: gen });
+    return gen;
+  }
+
+  getSessionGen(): number {
+    return this.load().sessionGen ?? 0;
   }
 
   async recordAttempt(attempt: LoginAttempt): Promise<void> {
     const state = this.load();
     const attempts = [attempt, ...state.recentAttempts].slice(0, MAX_ATTEMPTS_LOGGED);
     await this.save({ ...state, recentAttempts: attempts });
+  }
+
+  /**
+   * Compteur de tentatives persistant (IP + username) — survit aux redémarrages.
+   */
+  private countersFile(): string {
+    return `${this.filePath}.attempts`;
+  }
+
+  loadCounters(): Record<string, { count: number; windowStart: number; blockedUntil: number }> {
+    try {
+      if (existsSync(this.countersFile())) {
+        return JSON.parse(readFileSync(this.countersFile(), 'utf8')) as Record<string, { count: number; windowStart: number; blockedUntil: number }>;
+      }
+    } catch (err) {
+      logger.warn('auth: compteur de tentatives illisible, réinitialisation:', err);
+    }
+    return {};
+  }
+
+  saveCounters(counters: Record<string, { count: number; windowStart: number; blockedUntil: number }>): void {
+    this.ensureDir();
+    const tmp = `${this.countersFile()}.tmp-${randomBytes(4).toString('hex')}`;
+    writeFileSync(tmp, JSON.stringify(counters), { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, this.countersFile());
   }
 
   getAttempts(): LoginAttempt[] {
