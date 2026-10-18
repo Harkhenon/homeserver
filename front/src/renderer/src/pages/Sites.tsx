@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import {
-  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip, SegmentedControl,
+  Table, Badge, Button, Group, Modal, TextInput, Switch, Stack, Text, Select, Pagination, Tooltip, SegmentedControl, Anchor,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
+import { Link } from 'react-router-dom';
 import { PageHeader, LoadingBlock, ErrorBlock, UserPicker } from '../components';
-import { IconWorld } from '@tabler/icons-react';
+import { IconWorld, IconSearch } from '@tabler/icons-react';
 import type { Vhost, NginxVhost, Zone } from '../types';
 
 const PAGE_SIZE = 10;
@@ -35,6 +36,7 @@ export function SitesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<'all' | ServerKind>('all');
+  const [search, setSearch] = useState('');
 
   const loading = apache.loading || nginx.loading;
   const unavailable: string[] = [];
@@ -54,7 +56,13 @@ export function SitesPage() {
     return [...apacheRows, ...nginxRows];
   }, [apache.data, nginx.data]);
 
-  const list = filter === 'all' ? rows : rows.filter((r) => r.server === filter);
+  const filtered = useMemo(() => {
+    let l = filter === 'all' ? rows : rows.filter((r) => r.server === filter);
+    const q = search.trim().toLowerCase();
+    if (q) l = l.filter((r) => r.domain.toLowerCase().includes(q) || r.docroot.toLowerCase().includes(q));
+    return l;
+  }, [rows, filter, search]);
+  const list = filtered;
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const paged = list.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -110,6 +118,13 @@ export function SitesPage() {
             { label: `Nginx (${rows.filter((r) => r.server === 'nginx').length})`, value: 'nginx' },
           ]}
         />
+        <TextInput
+          placeholder="Rechercher un site…"
+          value={search}
+          onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }}
+          leftSection={<IconSearch size={16} stroke={1.5} />}
+          w={240}
+        />
       </Group>
       <Table.ScrollContainer minWidth={700}>
         <Table>
@@ -133,7 +148,16 @@ export function SitesPage() {
                     {SERVER_BADGE[row.server].label}
                   </Badge>
                 </Table.Td>
-                <Table.Td fw={600}>{row.domain}</Table.Td>
+                <Table.Td fw={600}>
+                  <Anchor
+                    component={Link}
+                    to={`/sites/${row.server}/${encodeURIComponent(row.id)}`}
+                    underline="never"
+                    c="var(--mantine-color-dark-0)"
+                  >
+                    {row.domain}
+                  </Anchor>
+                </Table.Td>
                 <Table.Td c="dimmed">{row.docroot || <Text c="dimmed">proxy</Text>}</Table.Td>
                 <Table.Td>{row.phpVersion ?? <Text c="dimmed">—</Text>}</Table.Td>
                 <Table.Td>{row.nodePort ?? <Text c="dimmed">—</Text>}</Table.Td>

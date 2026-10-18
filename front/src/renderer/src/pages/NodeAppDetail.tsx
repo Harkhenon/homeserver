@@ -83,6 +83,7 @@ export function NodeAppDetailPage() {
     <div>
       <PageHeader
         icon={IconBrandNodejs}
+        breadcrumbs={[{ label: 'Apps Node', to: '/node' }]}
         title={name}
         description={app ? (app.active ? 'Service actif' : 'Service arrêté') : 'Chargement…'}
         actions={

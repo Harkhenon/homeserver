@@ -72,11 +72,16 @@ async function main() {
   const envPath = `${installDir}/.env`;
   const existingEnv = existsSync(envPath) ? readFileSync(envPath, 'utf8') : null;
   const existingPort = existingEnv?.match(/^HS_PORT=(.+)$/m)?.[1] ?? null;
+  const existingHost = existingEnv?.match(/^HS_HOST=(.+)$/m)?.[1] ?? null;
+  const existingSecure = existingEnv?.match(/^HS_SECURE_COOKIES=(.+)$/m)?.[1] ?? null;
   const existingPassword = existingEnv?.match(/^HS_ADMIN_PASSWORD=(.+)$/m)?.[1] ?? null;
   const existingJwt = existingEnv?.match(/^HS_JWT_SECRET=(.+)$/m)?.[1] ?? null;
   const existingModules = existingEnv?.match(/^HS_MODULES=(.+)$/m)?.[1] ?? null;
 
   const port = existingPort ?? ((await rl.question("Port de l'API [3000]: ")) || '3000');
+  const hostAnswer = existingHost ?? ((await rl.question("Interface d'écoute [1=Toutes (0.0.0.0), 2=Local (127.0.0.1, derrière reverse-proxy TLS)] [1]: ")) || '1');
+  const host = hostAnswer === '2' || hostAnswer === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
+  const secureCookies = existingSecure ?? (host === '127.0.0.1' ? 'true' : 'false');
   const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
   const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
   const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
@@ -93,6 +98,7 @@ async function main() {
 
   const env = [
     `HS_PORT=${port}`,
+    `HS_HOST=${host}`,
     `HS_JWT_SECRET=${jwtSecret}`,
     `HS_ADMIN_USER=${adminUser}`,
     `HS_ADMIN_PASSWORD=${adminPassword}`,
@@ -101,7 +107,7 @@ async function main() {
     `# Auth : stockage du hash scrypt + secret TOTP (chmod 600)`,
     `HS_AUTH_STORE=/var/lib/homeserver/auth.json`,
     `# Cookies de session httpOnly Secure (désactive si le panel est en HTTP local/VPN)`,
-    `HS_SECURE_COOKIES=true`,
+    `HS_SECURE_COOKIES=${secureCookies}`,
   ].join('\n') + '\n';
   writeFileSync(`${installDir}/.env`, env);
   chmodSync(`${installDir}/.env`, 0o600);
@@ -156,7 +162,7 @@ async function main() {
 
   console.log(`\n\x1b[32mInstallation terminée !\x1b[0m`);
   console.log(`  Admin      : ${adminUser} / ${adminPassword}`);
-  console.log(`  API        : http://localhost:${port}/api`);
+  console.log(`  API        : http://${host === '0.0.0.0' ? '<IP-serveur>' : 'localhost'}:${port}/api`);
   console.log(`  Utilisateur système : ${user} (accès admin: sudo -u ${user} <cmd>)\n`);
   rl.close();
 }

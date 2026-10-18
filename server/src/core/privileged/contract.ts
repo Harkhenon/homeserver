@@ -67,6 +67,8 @@ export type PrivilegedRequest =
   | { action: 'panel_rollback' }
   | { action: 'panel_releases' }
   | { action: 'panel_release_delete'; version: string }
+  | { action: 'panel_access_status' }
+  | { action: 'panel_access_set'; host: '0.0.0.0' | '127.0.0.1' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb }
   | { action: 'ssh_hardening_status' }
   | { action: 'ssh_hardening_apply' }
@@ -121,6 +123,20 @@ export interface PanelReleasesResult {
 export interface PanelReleaseDeleteResult {
   deleted: boolean;
   version: string;
+}
+
+export interface PanelAccessStatusResult {
+  host: string;
+  port: number;
+  secureCookies: boolean;
+  envFile: string | null;
+}
+
+export interface PanelAccessSetResult {
+  host: '0.0.0.0' | '127.0.0.1';
+  secureCookies: boolean;
+  envFile: string;
+  restarted: boolean;
 }
 
 export interface SshHardeningStatusResult {
@@ -468,6 +484,11 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.version !== 'string' || !/^[0-9][0-9A-Za-z.-]{0,31}$/.test(raw.version)) return null;
       return { action: 'panel_release_delete', version: raw.version };
     }
+    case 'panel_access_status':
+      return { action: 'panel_access_status' };
+    case 'panel_access_set':
+      if (raw.host !== '0.0.0.0' && raw.host !== '127.0.0.1') return null;
+      return { action: 'panel_access_set', host: raw.host };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;

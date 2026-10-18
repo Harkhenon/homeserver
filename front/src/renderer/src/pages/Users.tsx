@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
-import { IconUsers, IconUser, IconKey, IconPackage, IconBrandNodejs, IconPlus, IconTerminal2, IconTrash } from '@tabler/icons-react';
+import { IconUsers, IconUser, IconKey, IconPackage, IconBrandNodejs, IconPlus, IconTerminal2, IconTrash, IconSearch } from '@tabler/icons-react';
 import { PageHeader, LoadingBlock, ErrorBlock, StatusBadge } from '../components';
 import type { SftpUser } from '../types';
 
@@ -33,23 +33,34 @@ export function UsersPage() {
   const users = useModuleQuery<SftpUser[]>('users', 'users.list');
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   if (users.loading) return <LoadingBlock />;
   if (users.error) return <ErrorBlock error={users.error} />;
 
-  const list = users.data ?? [];
+  const all = users.data ?? [];
+  const q = search.trim().toLowerCase();
+  const list = q ? all.filter((u) => u.username.toLowerCase().includes(q)) : all;
 
   return (
     <div>
       <PageHeader
         icon={IconUsers}
         title="Utilisateurs"
-        description={`${list.length} compte(s) SFTP chrooté(s) dans /var/www`}
+        description={`${all.length} compte(s) SFTP chrooté(s) dans /var/www`}
         actions={
           <Button leftSection={<IconPlus size={16} stroke={1.5} />} onClick={() => setCreateOpen(true)}>
             Nouvel utilisateur
           </Button>
         }
+      />
+      <TextInput
+        placeholder="Rechercher un utilisateur…"
+        value={search}
+        onChange={(e) => setSearch(e.currentTarget.value)}
+        leftSection={<IconSearch size={16} stroke={1.5} />}
+        w={280}
+        mb="sm"
       />
       <Stack gap="xs">
         {list.map((u) => (

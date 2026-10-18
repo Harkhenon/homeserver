@@ -7,10 +7,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import {
-  IconWorld, IconBinaryTree, IconArrowLeft, IconPlus, IconSubtask, IconServer2,
+  IconWorld, IconBinaryTree, IconArrowLeft, IconPlus, IconSubtask, IconServer2, IconHeartbeat,
 } from '@tabler/icons-react';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
 import { DnsSlaves } from '../components/DnsSlaves';
+import { ZoneHealthTab } from '../components/domain/ZoneHealthTab';
 import type { Zone, DnsRecord } from '../types';
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'PTR'];
@@ -46,6 +47,7 @@ function DomainTabs({ zoneId }: { zoneId: string }) {
     <div>
       <PageHeader
         icon={IconWorld}
+        breadcrumbs={[{ label: 'Domaines', to: '/domains' }]}
         title={data?.domain ?? zoneId}
         description={`Zone Bind9 — serial ${data?.serial ?? '?'} — ${data?.records?.length ?? 0} enregistrement(s)`}
       />
@@ -60,6 +62,9 @@ function DomainTabs({ zoneId }: { zoneId: string }) {
           <Tabs.Tab value="slaves" leftSection={<IconServer2 size={16} stroke={1.5} />}>
             Esclaves DNS
           </Tabs.Tab>
+          <Tabs.Tab value="health" leftSection={<IconHeartbeat size={16} stroke={1.5} />}>
+            Santé
+          </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="zone">
@@ -70,6 +75,9 @@ function DomainTabs({ zoneId }: { zoneId: string }) {
         </Tabs.Panel>
         <Tabs.Panel value="slaves">
           <DnsSlaves zoneId={zoneId} />
+        </Tabs.Panel>
+        <Tabs.Panel value="health">
+          <ZoneHealthTab zoneId={zoneId} />
         </Tabs.Panel>
       </Tabs>
     </div>

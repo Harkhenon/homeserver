@@ -38,6 +38,18 @@ const INSTALLED_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/rel
 const STATUS_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/update-status.json` : '/var/lib/homeserver/update-status.json';
 const CURRENT_LINK = process.env.HS_CURRENT_LINK ?? '/usr/share/homeserver/current';
 
+function findPanelEnv(): string | null {
+  const candidates = [
+    process.env.HS_INSTALL_DIR ? `${process.env.HS_INSTALL_DIR}/.env` : null,
+    '/usr/share/homeserver/.env',
+    `${process.cwd()}/.env`,
+  ].filter((p): p is string => p !== null);
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
 function readJsonState(file: string, errMsg: string): Record<string, unknown> {
   try {
     return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -974,6 +986,34 @@ WantedBy=multi-user.target
       if (!st || !st.isDirectory()) throw new Error('Release introuvable');
       rmSync(target, { recursive: true });
       return { deleted: true, version: req.version };
+    }
+    case 'panel_access_status': {
+      const envFile = findPanelEnv();
+      if (!envFile) return { host: '127.0.0.1', port: Number(process.env.HS_PORT ?? 3000) || 3000, secureCookies: true, envFile: null };
+      const env = readFileSync(envFile, 'utf8');
+      const host = env.match(/^HS_HOST=(.+)$/m)?.[1]?.trim() ?? '127.0.0.1';
+      const port = Number(env.match(/^HS_PORT=(.+)$/m)?.[1]?.trim() ?? '3000') || 3000;
+      const secureCookies = (env.match(/^HS_SECURE_COOKIES=(.+)$/m)?.[1]?.trim() ?? 'true') === 'true';
+      return { host, port, secureCookies, envFile };
+    }
+    case 'panel_access_set': {
+      const envFile = findPanelEnv();
+      if (!envFile) throw new Error('.env du panel introuvable');
+      const secureCookies = req.host === '127.0.0.1';
+      let env = readFileSync(envFile, 'utf8');
+      const setVar = (key: string, value: string): void => {
+        const re = new RegExp(`^${key}=.*$`, 'm');
+        if (re.test(env)) env = env.replace(re, `${key}=${value}`);
+        else env += `${env.endsWith('\n') ? '' : '\n'}${key}=${value}\n`;
+      };
+      setVar('HS_HOST', req.host);
+      setVar('HS_SECURE_COOKIES', secureCookies ? 'true' : 'false');
+      const st = statSync(envFile);
+      writeFileSync(envFile, env, { mode: 0o600 });
+      chmodSync(envFile, 0o600);
+      try { chownSync(envFile, st.uid, st.gid); } catch { /* propriétaire inchangé si inaccessible */ }
+      await exec('systemctl', ['restart', 'homeserver'], 30_000);
+      return { host: req.host, secureCookies, envFile, restarted: true };
     }
     case 'ssh_hardening_status': {
       const dropinPath = '/etc/ssh/sshd_config.d/50-homeserver-hardening.conf';
