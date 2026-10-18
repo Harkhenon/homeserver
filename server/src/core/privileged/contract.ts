@@ -69,6 +69,9 @@ export type PrivilegedRequest =
   | { action: 'panel_release_delete'; version: string }
   | { action: 'panel_access_status' }
   | { action: 'panel_access_set'; host: '0.0.0.0' | '127.0.0.1' }
+  | { action: 'panel_https_status' }
+  | { action: 'panel_https_setup'; domain: string; email: string }
+  | { action: 'panel_https_revert' }
   | { action: 'systemctl'; unit: ServiceUnitName; verb: ServiceVerb }
   | { action: 'ssh_hardening_status' }
   | { action: 'ssh_hardening_apply' }
@@ -243,6 +246,7 @@ function validateDbAdmin(raw: Record<string, unknown>): PrivilegedRequest | null
 }
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,}$/i;
+const PANEL_DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 const DIR_WHITELIST: readonly string[] = [
   '/etc/php',
   '/etc/php-fpm.d',
@@ -489,6 +493,15 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'panel_access_set':
       if (raw.host !== '0.0.0.0' && raw.host !== '127.0.0.1') return null;
       return { action: 'panel_access_set', host: raw.host };
+    case 'panel_https_status':
+      return { action: 'panel_https_status' };
+    case 'panel_https_setup': {
+      if (typeof raw.domain !== 'string' || !PANEL_DOMAIN_RE.test(raw.domain)) return null;
+      if (typeof raw.email !== 'string' || !EMAIL_RE.test(raw.email)) return null;
+      return { action: 'panel_https_setup', domain: raw.domain.toLowerCase(), email: raw.email };
+    }
+    case 'panel_https_revert':
+      return { action: 'panel_https_revert' };
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;
