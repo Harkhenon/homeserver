@@ -1,19 +1,17 @@
 import { useState } from 'react';
-import { Modal, Tabs, Stack, TextInput, PasswordInput, Button, Group, Avatar, Text, Select, Divider } from '@mantine/core';
+import { Modal, Tabs, Stack, TextInput, PasswordInput, Button, Group, Avatar, Text, Divider } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { ACCENT_COLORS, type AccentColor } from '../theme/colors';
+import { AppearancePanel } from '../components/settings/AppearancePanel';
 
 interface SettingsModalProps {
   opened: boolean;
   onClose: () => void;
   username: string;
-  accent: AccentColor;
-  onAccentChange: (color: AccentColor) => void;
   avatarSeed: string;
   onAvatarChange: (seed: string) => void;
 }
 
-export function SettingsModal({ opened, onClose, username, accent, onAccentChange, avatarSeed, onAvatarChange }: SettingsModalProps) {
+export function SettingsModal({ opened, onClose, username, avatarSeed, onAvatarChange }: SettingsModalProps) {
   const [avatarInput, setAvatarInput] = useState(avatarSeed);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -42,7 +40,7 @@ export function SettingsModal({ opened, onClose, username, accent, onAccentChang
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={`${username} — Options`} size="md" centered>
+    <Modal opened={opened} onClose={onClose} title={`${username} — Options`} size="lg" centered>
       <Tabs defaultValue="profile">
         <Tabs.List>
           <Tabs.Tab value="profile">Profil</Tabs.Tab>
@@ -74,16 +72,7 @@ export function SettingsModal({ opened, onClose, username, accent, onAccentChang
         </Tabs.Panel>
 
         <Tabs.Panel value="appearance" pt="md">
-          <Stack>
-            <Select
-              label="Couleur d'accentuation du panel"
-              placeholder="Choisir une couleur"
-              data={ACCENT_COLORS.map((c) => ({ value: c.value, label: c.label }))}
-              value={accent}
-              onChange={(v) => v && onAccentChange(v as AccentColor)}
-            />
-            <Text size="xs" c="dimmed">La couleur s'applique instantanément et est mémorisée.</Text>
-          </Stack>
+          <AppearancePanel compact />
         </Tabs.Panel>
 
         <Tabs.Panel value="security" pt="md">

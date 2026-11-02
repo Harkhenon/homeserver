@@ -83,7 +83,7 @@ icon={IconBrandNodejs}         title="Applications Node"
             )}
             {list.map((app) => (
               <Table.Tr key={app.name}>
-                <Table.Td><Anchor fw={600} onClick={(e) => { e.preventDefault(); navigate(`/node/${encodeURIComponent(app.name)}`); }} c="var(--mantine-color-dark-0)">{app.name}</Anchor></Table.Td>
+                <Table.Td><Anchor fw={600} onClick={(e) => { e.preventDefault(); navigate(`/node/${encodeURIComponent(app.name)}`); }} c="var(--hs-text-strong)">{app.name}</Anchor></Table.Td>
                 <Table.Td>{app.port}</Table.Td>
                 <Table.Td c="dimmed">{app.user}</Table.Td>
                 <Table.Td>

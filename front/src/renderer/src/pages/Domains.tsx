@@ -67,11 +67,11 @@ export function DomainsPage() {
             px="md"
             py="sm"
             style={{
-              border: '1px solid var(--mantine-color-dark-4)',
+              border: '1px solid var(--hs-border)',
               borderRadius: 'var(--mantine-radius-lg)',
-              background: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
+              background: 'var(--hs-surface)',
+              backdropFilter: 'var(--hs-surface-blur)',
+              WebkitBackdropFilter: 'var(--hs-surface-blur)',
               cursor: 'pointer',
               transition: 'border-color 150ms ease, box-shadow 150ms ease',
             }}

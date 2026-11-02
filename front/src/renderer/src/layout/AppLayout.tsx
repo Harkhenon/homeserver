@@ -21,12 +21,9 @@ import { SettingsModal } from './SettingsModal';
 import { UpdateNotification } from '../components/UpdateNotification';
 import { CommandPalette } from '../components/CommandPalette';
 import { PanelUpdateModalProvider } from '../components/PanelUpdateModal';
-import type { AccentColor } from '../theme/colors';
 import HomeserverLogo from '../assets/logo_homeserver.webp';
 
 interface AppLayoutProps {
-  accent: AccentColor;
-  onAccentChange: (color: AccentColor) => void;
   username: string;
   avatarSeed: string;
   onAvatarChange: (seed: string) => void;
@@ -45,8 +42,6 @@ function PanelVersionText() {
 }
 
 export function AppLayout({
-  accent,
-  onAccentChange,
   username,
   avatarSeed,
   onAvatarChange,
@@ -154,8 +149,6 @@ export function AppLayout({
         opened={settingsOpened}
         onClose={closeSettings}
         username={username}
-        accent={accent}
-        onAccentChange={onAccentChange}
         avatarSeed={avatarSeed}
         onAvatarChange={onAvatarChange}
       />

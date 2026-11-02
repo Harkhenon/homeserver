@@ -1,0 +1,130 @@
+// Styles du thème « Moderne » (appliqués via `classNames` dans modern.ts).
+// Les couleurs passent par les variables --hs-* : un seul jeu de règles pour clair et sombre.
+
+.shellRoot {
+  background: var(--hs-page-bg);
+}
+
+.shellHeader {
+  background: var(--hs-chrome-bg);
+  border-bottom: 1px solid var(--hs-border);
+}
+
+.shellNavbar {
+  background: var(--hs-chrome-bg);
+  border-right: 1px solid var(--hs-border);
+}
+
+.shellMain {
+  background: transparent;
+}
+
+.card {
+  background: var(--mantine-color-body);
+  border-color: var(--hs-border);
+  box-shadow: var(--hs-shadow-sm);
+}
+
+.paper {
+  border-color: var(--hs-border);
+}
+
+// Navigation latérale : élément actif = teinte d'accent + liseré à gauche.
+.navLink {
+  border-radius: var(--mantine-radius-sm);
+  margin-top: 1px;
+  padding-block: 7px;
+  color: var(--hs-text-muted);
+  transition: background-color 120ms ease, color 120ms ease;
+
+  &.navLink:hover {
+    background-color: var(--hs-hover);
+    color: var(--mantine-color-text);
+  }
+
+  &.navLink[data-active] {
+    background-color: var(--mantine-primary-color-light);
+    color: var(--mantine-primary-color-light-color);
+    box-shadow: inset 3px 0 0 var(--mantine-primary-color-filled);
+    font-weight: 600;
+  }
+
+  &.navLink[data-active]:hover {
+    background-color: var(--mantine-primary-color-light-hover);
+  }
+
+  // En-têtes de section : pas de surlignage, seule la couleur du libellé change.
+  &.navLink[data-nav-section],
+  &.navLink[data-nav-section][data-active] {
+    background-color: transparent;
+    box-shadow: none;
+  }
+
+  &.navLink[data-nav-section]:hover {
+    background-color: var(--hs-hover);
+  }
+}
+
+.navLinkLabel {
+  font-size: var(--mantine-font-size-sm);
+}
+
+.table {
+  font-variant-numeric: tabular-nums;
+}
+
+.tableTh {
+  color: var(--hs-text-muted);
+  font-weight: 600;
+  font-size: var(--mantine-font-size-xs);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--hs-table-head-bg);
+}
+
+.tableTd {
+  color: var(--mantine-color-text);
+}
+
+.badge {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
+.modalContent {
+  background: var(--mantine-color-body);
+  border: 1px solid var(--hs-border);
+  box-shadow: var(--hs-shadow-lg);
+}
+
+.modalHeader {
+  background: var(--mantine-color-body);
+  border-bottom: 1px solid var(--hs-border);
+  margin-bottom: var(--mantine-spacing-md);
+}
+
+.modalTitle {
+  font-weight: 600;
+  font-size: var(--mantine-font-size-md);
+}
+
+.dropdown {
+  background: var(--mantine-color-body);
+  border: 1px solid var(--hs-border);
+  box-shadow: var(--hs-shadow-md);
+}
+
+.tab {
+  font-weight: 500;
+  color: var(--hs-text-muted);
+
+  &[data-active] {
+    color: var(--mantine-color-text);
+  }
+}
+
+.title {
+  color: var(--hs-text-strong);
+  letter-spacing: -0.01em;
+}

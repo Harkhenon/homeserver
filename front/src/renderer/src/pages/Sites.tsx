@@ -153,7 +153,7 @@ export function SitesPage() {
                     component={Link}
                     to={`/sites/${row.server}/${encodeURIComponent(row.id)}`}
                     underline="never"
-                    c="var(--mantine-color-dark-0)"
+                    c="var(--hs-text-strong)"
                   >
                     {row.domain}
                   </Anchor>

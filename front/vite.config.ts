@@ -11,7 +11,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      // HS_API_TARGET permet de viser un panel distant (ex. la VM de test).
+      '/api': { target: process.env.HS_API_TARGET ?? 'http://localhost:3000', changeOrigin: true },
     },
   },
 });
