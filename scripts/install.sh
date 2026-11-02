@@ -84,6 +84,8 @@ fail() { echo -e "${RED}✗ $*${RESET}" >&2; log "FAIL $*"; exit 1; }
 # Toute erreur non gérée : ligne + commande fautive + pointeur vers le journal complet.
 on_error() {
   local code=$? line=$1 cmd=$2
+  # Le piège est hérité par les sous-shells $(…) : on ne rapporte qu'au niveau du script
+  [ "$BASHPID" = "$$" ] || return "$code"
   echo -e "${RED}✗ Échec (code $code) ligne $line : ${cmd}${RESET}" >&2
   echo -e "${DIM}  journal complet : $LOG_FILE — l'installation peut être relancée sans risque.${RESET}" >&2
   log "ERROR code=$code line=$line cmd=$cmd"
@@ -224,7 +226,8 @@ case "$(uname -m)" in
 esac
 
 mkdir -p "$HS_HOME"
-FREE_MB="$(df -Pm "$HS_HOME" | awk 'NR==2 {print $4}')"
+# -Pk (et non -Pm) : les coreutils Rust d'Ubuntu 26.10 refusent les options combinées avec -m
+FREE_MB="$(df -Pk "$HS_HOME" | awk 'NR==2 {print int($4 / 1024)}')"
 [ "$FREE_MB" -ge "$MIN_FREE_MB" ] || fail "Espace disque insuffisant sur $HS_HOME : ${FREE_MB} Mo libres (${MIN_FREE_MB} Mo requis)."
 ok "Espace disque : ${FREE_MB} Mo libres"
 
@@ -253,8 +256,10 @@ fi
 
 # cloud-init (VM fraîches) tient souvent le verrou apt au premier boot.
 if command -v cloud-init >/dev/null 2>&1; then
-  if ! cloud-init status 2>/dev/null | grep -qE 'status: (done|disabled|error)'; then
-    run_step "Attente de la fin de cloud-init" timeout 600 cloud-init status --wait || warn "cloud-init toujours actif — on continue"
+  if ! { cloud-init status 2>/dev/null || true; } | grep -qE 'status: (done|disabled|error)'; then
+    # Code de sortie non fiable (2 = terminé avec avertissements) : seul le statut final compte
+    run_step "Attente de la fin de cloud-init" bash -c 'timeout 600 cloud-init status --wait >/dev/null 2>&1; cloud-init status | grep -qE "status: (done|disabled|error)"' \
+      || warn "cloud-init toujours actif — on continue"
   fi
 fi
 

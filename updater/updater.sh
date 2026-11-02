@@ -70,7 +70,8 @@ ensure_node() {
 
 disk_ok() {
   local free_mb
-  free_mb="$(df -Pm "$HS_HOME" | awk 'NR==2 {print $4}')"
+  # -Pk (et non -Pm) : les coreutils Rust d'Ubuntu 26.10 refusent les options combinées avec -m
+  free_mb="$(df -Pk "$HS_HOME" | awk 'NR==2 {print int($4 / 1024)}')"
   [ "$free_mb" -ge "$MIN_FREE_MB" ]
 }
 
