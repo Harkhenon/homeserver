@@ -13,6 +13,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Historique + tags : nécessaires pour retrouver le tag précédent (notes de release)
+          fetch-depth: 0
 
       - name: Vérifier cohérence tag ↔ package.json
         run: |
@@ -35,7 +38,8 @@ jobs:
 
       - name: Notes de release (commits depuis le tag précédent)
         run: |
-          PREV_TAG="$(git tag --sort=-v:refname | grep '^v' | sed -n 2p || true)"
+          # Tag v* le plus proche dans l'ascendance du tag publié (et non le 2e plus récent)
+          PREV_TAG="$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_REF_NAME^" 2>/dev/null || true)"
           if [ -n "$PREV_TAG" ]; then
             git log --oneline --no-merges "$PREV_TAG..$GITHUB_REF_NAME" > /tmp/notes.md
             echo "## Commits depuis $PREV_TAG" > /tmp/release-notes.md
