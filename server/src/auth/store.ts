@@ -90,7 +90,9 @@ export class AuthStore {
     let state = this.load();
     // Migration : premier démarrage — hasher le mot de passe env
     if (state.passwordHash === 'pending') {
-      const matches = password === this.envPassword;
+      // Sans mot de passe initial (ni store ni HS_ADMIN_PASSWORD) : aucune connexion possible
+      const matches = this.envPassword !== '' && password === this.envPassword;
+      if (this.envPassword === '') logger.error('auth: aucun mot de passe admin configuré — relance scripts/install.sh');
       if (matches) {
         state = { ...state, passwordHash: await hashPassword(password) };
         await this.save(state);

@@ -25,7 +25,12 @@ jobs:
           fi
           echo "✓ Tag v$TAG_VERSION cohérent avec package.json"
 
-      - name: Construire le tarball de release
+      - name: Construire et signer le tarball de release
+        # Clé Ed25519 privée (PEM) en secret du dépôt : sans elle, pas de release
+        # (l'updater refuse toute archive non signée).
+        env:
+          HS_RELEASE_SIGNING_KEY: ${{ secrets.HS_RELEASE_SIGNING_KEY }}
+          HS_REQUIRE_SIGNATURE: "1"
         run: bash scripts/make-release.sh "${GITHUB_REF_NAME#v}"
 
       - name: Notes de release (commits depuis le tag précédent)
@@ -48,4 +53,5 @@ jobs:
             --title "v${GITHUB_REF_NAME#v}" \
             --notes-file /tmp/release-notes.md \
             dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz \
-            dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz.sha256
+            dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz.sha256 \
+            dist/homeserver-v${GITHUB_REF_NAME#v}.tar.gz.sig

@@ -47,7 +47,9 @@ const effectiveJwtSecret = INSECURE_SECRETS.has(jwtSecret)
   : jwtSecret;
 
 const adminUser = process.env.HS_ADMIN_USER ?? 'admin';
-const adminPassword = process.env.HS_ADMIN_PASSWORD ?? 'changeme';
+// Plus de mot de passe par défaut : install.mjs hashe le mot de passe dans HS_AUTH_STORE.
+// HS_ADMIN_PASSWORD (clair) ne sert qu'aux anciennes installations pas encore migrées.
+const adminPassword = process.env.HS_ADMIN_PASSWORD ?? '';
 const authStorePath = process.env.HS_AUTH_STORE ?? '/var/lib/homeserver/auth.json';
 const authStore = new AuthStore(authStorePath, adminUser, adminPassword);
 const secureCookies = (process.env.HS_SECURE_COOKIES ?? 'true') === 'true';

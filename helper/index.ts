@@ -1,5 +1,9 @@
 import { createServer } from 'node:net';
-import { mkdirSync, existsSync, statSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync, chownSync, chmodSync } from 'node:fs';
+import {
+  mkdirSync, existsSync, statSync, lstatSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync,
+  chownSync, lchownSync, chmodSync, rmdirSync, openSync, closeSync, fstatSync, ftruncateSync, fchmodSync, fchownSync, readlinkSync, renameSync, constants,
+} from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { userInfo } from 'node:os';
 
 function uidOf(user: string): number | undefined {
@@ -33,21 +37,38 @@ import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged
 import type { SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
-const RELEASES_DIR = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/releases` : '/var/lib/homeserver/releases';
-const INSTALLED_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/releases/installed.json` : '/var/lib/homeserver/releases/installed.json';
-const STATUS_FILE = process.env.HS_DATA_DIR ? `${process.env.HS_DATA_DIR}/update-status.json` : '/var/lib/homeserver/update-status.json';
-const CURRENT_LINK = process.env.HS_CURRENT_LINK ?? '/usr/share/homeserver/current';
+// Layout (scripts/layout.sh) : tout ce que root lit pour décider ou exécute vit dans des
+// répertoires root ; le HOME de hs-* (/var/lib/homeserver) n'est jamais lu ni écrit ici.
+const INSTALL_DIR = process.env.HS_INSTALL_DIR ?? '/usr/share/homeserver';
+const OPT_DIR = '/opt/homeserver';
+const RELEASES_DIR = `${OPT_DIR}/releases`;
+const INSTALLED_FILE = `${RELEASES_DIR}/installed.json`;
+const STATUS_FILE = `${OPT_DIR}/update-status.json`;
+const CURRENT_LINK = `${INSTALL_DIR}/current`;
+const NODE_BIN = `${OPT_DIR}/node/bin/node`;
+const VERSION_RE = /^[0-9][0-9A-Za-z.-]{0,31}$/;
+const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+const MAX_CONNECTIONS = 32;
 
+/** .env du panel : appartient à hs-*, dans un répertoire root (il ne peut pas le remplacer par un lien). */
 function findPanelEnv(): string | null {
-  const candidates = [
-    process.env.HS_INSTALL_DIR ? `${process.env.HS_INSTALL_DIR}/.env` : null,
-    '/usr/share/homeserver/.env',
-    `${process.cwd()}/.env`,
-  ].filter((p): p is string => p !== null);
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return null;
+  const p = `${INSTALL_DIR}/.env`;
+  const st = lstatSync(p, { throwIfNoEntry: false });
+  return st?.isFile() ? p : null;
+}
+
+function readPanelEnv(file: string): string {
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try { return readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
+}
+
+/** Réécriture en place (propriétaire et droits conservés, jamais à travers un lien). */
+function writePanelEnv(file: string, content: string): void {
+  const fd = openSync(file, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW);
+  try {
+    writeFileSync(fd, content);
+    fchmodSync(fd, 0o600);
+  } finally { closeSync(fd); }
 }
 
 function readJsonState(file: string, errMsg: string): Record<string, unknown> {
@@ -57,35 +78,116 @@ function readJsonState(file: string, errMsg: string): Record<string, unknown> {
     throw new Error(errMsg);
   }
 }
+
+function writeJsonState(file: string, data: Record<string, unknown>): void {
+  writeFileSync(`${file}.tmp`, JSON.stringify(data, null, 2), { mode: 0o644 });
+  renameSync(`${file}.tmp`, file);
+}
+
+/** Bascule atomique du lien current (lien temporaire puis renommage). */
+function switchCurrent(version: string): void {
+  const tmp = `${CURRENT_LINK}.new`;
+  rmSync(tmp, { force: true });
+  symlinkSync(`${RELEASES_DIR}/${version}`, tmp);
+  renameSync(tmp, CURRENT_LINK);
+}
 const LOG_FILE = process.env.HS_HELPER_LOG ?? '/var/log/homeserver/helper.log';
 
-function ensureNodeOnPath(): string | null {
-  const candidates = [
-    '/var/lib/homeserver/.nvm/versions/node',
-  ];
-  for (const versionsDir of candidates) {
-    if (!existsSync(versionsDir)) continue;
-    const versions = readdirSync(versionsDir)
-      .map((v) => v.replace(/^v/, ''))
-      .sort((a, b) => Number(b.split('.')[0]) - Number(a.split('.')[0]));
-    if (versions.length === 0) continue;
-    const binDir = `${versionsDir}/v${versions[0]}/bin`;
-    if (!existsSync(`${binDir}/node`)) continue;
-    // rendre les parents traversables pour que les autres utilisateurs puissent executer
-    for (const dir of ['/var/lib/homeserver', '/var/lib/homeserver/.nvm', versionsDir, `${versionsDir}/v${versions[0]}`, binDir]) {
-      try { chmodSync(dir, 0o755); } catch { /* deja ok */ }
-    }
-    for (const bin of ['node', 'npm', 'npx', 'corepack']) {
-      const target = `${binDir}/${bin}`;
-      const link = `/usr/local/bin/${bin}`;
-      if (existsSync(target) && !existsSync(link)) {
-        try { symlinkSync(target, link); } catch { /* deja lie */ }
-      }
-    }
-    return '/usr/local/bin/node';
-  }
-  return null;
+/**
+ * Node pour les apps des utilisateurs : le runtime root de /opt/homeserver (jamais un
+ * binaire modifiable par hs-*). Les liens /usr/local/bin sont posés par layout.sh.
+ */
+function nodeBinary(): string {
+  return existsSync(NODE_BIN) ? NODE_BIN : '/usr/bin/env node';
 }
+
+// --- Comptes gérés par le panel ---------------------------------------------------
+// Les actions sur les comptes (mot de passe, clés SSH, suppression, apps Node) ne visent
+// que les utilisateurs créés par le panel : jamais root, un compte système, hs-* ou un
+// administrateur existant (sinon : mot de passe root, clé SSH d'un sudoer…).
+const PANEL_GROUPS = ['homeserver-web', 'homeserver-sftp'];
+
+function groupMembers(group: string): string[] {
+  for (const line of readFileSync('/etc/group', 'utf8').split('\n')) {
+    const [name, , , members] = line.split(':');
+    if (name === group) return (members ?? '').split(',').map((m) => m.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function isPanelUser(user: string): boolean {
+  if (user === 'root' || user.startsWith('hs-')) return false;
+  const uid = uidOf(user);
+  if (uid === undefined || uid < 1000 || uid === 65534) return false;
+  return PANEL_GROUPS.some((g) => groupMembers(g).includes(user));
+}
+
+function assertPanelUser(user: string): void {
+  if (!isPanelUser(user)) throw new Error(`${user} n'est pas un utilisateur géré par le panel`);
+}
+
+/**
+ * Exécute un petit script Node sous l'identité d'un utilisateur : les liens symboliques
+ * qu'il a pu poser dans son HOME ne mènent alors qu'à ce qu'il peut déjà modifier.
+ */
+function runAsUser(user: string, script: string, input: string, timeoutMs = 60_000): string {
+  const uid = uidOf(user);
+  const gid = gidOf(user);
+  if (uid === undefined || gid === undefined || uid === 0) throw new Error(`Utilisateur ${user} introuvable`);
+  const res = spawnSync(process.execPath, ['-e', script], {
+    uid, gid, input, timeout: timeoutMs, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+    env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: homeOf(user) ?? '/', LANG: 'C.UTF-8' }, cwd: '/',
+  });
+  if (res.status !== 0) throw new Error((res.stderr || res.error?.message || 'échec').trim().split('\n').pop() ?? 'échec');
+  return res.stdout;
+}
+
+/**
+ * chpasswd lit le mot de passe sur un vrai pipe (cat | chpasswd) : libuv passe stdin par un
+ * socketpair que SELinux (Fedora/RHEL) interdit au domaine passwd_t — chpasswd recevait
+ * alors /dev/null et échouait (EPIPE). Le mot de passe ne passe jamais en argument.
+ */
+function setUnixPassword(user: string, password: string): void {
+  execFileSync('/bin/sh', ['-c', 'cat | chpasswd'], { input: `${user}:${password}\n`, stdio: ['pipe', 'ignore', 'pipe'], timeout: 30_000 });
+}
+
+/** ~/.ssh créé par root dans un HOME root (chroot SFTP) ; jamais à travers un lien. */
+function ensureSshDir(user: string): void {
+  const home = homeOf(user);
+  if (!home || !lstatSync(home, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Répertoire personnel introuvable: ${home}`);
+  const sshDir = `${home}/.ssh`;
+  const st = lstatSync(sshDir, { throwIfNoEntry: false });
+  if (st && !st.isDirectory()) throw new Error(`${sshDir} n'est pas un répertoire`);
+  if (!st) mkdirSync(sshDir, { mode: 0o700 });
+  const uid = uidOf(user);
+  const gid = gidOf(user);
+  if (uid !== undefined && gid !== undefined) lchownSync(sshDir, uid, gid);
+}
+
+// authorized_keys lu et écrit sous l'identité de l'utilisateur (runAsUser)
+const SSH_KEYS_SCRIPT = `
+const fs = require('fs');
+const req = JSON.parse(fs.readFileSync(0, 'utf8'));
+const file = require('os').homedir() + '/.ssh/authorized_keys';
+const read = () => { try { return fs.readFileSync(file, 'utf8').split('\\n').map((l) => l.trim()).filter(Boolean); } catch { return []; } };
+const keys = read();
+if (req.op === 'list') {
+  console.log(JSON.stringify({ keys: keys.filter((l) => !l.startsWith('#')) }));
+} else if (req.op === 'add') {
+  if (keys.includes(req.key)) { console.error('Cette clé est déjà installée'); process.exit(1); }
+  keys.push(req.key);
+  fs.writeFileSync(file, keys.join('\\n') + '\\n', { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+  console.log(JSON.stringify({ count: keys.length }));
+} else if (req.op === 'remove') {
+  if (keys.length === 0) { console.error('Aucune clé installée'); process.exit(1); }
+  if (req.index >= keys.length) { console.error('Clé introuvable'); process.exit(1); }
+  keys.splice(req.index, 1);
+  if (keys.length === 0) fs.rmSync(file);
+  else fs.writeFileSync(file, keys.join('\\n') + '\\n', { mode: 0o600 });
+  console.log(JSON.stringify({ count: keys.length }));
+}
+`;
 
 const run = promisify(execFile);
 
@@ -269,6 +371,203 @@ function siteEnablePaths(site: string): { available: string; enabled: string } |
   return { available: `/etc/httpd/sites-available/${site}`, enabled: `/etc/httpd/sites-enabled/${site}` };
 }
 
+// --- Fichiers des utilisateurs (fs_*) -------------------------------------------------
+// Racines : /var/www/<site> et /home/<utilisateur du panel>. Le HOME d'un autre compte
+// (administrateur, root…) n'est jamais lu ni écrit. Pour résister aux liens symboliques et
+// aux renommages concurrents (TOCTOU), le répertoire parent est ouvert puis son chemin
+// réel vérifié via /proc/self/fd ; l'opération porte ensuite sur ce descripteur, avec
+// O_NOFOLLOW sur le dernier élément. Les fichiers créés appartiennent au propriétaire de la racine.
+interface FsAnchor { root: string; uid: number; gid: number; user: string | null; missing?: boolean }
+
+function fsAnchor(path: string): FsAnchor {
+  const parts = path.replace(/\/+$/, '').split('/');
+  const isHome = parts[1] === 'home';
+  const root = isHome ? parts.slice(0, 3).join('/') : parts.slice(0, 4).join('/');
+  if ((isHome && parts.length < 3) || (!isHome && parts.length < 4)) throw new Error('Chemin refusé (racine)');
+  if (isHome) {
+    const user = parts[2] ?? '';
+    if (!isPanelUser(user) || homeOf(user) !== root) throw new Error(`Accès refusé : ${root} n'est pas le dossier d'un utilisateur du panel`);
+  }
+  const st = lstatSync(root, { throwIfNoEntry: false });
+  if (!st) {
+    // Nouveau site sous /var/www : créé par root (fs_mkdir), comme /var/www lui-même
+    if (isHome) throw new Error('Cible introuvable');
+    return { root, uid: 0, gid: 0, user: 'root', missing: true };
+  }
+  if (!st.isDirectory()) throw new Error(st.isSymbolicLink() ? 'Chemin refusé (lien symbolique)' : 'Chemin refusé : la racine doit être un répertoire');
+  if (isHome) {
+    // HOME root (chroot SFTP) : les fichiers créés reviennent à l'utilisateur lui-même
+    const user = parts[2] ?? '';
+    return { root, uid: uidOf(user) ?? 0, gid: gidOf(user) ?? 0, user };
+  }
+  let user: string | null = null;
+  for (const line of readFileSync('/etc/passwd', 'utf8').split('\n')) {
+    const f = line.split(':');
+    if (Number(f[2]) === st.uid && f[0]) { user = f[0]; break; }
+  }
+  return { root, uid: st.uid, gid: st.gid, user };
+}
+
+/** Ouvre un répertoire et vérifie qu'aucun lien symbolique n'a été traversé. */
+function openDirStrict(dir: string): number {
+  const fd = openSync(dir, constants.O_RDONLY | constants.O_DIRECTORY);
+  if (readlinkSync(`/proc/self/fd/${fd}`) !== dir) {
+    closeSync(fd);
+    throw new Error('Chemin refusé (lien symbolique)');
+  }
+  return fd;
+}
+
+function splitPath(path: string): { parent: string; name: string } {
+  const clean = path.replace(/\/+$/, '');
+  const idx = clean.lastIndexOf('/');
+  return { parent: clean.slice(0, idx) || '/', name: clean.slice(idx + 1) };
+}
+
+function withParent<T>(path: string, fn: (at: string, name: string) => T): T {
+  const { parent, name } = splitPath(path);
+  const fd = openDirStrict(parent);
+  try { return fn(`/proc/self/fd/${fd}/${name}`, name); } finally { closeSync(fd); }
+}
+
+function fsReadSafe(path: string): string {
+  fsAnchor(path);
+  return withParent(path, (at) => {
+    const fd = openSync(at, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) throw new Error('Cible non supportée');
+      if (st.size > 5_000_000) throw new Error('Fichier trop volumineux');
+      return readFileSync(fd, 'utf8');
+    } finally { closeSync(fd); }
+  });
+}
+
+function fsWriteSafe(path: string, content: string): void {
+  const anchor = fsAnchor(path);
+  fsMkdirSafe(splitPath(path).parent, anchor);
+  withParent(path, (at) => {
+    const fd = openSync(at, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o644);
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) throw new Error('Cible non supportée');
+      ftruncateSync(fd, 0);
+      writeFileSync(fd, content);
+      if (st.size === 0 && st.uid === 0 && anchor.uid !== 0) fchownSync(fd, anchor.uid, anchor.gid);
+    } finally { closeSync(fd); }
+  });
+}
+
+function fsMkdirSafe(path: string, anchor = fsAnchor(path)): void {
+  const clean = path.replace(/\/+$/, '');
+  if (anchor.missing) withParent(anchor.root, (at) => mkdirSync(at, { mode: 0o755 }));
+  if (clean === anchor.root) return;
+  const rel = clean.slice(anchor.root.length + 1).split('/');
+  let cur = anchor.root;
+  for (const part of rel) {
+    const next = `${cur}/${part}`;
+    const fd = openDirStrict(cur);
+    try {
+      const at = `/proc/self/fd/${fd}/${part}`;
+      const st = lstatSync(at, { throwIfNoEntry: false });
+      if (!st) {
+        mkdirSync(at, { mode: 0o755 });
+        if (anchor.uid !== 0) lchownSync(at, anchor.uid, anchor.gid);
+      } else if (!st.isDirectory()) {
+        throw new Error(`Chemin refusé : ${next} n'est pas un répertoire`);
+      }
+    } finally { closeSync(fd); }
+    cur = next;
+  }
+}
+
+function fsListSafe(path: string): Array<{ name: string; type: string; sizeBytes: number; mode: string; owner: string; group: string; modifiedAt: string }> {
+  const clean = path.replace(/\/+$/, '');
+  if (clean === '/home' || clean === '/var/www') {
+    // Racines : seuls les dossiers des utilisateurs du panel (et les sites) sont listés
+    if (!existsSync(clean)) return [];
+    return readdirSync(clean)
+      .filter((name) => clean === '/var/www' || isPanelUser(name))
+      .map((name) => fsEntry(`${clean}/${name}`, name));
+  }
+  fsAnchor(clean);
+  const fd = openDirStrict(clean);
+  try {
+    return readdirSync(`/proc/self/fd/${fd}`).map((name) => fsEntry(`/proc/self/fd/${fd}/${name}`, name));
+  } finally { closeSync(fd); }
+}
+
+function fsEntry(full: string, name: string): { name: string; type: string; sizeBytes: number; mode: string; owner: string; group: string; modifiedAt: string } {
+  const st = lstatSync(full, { throwIfNoEntry: false });
+  const type = st?.isDirectory() ? 'dir' : st?.isSymbolicLink() ? 'symlink' : st?.isFile() ? 'file' : 'other';
+  return {
+    name,
+    type,
+    sizeBytes: st?.size ?? 0,
+    mode: st ? (st.mode & 0o777).toString(8).padStart(3, '0') : '',
+    owner: '',
+    group: '',
+    modifiedAt: st ? st.mtime.toISOString() : '',
+  };
+}
+
+/**
+ * Parcours récursif ancré sur descripteurs : chaque répertoire est ouvert sans suivre de
+ * lien (O_NOFOLLOW) et ses entrées sont traitées via /proc/self/fd — un lien ou un
+ * renommage concurrent dans l'arborescence ne peut pas faire sortir de la cible.
+ */
+function walkTree(at: string, visit: (entry: string, isDir: boolean) => void): void {
+  const st = lstatSync(at);
+  if (st.isDirectory()) {
+    const fd = openSync(at, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try {
+      for (const name of readdirSync(`/proc/self/fd/${fd}`)) walkTree(`/proc/self/fd/${fd}/${name}`, visit);
+    } finally { closeSync(fd); }
+  }
+  visit(at, st.isDirectory());
+}
+
+async function fsDeleteSafe(path: string): Promise<void> {
+  const anchor = fsAnchor(path);
+  if (path.replace(/\/+$/, '') === anchor.root) throw new Error('Interdit de supprimer une racine');
+  withParent(path, (at) => {
+    if (!lstatSync(at, { throwIfNoEntry: false })) throw new Error('Cible introuvable');
+    walkTree(at, (entry, isDir) => (isDir ? rmdirSync(entry) : unlinkSync(entry)));
+  });
+}
+
+function gidOfGroup(group: string): number | undefined {
+  for (const line of readFileSync('/etc/group', 'utf8').split('\n')) {
+    const [name, , gid] = line.split(':');
+    if (name === group) return Number(gid);
+  }
+  return undefined;
+}
+
+const WEB_ACCOUNTS = ['www-data', 'apache', 'nginx'];
+
+async function fsChownSafe(path: string, owner: string, group: string, recursive: boolean): Promise<void> {
+  fsAnchor(path);
+  // Seuls les comptes du panel et ceux du serveur web peuvent recevoir des fichiers
+  if (!isPanelUser(owner) && !WEB_ACCOUNTS.includes(owner)) throw new Error(`Propriétaire refusé : ${owner}`);
+  const allowedGroups = new Set([...PANEL_GROUPS, ...WEB_ACCOUNTS]);
+  const ownerGid = gidOf(owner);
+  for (const line of readFileSync('/etc/group', 'utf8').split('\n')) {
+    const [name, , gid] = line.split(':');
+    if (name && Number(gid) === ownerGid) allowedGroups.add(name);
+  }
+  if (!allowedGroups.has(group)) throw new Error(`Groupe refusé : ${group}`);
+  const uid = uidOf(owner);
+  const gid = gidOfGroup(group);
+  if (uid === undefined || gid === undefined) throw new Error('Propriétaire ou groupe introuvable');
+  // lchown : jamais à travers un lien (le lien lui-même change de propriétaire)
+  withParent(path, (at) => {
+    if (!lstatSync(at, { throwIfNoEntry: false })) throw new Error('Cible introuvable');
+    if (recursive) walkTree(at, (entry) => lchownSync(entry, uid, gid));
+    else lchownSync(at, uid, gid);
+  });
+}
+
 function typeOfEntry(full: string): 'file' | 'dir' | 'symlink' | 'other' {
   const st = statSync(full);
   if (st.isDirectory()) return 'dir';
@@ -368,25 +667,16 @@ async function handleRequest(raw: unknown): Promise<unknown> {
       return { port: req.port, free: stdout.trim() === '' };
     }
     case 'node_app_create': {
-      const nodeBin = ensureNodeOnPath() ?? '/usr/bin/env node';
+      assertPanelUser(req.user);
+      const nodeBin = nodeBinary();
       const unit = `/etc/systemd/system/${req.name}.service`;
       if (existsSync(unit)) throw new Error(`L'application ${req.name} existe déjà`);
       const home = homeOf(req.user) ?? `/home/${req.user}`;
       const appDir = `${home}/nodeApps/${req.name.replace(/^hs-app-/, '')}`;
-      if (!existsSync(appDir)) {
-        mkdirSync(appDir, { recursive: true, mode: 0o755 });
-        const uid = req.user === 'root' ? 0 : uidOf(req.user);
-        if (uid !== undefined) chownSync(appDir, uid, -1);
-      }
       const entry = `${appDir}/${req.entry}`;
+      // Arborescence et squelette créés sous l'identité de l'utilisateur (son HOME, ses liens)
       let entryCreated = false;
-      if (!existsSync(entry)) {
-        const entryDir = entry.replace(/\/[^/]+$/, '');
-        if (!existsSync(entryDir)) {
-          mkdirSync(entryDir, { recursive: true, mode: 0o755 });
-          const uid = req.user === 'root' ? 0 : uidOf(req.user);
-          if (uid !== undefined) chownSync(entryDir, uid, -1);
-        }
+      {
         const skeleton = `const http = require('node:http');
 
 const port = Number(process.env.PORT ?? ${req.port});
@@ -401,10 +691,13 @@ server.listen(port, host, () => {
   console.log('App ${req.name} à l\'écoute sur http://' + host + ':' + port);
 });
 `;
-        writeFileSync(entry, skeleton, { mode: 0o644 });
-        const uid = req.user === 'root' ? 0 : uidOf(req.user);
-        if (uid !== undefined) chownSync(entry, uid, -1);
-        entryCreated = true;
+        entryCreated = runAsUser(req.user, `
+const fs = require('fs');
+const [entry, skeleton] = JSON.parse(fs.readFileSync(0, 'utf8'));
+fs.mkdirSync(require('path').dirname(entry), { recursive: true, mode: 0o755 });
+try { fs.writeFileSync(entry, skeleton, { flag: 'wx', mode: 0o644 }); console.log('created'); }
+catch (e) { if (e.code !== 'EEXIST') throw e; }
+`, JSON.stringify([entry, skeleton])).trim() === 'created';
       }
       const codePresent = true;
       const unitContent = `[Unit]
@@ -543,9 +836,15 @@ WantedBy=multi-user.target
         // compat: home par défaut /home/<user>
       }
       const home = req.home === '/dev/null' ? `/home/${req.username}` : req.home;
-      mkdirSync(home.replace(/\/[^/]+$/, ''), { recursive: true });
-      if (!existsSync(home)) mkdirSync(home, { mode: 0o755 });
-      ensureNodeOnPath();
+      // Un compte existant qui n'a pas été créé par le panel (root, admin, service) n'est
+      // jamais repris : sinon user_create servirait à changer son mot de passe.
+      if (uidOf(req.username) !== undefined && !isPanelUser(req.username)) {
+        throw new Error(`L'utilisateur ${req.username} existe déjà (compte non géré par le panel)`);
+      }
+      const homeSt = lstatSync(home, { throwIfNoEntry: false });
+      if (homeSt && !homeSt.isDirectory()) throw new Error(`${home} existe et n'est pas un répertoire`);
+      mkdirSync('/home', { recursive: true });
+      if (!homeSt) mkdirSync(home, { mode: 0o755 });
       await exec('groupadd', ['-f', 'homeserver-web']);
       await exec('groupadd', ['-f', 'homeserver-sftp']);
       const group = req.shell === '/bin/bash' ? 'homeserver-web' : 'homeserver-sftp';
@@ -557,33 +856,36 @@ WantedBy=multi-user.target
         if (!e.message.includes('already exists')) throw err;
       }
       try {
-        execFileSync('chpasswd', [], { input: `${req.username}:${req.password}\n`, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+        setUnixPassword(req.username, req.password);
       } catch (err) {
         const e = err as { message: string };
         throw new Error(`Définition du mot de passe échouée: ${e.message}`);
       }
       try { await exec('usermod', ['-U', req.username]); } catch { /* deja deverrouille */ }
-      if (existsSync(home)) {
-        chownSync(home, -1, -1);
+      if (lstatSync(home, { throwIfNoEntry: false })?.isDirectory()) {
         try { chmodSync(home, 0o755); } catch { /* no-op */ }
         const uid = uidOf(req.username);
         const gid = gidOf(req.username);
         if (uid !== undefined && gid !== undefined) {
           for (const sub of ['www', 'nodeApps']) {
             const subPath = `${home}/${sub}`;
-            if (!existsSync(subPath)) mkdirSync(subPath, { mode: 0o755 });
-            chownSync(subPath, uid, gid);
+            const st = lstatSync(subPath, { throwIfNoEntry: false });
+            if (st && !st.isDirectory()) continue; // lien posé par l'utilisateur : jamais suivi
+            if (!st) mkdirSync(subPath, { mode: 0o755 });
+            lchownSync(subPath, uid, gid);
           }
         }
       }
       return { username: req.username, created: true };
     }
     case 'user_set_password': {
-      execFileSync('chpasswd', [], { input: `${req.username}:${req.password}\n`, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30_000 });
+      assertPanelUser(req.username);
+      setUnixPassword(req.username, req.password);
       try { await exec('usermod', ['-U', req.username]); } catch { /* deja deverrouille */ }
       return { username: req.username, updated: true };
     }
     case 'user_delete': {
+      assertPanelUser(req.username);
       // tuer toutes les sessions/processus de l'utilisateur avant suppression
       try { await exec('pkill', ['-STOP', '-u', req.username]); } catch { /* aucun processus */ }
       try { await exec('pkill', ['-KILL', '-u', req.username]); } catch { /* aucun processus */ }
@@ -600,62 +902,28 @@ WantedBy=multi-user.target
         if (still !== null) throw err;
       }
       let homeRemoved = false;
-      if (req.removeHome && home !== undefined && home.startsWith('/home/') && home !== '/home') {
-        if (existsSync(home)) {
-          rmSync(home, { recursive: true, force: true });
-        }
+      if (req.removeHome && home !== undefined && /^\/home\/[a-z_][a-z0-9_-]{0,31}$/.test(home)) {
+        // rmSync ne suit pas les liens ; plus aucun processus de l'utilisateur ne tourne
+        if (lstatSync(home, { throwIfNoEntry: false })?.isDirectory()) rmSync(home, { recursive: true, force: true });
         homeRemoved = !existsSync(home);
       }
       return { username: req.username, deleted: true, homeRemoved };
     }
     case 'user_ssh_keys_list': {
-      const home = homeOf(req.username);
-      const file = `${home}/.ssh/authorized_keys`;
-      if (!existsSync(file)) return { username: req.username, keys: [] as string[] };
-      const keys = readFileSync(file, 'utf8')
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0 && !l.startsWith('#'));
-      return { username: req.username, keys };
+      assertPanelUser(req.username);
+      const out = runAsUser(req.username, SSH_KEYS_SCRIPT, JSON.stringify({ op: 'list' }));
+      return { username: req.username, keys: (JSON.parse(out) as { keys: string[] }).keys };
     }
     case 'user_ssh_keys_add': {
-      const home = homeOf(req.username);
-      if (!home || !existsSync(home)) throw new Error(`Répertoire personnel introuvable: ${home}`);
-      const sshDir = `${home}/.ssh`;
-      const file = `${sshDir}/authorized_keys`;
-      if (!existsSync(sshDir)) mkdirSync(sshDir, { mode: 0o700 });
-      const uid = uidOf(req.username);
-      const gid = gidOf(req.username);
-      if (uid !== undefined && gid !== undefined) {
-        chownSync(sshDir, uid, gid);
-        chmodSync(sshDir, 0o700);
-      }
-      const existing = existsSync(file) ? readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.length > 0) : [];
-      if (existing.some((k) => k === req.key)) throw new Error('Cette clé est déjà installée');
-      existing.push(req.key);
-      writeFileSync(file, `${existing.join('\n')}\n`, { mode: 0o600 });
-      if (uid !== undefined && gid !== undefined) {
-        chownSync(file, uid, gid);
-        chmodSync(file, 0o600);
-      }
-      return { username: req.username, added: true, count: existing.length };
+      assertPanelUser(req.username);
+      ensureSshDir(req.username);
+      const res = JSON.parse(runAsUser(req.username, SSH_KEYS_SCRIPT, JSON.stringify({ op: 'add', key: req.key }))) as { count: number };
+      return { username: req.username, added: true, count: res.count };
     }
     case 'user_ssh_keys_remove': {
-      const home = homeOf(req.username);
-      const file = `${home}/.ssh/authorized_keys`;
-      if (!existsSync(file)) throw new Error('Aucune clé installée');
-      const existing = readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-      if (req.index >= existing.length) throw new Error('Clé introuvable');
-      existing.splice(req.index, 1);
-      if (existing.length === 0) {
-        rmSync(file);
-      } else {
-        writeFileSync(file, `${existing.join('\n')}\n`, { mode: 0o600 });
-        const uid = uidOf(req.username);
-        const gid = gidOf(req.username);
-        if (uid !== undefined && gid !== undefined) chownSync(file, uid, gid);
-      }
-      return { username: req.username, removed: true, count: existing.length };
+      assertPanelUser(req.username);
+      const res = JSON.parse(runAsUser(req.username, SSH_KEYS_SCRIPT, JSON.stringify({ op: 'remove', index: req.index }))) as { count: number };
+      return { username: req.username, removed: true, count: res.count };
     }
     case 'sftp_configure': {
       const confPath = '/etc/ssh/sshd_config.d/homeserver-sftp.conf';
@@ -732,51 +1000,25 @@ WantedBy=multi-user.target
       }).filter((u) => panelUsers.has(u.username));
       return { users };
     }
-    case 'fs_read': {
-      if (!existsSync(req.path)) throw new Error('Fichier introuvable');
-      const st = statSync(req.path);
-      if (st.size > 5_000_000) throw new Error('Fichier trop volumineux');
-      return { content: readFileSync(req.path, 'utf8') };
-    }
-    case 'fs_write': {
-      const st = statSync(req.path, { throwIfNoEntry: false });
-      if (st && !st.isFile()) throw new Error('Cible non supportée');
-      mkdirSync(req.path.replace(/\/[^/]+$/, ''), { recursive: true });
-      writeFileSync(req.path, req.content, { mode: 0o644 });
+    case 'fs_read':
+      return { content: fsReadSafe(req.path) };
+    case 'fs_write':
+      fsWriteSafe(req.path, req.content);
       return { written: req.path, bytes: Buffer.byteLength(req.content) };
-    }
     case 'fs_list': {
-      if (!existsSync(req.path)) return { entries: [] };
-      const entries = readdirSync(req.path).map((name) => {
-        const full = `${req.path}/${name}`;
-        const st = statSync(full, { throwIfNoEntry: false });
-        const type = st?.isDirectory() ? 'dir' : st?.isSymbolicLink() ? 'symlink' : st?.isFile() ? 'file' : 'other';
-        return {
-          name,
-          type,
-          sizeBytes: st?.size ?? 0,
-          mode: st ? (st.mode & 0o777).toString(8).padStart(3, '0') : '',
-          owner: '',
-          group: '',
-          modifiedAt: st ? st.mtime.toISOString() : '',
-        };
-      });
-      return { entries };
+      const clean = req.path.replace(/\/+$/, '');
+      if (!lstatSync(clean, { throwIfNoEntry: false })) return { entries: [] };
+      return { entries: fsListSafe(clean) };
     }
-    case 'fs_mkdir': {
-      mkdirSync(req.path, { recursive: true, mode: 0o755 });
+    case 'fs_mkdir':
+      fsMkdirSafe(req.path);
       return { created: req.path };
-    }
-    case 'fs_delete': {
-      if (!existsSync(req.path)) throw new Error('Cible introuvable');
-      rmSync(req.path, { recursive: true, force: true });
+    case 'fs_delete':
+      await fsDeleteSafe(req.path);
       return { removed: req.path };
-    }
-    case 'fs_chown': {
-      if (!existsSync(req.path)) throw new Error('Cible introuvable');
-      await exec('chown', [req.recursive ? '-R' : '', req.owner + ':' + req.group, req.path].filter(Boolean));
+    case 'fs_chown':
+      await fsChownSafe(req.path, req.owner, req.group, req.recursive);
       return { path: req.path, owner: req.owner };
-    }
     case 'packages_remove':
       if (family === 'debian') await apt(['remove', '-y', ...req.packages]);
       else await dnf(['remove', '-y', ...req.packages]);
@@ -919,11 +1161,15 @@ WantedBy=multi-user.target
       return { port: req.port, proto: req.proto, rule: req.rule, applied: true };
     }
     case 'backup_create': {
-      mkdirSync('/var/backups/homeserver', { recursive: true });
+      assertPanelUser(req.site.split('/')[0] ?? '');
+      // Sauvegardes lisibles par root seul (elles contiennent les sites de tous les utilisateurs)
+      mkdirSync('/var/backups/homeserver', { recursive: true, mode: 0o700 });
+      chmodSync('/var/backups/homeserver', 0o700);
       const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
       const file = `homeserver-${req.site}-${stamp}.tar.gz`;
       const target = `/var/backups/homeserver/${file}`;
       await exec('tar', ['-czf', target, '-C', '/home/' + req.site.split('/')[0], 'www/' + req.site.split('/').slice(1).join('/')]);
+      chmodSync(target, 0o600);
       const st = statSync(target);
       return { file, site: req.site, sizeBytes: st.size, createdAt: new Date().toISOString() };
     }
@@ -946,7 +1192,17 @@ WantedBy=multi-user.target
     case 'backup_restore': {
       const target = `/var/backups/homeserver/${req.file}`;
       if (!existsSync(target)) throw new Error('Sauvegarde introuvable');
-      await exec('tar', ['-xzf', target, '-C', `/home/${req.site.split('/')[0]}`]);
+      const user = req.site.split('/')[0] ?? '';
+      assertPanelUser(user);
+      // Extraction sous l'identité de l'utilisateur (archive lue par root, passée sur stdin) :
+      // ni propriétaires imposés par l'archive, ni écriture à travers ses liens
+      const fd = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const res = spawnSync('tar', ['-xzf', '-', '-C', homeOf(user) ?? `/home/${user}`, '--no-same-owner'], {
+          uid: uidOf(user), gid: gidOf(user), stdio: [fd, 'ignore', 'pipe'], timeout: 600_000, encoding: 'utf8',
+        });
+        if (res.status !== 0) throw new Error(`Restauration échouée : ${(res.stderr || res.error?.message || '').trim().split('\n').pop()}`);
+      } finally { closeSync(fd); }
       return { file: req.file, site: req.site, restored: true };
     }
     case 'cron_write': {
@@ -1052,34 +1308,51 @@ WantedBy=multi-user.target
     }
     case 'panel_rollback': {
       const before = await tryExec('systemctl', ['is-active', 'homeserver']);
-      const prev = readJsonState(INSTALLED_FILE, 'installed.json introuvable').previous;
-      if (typeof prev !== 'string' || !prev) throw new Error('Aucune release précédente');
-      await exec('ln', ['-sfn', `${RELEASES_DIR}/${prev}`, CURRENT_LINK]);
+      const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
+      const prev = state.previous;
+      if (typeof prev !== 'string' || !VERSION_RE.test(prev)) throw new Error('Aucune release précédente');
+      if (!lstatSync(`${RELEASES_DIR}/${prev}`, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`Release ${prev} absente du disque`);
+      const cur = readFileSync(`${CURRENT_LINK}/VERSION`, 'utf8').trim();
+      switchCurrent(prev);
+      writeJsonState(INSTALLED_FILE, {
+        ...state,
+        current: prev,
+        previous: VERSION_RE.test(cur) && cur !== prev ? cur : null,
+        updatedAt: new Date().toISOString(),
+        history: [...(Array.isArray(state.history) ? state.history : []).slice(-19), { version: prev, at: new Date().toISOString(), status: 'rollback' }],
+      });
       await exec('systemctl', ['restart', 'hs-helper', 'homeserver']);
       const after = await tryExec('systemctl', ['is-active', 'homeserver']);
       return { rolledBack: true, current: prev, active: (after ?? '').trim() === 'active', wasActive: (before ?? '').trim() === 'active' };
     }
     case 'panel_releases': {
-      const res = await tryExec('bash', ['-c', `ls -1 '${RELEASES_DIR}' 2>/dev/null | grep -v installed.json | sort -rV || true`]);
       const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
-      const sizes = await tryExec('bash', ['-c', `du -sm '${RELEASES_DIR}'/*/ 2>/dev/null | awk '{print $2, $1}'`]);
-      const sizeMap = new Map((sizes ?? '').trim().split('\n').filter(Boolean).map((l) => {
-        const m = l.replace(/\/$/, '').match(/^(\S+) (\d+)$/);
-        return m ? [m[1]?.split('/').pop() ?? '', Number(m[2] ?? 0)] : null;
-      }).filter((e): e is [string, number] => e !== null));
+      const releases = existsSync(RELEASES_DIR)
+        ? readdirSync(RELEASES_DIR, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && VERSION_RE.test(e.name))
+          .map((e) => e.name)
+          .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+        : [];
+      const sizes: Record<string, number> = {};
+      for (const v of releases) {
+        const out = await tryExec('du', ['-sm', `${RELEASES_DIR}/${v}`]);
+        const mb = Number((out ?? '').split(/\s+/)[0]);
+        if (Number.isFinite(mb)) sizes[v] = mb;
+      }
       return {
-        releases: (res ?? '').trim().split('\n').filter(Boolean),
+        releases,
         current: state.current ?? null,
         previous: state.previous ?? null,
-        sizes: Object.fromEntries(sizeMap),
+        sizes,
       };
     }
     case 'panel_release_delete': {
       const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');
-      if (req.version === state.current) throw new Error('Impossible de supprimer la release active');
+      const active = readFileSync(`${CURRENT_LINK}/VERSION`, 'utf8').trim();
+      if (req.version === state.current || req.version === active) throw new Error('Impossible de supprimer la release active');
       if (req.version === state.previous) throw new Error('Impossible de supprimer la release précédente (plan de retour arrière)');
       const target = `${RELEASES_DIR}/${req.version}`;
-      const st = statSync(target, { throwIfNoEntry: false });
+      const st = lstatSync(target, { throwIfNoEntry: false });
       if (!st || !st.isDirectory()) throw new Error('Release introuvable');
       rmSync(target, { recursive: true });
       return { deleted: true, version: req.version };
@@ -1087,7 +1360,7 @@ WantedBy=multi-user.target
     case 'panel_access_status': {
       const envFile = findPanelEnv();
       if (!envFile) return { host: '127.0.0.1', port: Number(process.env.HS_PORT ?? 3000) || 3000, secureCookies: true, envFile: null };
-      const env = readFileSync(envFile, 'utf8');
+      const env = readPanelEnv(envFile);
       const host = env.match(/^HS_HOST=(.+)$/m)?.[1]?.trim() ?? '127.0.0.1';
       const port = Number(env.match(/^HS_PORT=(.+)$/m)?.[1]?.trim() ?? '3000') || 3000;
       const secureCookies = (env.match(/^HS_SECURE_COOKIES=(.+)$/m)?.[1]?.trim() ?? 'true') === 'true';
@@ -1097,7 +1370,7 @@ WantedBy=multi-user.target
       const envFile = findPanelEnv();
       if (!envFile) throw new Error('.env du panel introuvable');
       const secureCookies = req.host === '127.0.0.1';
-      let env = readFileSync(envFile, 'utf8');
+      let env = readPanelEnv(envFile);
       const setVar = (key: string, value: string): void => {
         const re = new RegExp(`^${key}=.*$`, 'm');
         if (re.test(env)) env = env.replace(re, `${key}=${value}`);
@@ -1105,10 +1378,7 @@ WantedBy=multi-user.target
       };
       setVar('HS_HOST', req.host);
       setVar('HS_SECURE_COOKIES', secureCookies ? 'true' : 'false');
-      const st = statSync(envFile);
-      writeFileSync(envFile, env, { mode: 0o600 });
-      chmodSync(envFile, 0o600);
-      try { chownSync(envFile, st.uid, st.gid); } catch { /* propriétaire inchangé si inaccessible */ }
+      writePanelEnv(envFile, env);
       await exec('systemctl', ['restart', 'homeserver'], 30_000);
       return { host: req.host, secureCookies, envFile, restarted: true };
     }
@@ -1119,7 +1389,7 @@ WantedBy=multi-user.target
       let liveDomain: string | null = null;
       try {
         const envFile = findPanelEnv();
-        const env = envFile ? readFileSync(envFile, 'utf8') : '';
+        const env = envFile ? readPanelEnv(envFile) : '';
         liveDomain = env.match(/^HS_PANEL_DOMAIN=(.+)$/m)?.[1]?.trim() ?? null;
       } catch { /* pas de .env */ }
       return { enabled: confExists, domain: liveDomain };
@@ -1132,7 +1402,7 @@ WantedBy=multi-user.target
       const confPath = `${confDir}/homeserver-panel.conf`;
       // Le helper n'hérite pas du .env du panel : le port réel y est lu
       const panelEnv = findPanelEnv();
-      const port = Number((panelEnv ? readFileSync(panelEnv, 'utf8') : '').match(/^HS_PORT=(\d+)/m)?.[1] ?? process.env.HS_PORT ?? 3000) || 3000;
+      const port = Number((panelEnv ? readPanelEnv(panelEnv) : '').match(/^HS_PORT=(\d+)/m)?.[1] ?? process.env.HS_PORT ?? 3000) || 3000;
       // Modules requis par les vhosts ci-dessous (absents d'une installation Apache fraîche)
       if (isDebian) await exec('a2enmod', ['-q', 'proxy', 'proxy_http', 'ssl', 'headers'], 30_000);
       else if (!existsSync('/etc/httpd/conf.d/ssl.conf')) await pkgInstall('rhel', ['mod_ssl']);
@@ -1180,7 +1450,7 @@ WantedBy=multi-user.target
       // 4. Bascule .env : écoute locale + cookies Secure + domaine mémorisé
       const envFile = findPanelEnv();
       if (envFile) {
-        let env = readFileSync(envFile, 'utf8');
+        let env = readPanelEnv(envFile);
         const setVar = (key: string, value: string): void => {
           const re = new RegExp(`^${key}=.*$`, 'm');
           if (re.test(env)) env = env.replace(re, `${key}=${value}`);
@@ -1190,10 +1460,7 @@ WantedBy=multi-user.target
         setVar('HS_SECURE_COOKIES', 'true');
         setVar('HS_FORCE_HTTPS', 'true');
         setVar('HS_PANEL_DOMAIN', req.domain);
-        const st = statSync(envFile);
-        writeFileSync(envFile, env, { mode: 0o600 });
-        chmodSync(envFile, 0o600);
-        try { chownSync(envFile, st.uid, st.gid); } catch { /* noop */ }
+        writePanelEnv(envFile, env);
         await exec('systemctl', ['restart', 'homeserver'], 30_000);
       }
       return { domain: req.domain, https: true, url: `https://${req.domain}` };
@@ -1211,13 +1478,10 @@ WantedBy=multi-user.target
       }
       const envFile = findPanelEnv();
       if (envFile) {
-        let env = readFileSync(envFile, 'utf8');
+        let env = readPanelEnv(envFile);
         env = env.replace(/^HS_PANEL_DOMAIN=.*\n?/m, '').replace(/^HS_FORCE_HTTPS=.*\n?/m, '');
         env = env.replace(/^HS_HOST=.*$/m, 'HS_HOST=0.0.0.0').replace(/^HS_SECURE_COOKIES=.*$/m, 'HS_SECURE_COOKIES=false');
-        const st = statSync(envFile);
-        writeFileSync(envFile, env, { mode: 0o600 });
-        chmodSync(envFile, 0o600);
-        try { chownSync(envFile, st.uid, st.gid); } catch { /* noop */ }
+        writePanelEnv(envFile, env);
         await exec('systemctl', ['restart', 'homeserver'], 30_000);
       }
       return { https: false };
@@ -1438,6 +1702,12 @@ const server = createServer((socket) => {
   let buf = '';
   socket.on('data', (chunk) => {
     buf += chunk.toString('utf8');
+    // Requête démesurée (ou jamais terminée par un saut de ligne) : connexion coupée
+    if (buf.length > MAX_REQUEST_BYTES) {
+      log('connexion coupée : requête trop volumineuse');
+      socket.destroy();
+      return;
+    }
     let idx: number;
     while ((idx = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, idx);
@@ -1459,6 +1729,7 @@ const server = createServer((socket) => {
   socket.on('error', () => {});
 });
 
+server.maxConnections = MAX_CONNECTIONS;
 mkdirSync(SOCKET_PATH.replace(/\/[^/]+$/, ''), { recursive: true });
 if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
 server.listen(SOCKET_PATH, () => {

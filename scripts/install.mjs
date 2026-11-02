@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync, readFileSync, renameSync, chmodSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 import { createServer, connect } from 'node:net';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -193,16 +193,36 @@ async function main() {
   });
 
   // --- .env : fusion avec l'existant (HS_PANEL_DOMAIN, HS_FORCE_HTTPS, CORS… conservés) ---
+  // Mot de passe admin : hashé (scrypt, même format que server/src/auth/crypto.ts) dans le
+  // store d'auth de hs-*, jamais écrit en clair dans le .env. Un ancien HS_ADMIN_PASSWORD
+  // est migré puis retiré.
   const authStore = existing.get('HS_AUTH_STORE') || '/var/lib/homeserver/auth.json';
-  const passwordMigrated = existsSync(authStore);
-  const adminPassword = existing.get('HS_ADMIN_PASSWORD') || randomBytes(12).toString('base64url');
+  let authState = null;
+  try { authState = JSON.parse(readFileSync(authStore, 'utf8')); } catch { /* absent ou illisible */ }
+  const passwordMigrated = typeof authState?.passwordHash === 'string' && authState.passwordHash.startsWith('scrypt$');
+  let adminPassword = null;
+  if (!passwordMigrated) {
+    adminPassword = existing.get('HS_ADMIN_PASSWORD') || randomBytes(12).toString('base64url');
+    const salt = randomBytes(16);
+    const key = scryptSync(adminPassword, salt, 64, { N: 16384, r: 8, p: 1 });
+    const state = {
+      ...(authState ?? {}),
+      adminUser: authState?.adminUser || adminUser,
+      passwordHash: `scrypt$16384$8$1$${salt.toString('hex')}$${key.toString('hex')}`,
+      recentAttempts: Array.isArray(authState?.recentAttempts) ? authState.recentAttempts : [],
+    };
+    writeFileSync(`${authStore}.tmp`, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+    chmodSync(`${authStore}.tmp`, 0o600);
+    renameSync(`${authStore}.tmp`, authStore);
+    ok(`Mot de passe admin hashé dans ${authStore}`);
+  }
   const env = new Map(existing);
   const set = (k, v) => env.set(k, v);
   set('HS_PORT', port);
   set('HS_HOST', host);
   set('HS_JWT_SECRET', existing.get('HS_JWT_SECRET') || randomBytes(32).toString('hex'));
   set('HS_ADMIN_USER', adminUser);
-  set('HS_ADMIN_PASSWORD', adminPassword);
+  env.delete('HS_ADMIN_PASSWORD');
   set('HS_USER', user);
   set('HS_MODULES', existing.get('HS_MODULES') || `system,${webServer},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`);
   set('HS_AUTH_STORE', authStore);
@@ -212,9 +232,10 @@ async function main() {
     '# Auth : HS_AUTH_STORE contient le hash scrypt + secret TOTP (chmod 600)',
     ...[...env].map(([k, v]) => `${k}=${v}`),
   ].join('\n') + '\n';
-  writeFileSync(`${envPath}.tmp`, content, { mode: 0o600 });
-  chmodSync(`${envPath}.tmp`, 0o600);
-  renameSync(`${envPath}.tmp`, envPath);
+  // Écriture en place : le .env appartient à hs-* mais vit dans un répertoire root
+  // (pas de fichier temporaire possible à côté)
+  writeFileSync(envPath, content, { mode: 0o600 });
+  chmodSync(envPath, 0o600);
   ok(`.env ${reinstall ? 'mis à jour' : 'généré'} (${envPath}, chmod 600)`);
 
   // --- PHP ---
@@ -311,7 +332,7 @@ async function main() {
   }
 
   console.log(`\n\x1b[32mConfiguration terminée.\x1b[0m`);
-  if (reinstall && passwordMigrated) {
+  if (adminPassword === null) {
     console.log(`  Admin      : ${adminUser} / (mot de passe inchangé — celui défini dans le panel)`);
   } else {
     console.log(`  Admin      : ${adminUser} / ${adminPassword}`);

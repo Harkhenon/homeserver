@@ -68,18 +68,22 @@ npm start
 
 ## Installation production
 
-Une seule commande — tout est automatique (nvm + Node LTS inclus si absents) :
+Une seule commande — tout est automatique (Node LTS inclus si absent) :
 
 ```bash
 sudo bash scripts/install.sh
 ```
 
-L'installateur : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe nvm + Node LTS **pour cet utilisateur**, copie le panel dans `/usr/share/homeserver` (propriété `hs-*`), installe les dépendances et le build en tant que `hs-*`, installe les paquets système, génère `.env` (secret JWT, identifiants admin, `640` propriété `hs-*`), installe et démarre le service systemd.
+L'installateur : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe Node LTS (archive officielle, checksum vérifié) en root dans `/opt/homeserver/node`, construit la release sous un utilisateur dédié sans privilège (`homeserver-build`) puis l'installe en lecture seule (root), installe les paquets système, génère `.env` (secret JWT, `600` propriété `hs-*`) et le hash scrypt du mot de passe admin, installe et démarre les services systemd (durcis).
+
+**Frontière de privilèges** : tout ce que root exécute (runtime Node, releases, lien `current`, updater, unités) appartient à root et n'est pas modifiable par `hs-*` ; le helper root n'accepte que les actions de `server/src/core/privileged/contract.ts`, limitées aux comptes créés par le panel ; l'updater n'installe que des archives signées (Ed25519, `keys/release-signing.pub.pem`). Logique commune : `scripts/layout.sh`.
 
 Chemins d'installation :
-- `/usr/share/homeserver` — `.env` (chmod 600) + lien `current` vers la release active (propriétaire `hs-*`, `750`)
-- `/var/lib/homeserver/releases/<version>` — releases construites (code, `node_modules`, builds), bascule atomique via `current`
-- `/var/lib/homeserver` — données, états (`installed.json`, `update-status.json`, `auth.json`) et nvm de l'utilisateur (`750`)
+- `/usr/share/homeserver` — root : lien `current` vers la release active + `.env` (`600`, propriété `hs-*`)
+- `/opt/homeserver/node` — runtime Node (root, lecture seule ; liens `/usr/local/bin/node|npm|npx`)
+- `/opt/homeserver/releases/<version>` — releases construites (root, lecture seule), `installed.json` ; `/opt/homeserver/update-status.json`
+- `/var/lib/homeserver` — HOME et données du panel (`auth.json`, historiques…), propriété `hs-*` (`750`)
+- `/var/lib/homeserver-build` — HOME de `homeserver-build` (cache npm, répertoire de build)
 - `/usr/local/lib/homeserver/updater` — couple updater (timer systemd 6h)
 - `/var/log/homeserver/install.log` — journal complet de chaque installation
 
