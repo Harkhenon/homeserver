@@ -6,6 +6,7 @@ const DEFAULT_SOCKET = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.s
 export async function callHelper<T = unknown>(
   request: PrivilegedRequest,
   socketPath: string = DEFAULT_SOCKET,
+  timeoutMs = 120_000,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const socket = connect(socketPath);
@@ -23,7 +24,7 @@ export async function callHelper<T = unknown>(
       else reject(new Error(`[${raw.code}] ${raw.error}`));
     });
     socket.on('error', reject);
-    socket.setTimeout(120_000, () => {
+    socket.setTimeout(timeoutMs, () => {
       socket.destroy();
       reject(new Error('Timeout du helper privilégié'));
     });

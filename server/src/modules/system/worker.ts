@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
+import { isValidIp } from '../../core/privileged/contract.js';
 import type {
   PendingUpdatesResult, PanelUpdateResult, PanelUpdateApplyResult,
   PanelRollbackResult, PanelReleasesResult, PanelReleaseDeleteResult,
@@ -265,13 +266,13 @@ const definition: ModuleDefinition = {
     },
     'security.f2b.setup': {
       summary: 'Installer et configurer fail2ban (jails sshd + web)',
-      handler: () => callHelper<{ installed: boolean; active: boolean; jailFile?: string }>({ action: 'fail2ban_setup' }),
+      handler: () => callHelper<{ installed: boolean; active: boolean; jailFile?: string }>({ action: 'fail2ban_setup' }, undefined, 1_800_000),
     },
     'security.f2b.unban': {
       summary: 'Débannir une IP (payload: { ip })',
       handler: (payload) => {
         const p = (payload ?? {}) as { ip?: unknown };
-        if (typeof p.ip !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(p.ip)) {
+        if (!isValidIp(p.ip)) {
           throw new Error('ip invalide');
         }
         return callHelper<{ unbanned: string[]; ip: string }>({ action: 'fail2ban_unban', ip: p.ip });

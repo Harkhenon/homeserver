@@ -104,6 +104,40 @@ export interface FirewallStatus {
   rules: string[];
 }
 
+// Miroir de server/src/core/privileged/contract.ts (Fail2ban*)
+export type Fail2banJailName =
+  | 'sshd' | 'recidive'
+  | 'apache-auth' | 'apache-badbots' | 'apache-noscript'
+  | 'nginx-http-auth' | 'nginx-botsearch';
+
+export interface Fail2banStatus {
+  installed: boolean;
+  active: boolean;
+  enabled: boolean;
+  jails: Array<{ name: string; currentlyBanned: number; totalBanned: number; bannedIps: string[] }>;
+}
+
+export interface Fail2banJailConfig {
+  name: Fail2banJailName;
+  enabled: boolean;
+  bantime: number | null;
+  findtime: number | null;
+  maxretry: number | null;
+}
+
+export interface Fail2banConfig {
+  defaults: { bantime: number; findtime: number; maxretry: number };
+  ignoreip: string[];
+  jails: Fail2banJailConfig[];
+}
+
+export interface Fail2banConfigInfo {
+  installed: boolean;
+  config: Fail2banConfig;
+  available: Fail2banJailName[];
+  file: string;
+}
+
 export interface MonitorSample {
   at: string;
   cpuLoad: [number, number, number];

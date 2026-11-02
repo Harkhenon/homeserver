@@ -1,4 +1,4 @@
-import { createServer } from 'node:net';
+import { createServer, BlockList, isIP } from 'node:net';
 import {
   mkdirSync, existsSync, statSync, lstatSync, unlinkSync, readdirSync, readFileSync, writeFileSync, symlinkSync, rmSync,
   chownSync, lchownSync, chmodSync, rmdirSync, openSync, closeSync, fstatSync, ftruncateSync, fchmodSync, fchownSync, readlinkSync, renameSync, constants,
@@ -33,8 +33,8 @@ function homeOf(user: string): string | undefined {
 import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { validateRequest, CONTRACT_VERSION } from '../server/src/core/privileged/contract.js';
-import type { SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult } from '../server/src/core/privileged/contract.js';
+import { validateRequest, validateFail2banConfig, CONTRACT_VERSION, FAIL2BAN_JAILS } from '../server/src/core/privileged/contract.js';
+import type { SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
 // Layout (scripts/layout.sh) : tout ce que root lit pour décider ou exécute vit dans des
@@ -596,6 +596,220 @@ async function handlePendingUpdates(family: 'debian' | 'rhel'): Promise<unknown>
   return { family, count: packages.length, packages };
 }
 
+// --- fail2ban -------------------------------------------------------------------
+// Une seule conf générée (jail.d/homeserver.conf, lue après les defaults de la distro).
+// L'état éditable est rangé en JSON sur une ligne de commentaire et revalidé à la lecture :
+// la conf est toujours régénérée depuis des valeurs bornées, jamais depuis du texte libre.
+const F2B_CONF = '/etc/fail2ban/jail.d/homeserver.conf';
+const F2B_STATE_PREFIX = '# homeserver-state: ';
+const F2B_DEFAULTS = { bantime: 3600, findtime: 600, maxretry: 5 };
+
+function dirHasLog(dirs: string[], re: RegExp): boolean {
+  return dirs.some((d) => {
+    try { return readdirSync(d).some((f) => re.test(f)); } catch { return false; }
+  });
+}
+
+/** Jails activables : leur filtre a un journal à lire sur cette machine. */
+function f2bAvailableJails(): Fail2banJailName[] {
+  const apacheError = dirHasLog(['/var/log/apache2', '/var/log/httpd'], /error[._]log$/);
+  const apacheAccess = dirHasLog(['/var/log/apache2', '/var/log/httpd'], /access[._]log$/);
+  const nginxError = existsSync('/var/log/nginx/error.log');
+  return FAIL2BAN_JAILS.filter((j) => {
+    if (j === 'sshd') return true;
+    if (j === 'recidive') return existsSync('/var/log/fail2ban.log');
+    if (j === 'apache-badbots') return apacheAccess;
+    if (j.startsWith('apache-')) return apacheError;
+    return nginxError;
+  });
+}
+
+/** Complète la liste des jails (toutes présentes, dans l'ordre du contrat). */
+function f2bNormalize(cfg: Fail2banConfig): Fail2banConfig {
+  return {
+    ...cfg,
+    jails: FAIL2BAN_JAILS.map((name) => cfg.jails.find((j) => j.name === name)
+      ?? { name, enabled: false, bantime: null, findtime: null, maxretry: null }),
+  };
+}
+
+function f2bDefaultConfig(web?: 'apache' | 'nginx'): Fail2banConfig {
+  const available = f2bAvailableJails();
+  const webJail: Fail2banJailName[] = web === 'nginx' ? ['nginx-http-auth'] : web === 'apache' ? ['apache-auth'] : ['apache-auth', 'nginx-http-auth'];
+  const enabled = new Set<Fail2banJailName>(['sshd', ...webJail.filter((j) => available.includes(j))]);
+  return f2bNormalize({
+    defaults: { ...F2B_DEFAULTS },
+    ignoreip: [],
+    jails: FAIL2BAN_JAILS.map((name) => ({ name, enabled: enabled.has(name), bantime: null, findtime: null, maxretry: null })),
+  });
+}
+
+function f2bReadConfig(): Fail2banConfig | null {
+  try {
+    const line = readFileSync(F2B_CONF, 'utf8').split('\n').find((l) => l.startsWith(F2B_STATE_PREFIX));
+    const cfg = line ? validateFail2banConfig(JSON.parse(line.slice(F2B_STATE_PREFIX.length))) : null;
+    return cfg ? f2bNormalize(cfg) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Action de ban adaptée au pare-feu réellement actif : les règles firewalld échouent quand
+ * firewalld est arrêté (Fedora Cloud), et iptables manque sur les systèmes récents.
+ */
+async function f2bBanAction(): Promise<[string, string] | null> {
+  if (((await tryExec('systemctl', ['is-active', 'firewalld'])) ?? '').trim() === 'active') {
+    return ['firewallcmd-rich-rules', 'firewallcmd-allports'];
+  }
+  if (existsSync('/usr/sbin/nft')) return ['nftables-multiport', 'nftables-allports'];
+  return null; // défaut de la distribution (iptables)
+}
+
+function f2bRender(cfg: Fail2banConfig, banAction: [string, string] | null): string {
+  const available = new Set(f2bAvailableJails());
+  // Debian/Ubuntu récents et Fedora : plus de syslog fichier, sshd n'écrit que dans journald
+  const sshJournal = !existsSync('/var/log/auth.log') && !existsSync('/var/log/secure');
+  const lines = [
+    '# Généré par Homeserver — modifiable depuis le panel (Pare-feu → Fail2ban).',
+    '# Toute modification manuelle de ce fichier sera écrasée.',
+    `${F2B_STATE_PREFIX}${JSON.stringify(cfg)}`,
+    '',
+    '[DEFAULT]',
+    `bantime = ${cfg.defaults.bantime}`,
+    `findtime = ${cfg.defaults.findtime}`,
+    `maxretry = ${cfg.defaults.maxretry}`,
+    `ignoreip = ${['127.0.0.1/8', '::1', ...cfg.ignoreip].join(' ')}`,
+  ];
+  if (banAction) lines.push(`banaction = ${banAction[0]}`, `banaction_allports = ${banAction[1]}`);
+  for (const j of cfg.jails) {
+    const on = j.enabled && available.has(j.name);
+    lines.push('', `[${j.name}]`, `enabled = ${on}`);
+    if (!on) continue;
+    if (j.bantime !== null) lines.push(`bantime = ${j.bantime}`);
+    if (j.findtime !== null) lines.push(`findtime = ${j.findtime}`);
+    if (j.maxretry !== null) lines.push(`maxretry = ${j.maxretry}`);
+    // Fedora force backend = systemd par défaut : les jails web/recidive lisent des fichiers
+    if (j.name === 'sshd') lines.push(`backend = ${sshJournal ? 'systemd' : 'auto'}`);
+    else lines.push('backend = auto');
+  }
+  return lines.join('\n') + '\n';
+}
+
+function cmdError(e: unknown): string {
+  const err = e as Error & { stderr?: string };
+  const out = (err.stderr ?? '').trim() || err.message;
+  return out.split('\n').map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
+}
+
+/** Sans appel au serveur (fail2ban-client version échoue quand le service est arrêté). */
+function f2bInstalled(): boolean {
+  return existsSync('/usr/bin/fail2ban-client') || existsSync('/usr/sbin/fail2ban-client');
+}
+
+async function f2bServiceActive(): Promise<boolean> {
+  return ((await tryExec('systemctl', ['is-active', 'fail2ban'])) ?? '').trim() === 'active';
+}
+
+async function f2bWaitReady(timeoutMs = 30_000): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    try {
+      await exec('fail2ban-client', ['ping'], 5000);
+      return;
+    } catch (e) {
+      const elapsed = Date.now() - started;
+      // service tombé (conf rejetée au démarrage) : inutile d'attendre la fin du délai
+      if (elapsed > timeoutMs || (elapsed > 5000 && !(await f2bServiceActive()))) {
+        throw new Error(`fail2ban ne répond pas : ${cmdError(e)}`);
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
+/**
+ * Écrit la conf, la valide (fail2ban-client -t) puis recharge (ou démarre) le service.
+ * Au moindre échec, l'ancienne conf est remise en place et rechargée.
+ */
+async function f2bApply(cfg: Fail2banConfig, start = false): Promise<void> {
+  const previous = existsSync(F2B_CONF) ? readFileSync(F2B_CONF, 'utf8') : null;
+  const restore = (): void => {
+    if (previous === null) { try { unlinkSync(F2B_CONF); } catch { /* déjà absent */ } }
+    else writeFileSync(F2B_CONF, previous, { mode: 0o644 });
+  };
+  mkdirSync('/etc/fail2ban/jail.d', { recursive: true });
+  writeFileSync(F2B_CONF, f2bRender(cfg, await f2bBanAction()), { mode: 0o644 });
+  await tryExec('restorecon', [F2B_CONF]); // SELinux : contexte du dossier
+  try {
+    await exec('fail2ban-client', ['-t'], 30_000);
+  } catch (e) {
+    restore();
+    throw new Error(`Configuration refusée par fail2ban-client -t, ancienne configuration rétablie : ${cmdError(e)}`);
+  }
+  const active = await f2bServiceActive();
+  try {
+    if (active) await exec('fail2ban-client', ['reload'], 60_000);
+    else if (start) await exec('systemctl', ['restart', 'fail2ban'], 60_000);
+    // le serveur met quelques secondes à ouvrir son socket et démarrer ses jails
+    if (active || start) await f2bWaitReady();
+  } catch (e) {
+    restore();
+    if (active) await tryExec('fail2ban-client', ['reload']);
+    throw new Error(`Rechargement de fail2ban échoué, ancienne configuration rétablie : ${cmdError(e)}`);
+  }
+}
+
+/** firewalld démarré ou arrêté depuis le panel : l'action de ban de fail2ban doit suivre. */
+async function f2bFollowFirewall(): Promise<void> {
+  const cfg = f2bReadConfig();
+  if (!cfg) return;
+  try {
+    await f2bApply(cfg);
+  } catch (e) {
+    log(`fail2ban : conf non regénérée après changement de pare-feu (${(e as Error).message})`);
+  }
+}
+
+async function f2bJailStatus(jail: string): Promise<{ currentlyBanned: number; totalBanned: number; bannedIps: string[] }> {
+  const js = await exec('fail2ban-client', ['status', jail], 10_000);
+  const banned = /Currently banned:\s+(\d+)/.exec(js);
+  const total = /Total banned:\s+(\d+)/.exec(js);
+  const list = /Banned IP list:[ \t]*(.*)$/m.exec(js);
+  return {
+    currentlyBanned: banned ? Number(banned[1]) : 0,
+    totalBanned: total ? Number(total[1]) : 0,
+    bannedIps: (list?.[1] ?? '').split(/\s+/).filter(Boolean),
+  };
+}
+
+async function f2bActiveJails(): Promise<string[]> {
+  const stdout = await exec('fail2ban-client', ['status'], 10_000);
+  const listLine = stdout.split('\n').find((l) => l.includes('Jail list'));
+  return listLine ? listLine.replace(/^.*Jail list:\s*/, '').split(',').map((j) => j.trim()).filter(Boolean) : [];
+}
+
+async function f2bInstall(family: 'debian' | 'rhel'): Promise<void> {
+  if (f2bInstalled()) return;
+  if (family === 'debian') {
+    await aptUpdate();
+    // python3-systemd : backend journald pour sshd quand /var/log/auth.log n'existe pas
+    await pkgInstall(family, ['fail2ban', 'python3-systemd']);
+    return;
+  }
+  // RHEL/Rocky/Alma : fail2ban vient d'EPEL (Fedora l'a dans ses dépôts)
+  if (osRelease().ID !== 'fedora' && await tryExec('rpm', ['-q', 'epel-release']) === null) {
+    try {
+      await dnf(['install', '-y', 'epel-release']);
+    } catch (e) {
+      throw new Error(`Dépôt EPEL requis pour fail2ban et impossible à installer (${(e as Error).message})`);
+    }
+  }
+  // Pas le méta-paquet « fail2ban » : il tire firewalld, activé sans être démarré, qui
+  // fermerait le port du panel au prochain redémarrage. L'action de ban suit le pare-feu actif.
+  await pkgInstall(family, ['fail2ban-server', 'fail2ban-systemd']);
+}
+
 async function handleRequest(raw: unknown): Promise<unknown> {
   const req = validateRequest(raw);
   if (!req) throw Object.assign(new Error('Requête invalide'), { code: 'VALIDATION' });
@@ -1132,12 +1346,16 @@ WantedBy=multi-user.target
           await exec('ufw', ['default', 'allow', 'outgoing']);
         } else {
           await exec('systemctl', ['enable', '--now', 'firewalld']);
+          await f2bFollowFirewall();
         }
         return { active: true };
       }
       const ufw = await tryExec('ufw', ['--version']);
       if (ufw !== null) await exec('ufw', ['disable']);
-      else await exec('systemctl', ['stop', 'firewalld']);
+      else {
+        await exec('systemctl', ['stop', 'firewalld']);
+        await f2bFollowFirewall();
+      }
       return { active: false };
     }
     case 'firewall_rule_add':
@@ -1594,80 +1812,96 @@ WantedBy=multi-user.target
       return { applied: false, passwordAuth: true, rootLogin: true } as SshHardeningApplyResult;
     }
     case 'fail2ban_setup': {
-      // Installer fail2ban si absent
+      await f2bInstall(family);
+      // Réinstallation : la configuration faite depuis le panel est conservée
+      const cfg = f2bReadConfig() ?? f2bDefaultConfig(req.web);
+      await exec('systemctl', ['enable', 'fail2ban'], 15_000);
       try {
-        await exec('fail2ban-client', ['version'], 5000);
-      } catch {
-        if (family === 'debian') await aptUpdate();
-        await pkgInstall(family, ['fail2ban']);
-      }
-      // Jails : sshd + nginx/apache (le serveur web principal du panel)
-      const jailConf = '/etc/fail2ban/jail.d/homeserver.conf';
-      const webLog = existsSync('/var/log/nginx') ? 'nginx' : 'apache';
-      const jailContent = [
-        '# Généré par Homeserver — jails de base',
-        '[sshd]',
-        'enabled = true',
-        '',
-        `[${webLog}-auth]`,
-        ...(webLog === 'nginx' ? ['enabled = true', 'port = http,https', 'logpath = /var/log/nginx/*error*.log'] : ['enabled = true', 'port = http,https', 'logpath = /var/log/apache2/*error*.log']),
-        '',
-      ].join('\n');
-      writeFileSync(jailConf, jailContent, { mode: 0o644 });
-      try {
-        await exec('systemctl', ['enable', 'fail2ban'], 10_000);
-        await exec('systemctl', ['restart', 'fail2ban'], 30_000);
+        await f2bApply(cfg, true);
       } catch (e) {
-        throw new Error(`Échec activation fail2ban : ${(e as Error).message}`);
+        // Dernier recours : sshd seul, pour ne jamais laisser le serveur sans protection SSH
+        log(`fail2ban : configuration complète refusée (${(e as Error).message}), repli sur sshd seul`);
+        const fallback = { ...cfg, jails: cfg.jails.map((j) => ({ ...j, enabled: j.name === 'sshd' })) };
+        await f2bApply(fallback, true);
       }
-      log(`fail2ban configuré (jails sshd + ${webLog}-auth)`);
-      return { installed: true, active: true, jailFile: jailConf };
+      const active = await f2bServiceActive();
+      const jails = active ? await f2bActiveJails().catch(() => []) : [];
+      log(`fail2ban configuré (jails : ${jails.join(', ') || 'aucune'})`);
+      return { installed: true, active, jailFile: F2B_CONF, jails };
     }
     case 'fail2ban_status': {
-      const result: Fail2banStatusResult = { installed: false, active: false, jails: [] };
-      try {
-        await exec('fail2ban-client', ['version'], 5000);
-        result.installed = true;
-      } catch { return result; }
-      try {
-        const stdout = await exec('systemctl', ['is-active', 'fail2ban'], 5000);
-        result.active = stdout.trim() === 'active';
-      } catch { /* inactif */ }
+      const result: Fail2banStatusResult = { installed: false, active: false, enabled: false, jails: [] };
+      if (!f2bInstalled()) return result;
+      result.installed = true;
+      result.enabled = ((await tryExec('systemctl', ['is-enabled', 'fail2ban'])) ?? '').trim() === 'enabled';
+      result.active = await f2bServiceActive();
       if (!result.active) return result;
       try {
-        const stdout = await exec('fail2ban-client', ['status'], 5000);
-        const jailNames = stdout.split('\n').map((l) => l.replace(/^Jail list:\s*/, '').trim()).filter((l) => l && l !== 'Status' && !l.startsWith('|-'));
-        // fail2ban-client status affiche "Jail list:	sshd, nginx-auth" sur une seule ligne
-        const listLine = stdout.split('\n').find((l) => l.includes('Jail list'));
-        const jails = listLine ? listLine.replace(/^.*Jail list:\s*/, '').split(',').map((j) => j.trim()).filter(Boolean) : [];
-        for (const j of jails) {
+        for (const j of await f2bActiveJails()) {
           try {
-            const js = await exec('fail2ban-client', ['status', j], 5000);
-            const banned = /Currently banned:\s+(\d+)/.exec(js);
-            const total = /Total banned:\s+(\d+)/.exec(js);
-            result.jails.push({ name: j, currentlyBanned: banned ? Number(banned[1]) : 0, totalBanned: total ? Number(total[1]) : 0 });
+            result.jails.push({ name: j, ...(await f2bJailStatus(j)) });
           } catch { /* jail illisible */ }
         }
-      } catch { /* status illisible */ }
+      } catch { /* status illisible (serveur en cours de démarrage) */ }
       return result;
     }
-    case 'fail2ban_unban': {
-      try {
-        // Trouver les jails qui bannissent cette IP
-        const stdout = await exec('fail2ban-client', ['status'], 5000);
-        const listLine = stdout.split('\n').find((l) => l.includes('Jail list'));
-        const jails = listLine ? listLine.replace(/^.*Jail list:\s*/, '').split(',').map((j) => j.trim()).filter(Boolean) : ['sshd'];
-        const unbanned: string[] = [];
-        for (const j of jails) {
-          try {
-            await exec('fail2ban-client', ['set', j, 'unbanip', req.ip], 5000);
-            unbanned.push(j);
-          } catch { /* jail sans cette IP */ }
-        }
-        return { unbanned, ip: req.ip };
-      } catch (e) {
-        throw new Error(`unban impossible : ${(e as Error).message}`);
+    case 'fail2ban_config_get': {
+      const installed = f2bInstalled();
+      return {
+        installed,
+        config: f2bReadConfig() ?? f2bDefaultConfig(),
+        available: f2bAvailableJails(),
+        file: F2B_CONF,
+      } satisfies Fail2banConfigResult;
+    }
+    case 'fail2ban_config_set': {
+      if (!f2bInstalled()) throw new Error('fail2ban n\'est pas installé');
+      const available = f2bAvailableJails();
+      const missing = req.config.jails.filter((j) => j.enabled && !available.includes(j.name)).map((j) => j.name);
+      if (missing.length > 0) throw new Error(`Jail(s) sans journal sur ce serveur : ${missing.join(', ')}`);
+      const cfg = f2bNormalize(req.config);
+      await f2bApply(cfg);
+      log(`fail2ban : configuration mise à jour (${cfg.jails.filter((j) => j.enabled).map((j) => j.name).join(', ')})`);
+      return { applied: true, config: cfg, active: await f2bServiceActive() };
+    }
+    case 'fail2ban_ban': {
+      if (!(await f2bServiceActive())) throw new Error('fail2ban est arrêté');
+      if (!(await f2bActiveJails()).includes(req.jail)) throw new Error(`Jail ${req.jail} inactive`);
+      // banip passe outre ignoreip : la liste blanche est vérifiée ici
+      const whitelist = new BlockList();
+      for (const entry of ['127.0.0.0/8', '::1', ...(f2bReadConfig()?.ignoreip ?? [])]) {
+        const [ip = '', prefix] = entry.split('/');
+        const type = isIP(ip) === 6 ? 'ipv6' : 'ipv4';
+        if (prefix === undefined) whitelist.addAddress(ip, type);
+        else whitelist.addSubnet(ip, Number(prefix), type);
       }
+      if (whitelist.check(req.ip, isIP(req.ip) === 6 ? 'ipv6' : 'ipv4')) {
+        throw new Error(`${req.ip} est dans la liste blanche : retire-la d'abord pour la bannir`);
+      }
+      try {
+        // l'action de ban (nft, firewall-cmd) peut prendre plusieurs secondes
+        await exec('fail2ban-client', ['set', req.jail, 'banip', req.ip], 60_000);
+      } catch (e) {
+        throw new Error(`Bannissement impossible : ${cmdError(e)}`);
+      }
+      const banned = (await f2bJailStatus(req.jail)).bannedIps.includes(req.ip);
+      if (!banned) throw new Error(`${req.ip} n'a pas été bannie`);
+      log(`fail2ban : ${req.ip} bannie manuellement (${req.jail})`);
+      return { banned: true, ip: req.ip, jail: req.jail };
+    }
+    case 'fail2ban_unban': {
+      if (!(await f2bServiceActive())) throw new Error('fail2ban est arrêté');
+      const jails = req.jail ? [req.jail] : await f2bActiveJails();
+      const unbanned: string[] = [];
+      for (const j of jails) {
+        try {
+          if (!(await f2bJailStatus(j)).bannedIps.includes(req.ip)) continue;
+          await exec('fail2ban-client', ['set', j, 'unbanip', req.ip], 60_000);
+          unbanned.push(j);
+        } catch { /* jail inactive */ }
+      }
+      if (unbanned.length > 0) log(`fail2ban : ${req.ip} débannie (${unbanned.join(', ')})`);
+      return { unbanned, ip: req.ip };
     }
     case 'unattended_upgrades_enable': {
       try {
