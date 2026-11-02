@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # make-release.sh — construit la release du couple updater.
-# Assemble (injection de common/pair.sh dans les deux fichiers), hashe, tarballe.
+# Assemble (injection de common/pair.sh dans les deux fichiers), hashe, tarballe, signe.
 # Usage: bash updater/make-release.sh <version> [panelMin]
+# Signature Ed25519 de l'archive (<archive>.sig, exigée par pair_repair et install.sh) si
+# HS_RELEASE_SIGNING_KEY (PEM) ou HS_RELEASE_SIGNING_KEY_FILE est fourni ;
+# HS_REQUIRE_SIGNATURE=1 (CI) fait échouer le build sans clé.
 set -euo pipefail
 
-VERSION="${1:?version requise (ex: 1.0.0)}"
-PANEL_MIN="${2:-0.5.0}"
+VERSION="${1:?version requise (ex: 1.1.0)}"
+PANEL_MIN="${2:-0.8.0}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$DIR/dist"
 STAGE="$OUT/homeserver-updater-$VERSION"
+ARCHIVE="$OUT/homeserver-updater-$VERSION.tar.gz"
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
@@ -29,10 +33,23 @@ printf '{"version": "%s", "panelMin": "%s"}\n' "$VERSION" "$PANEL_MIN" > "$STAGE
 
 (cd "$STAGE" && sha256sum updater-core.sh updater.sh VERSION > SHA256SUMS)
 
-tar -czf "$OUT/homeserver-updater-$VERSION.tar.gz" -C "$OUT" "homeserver-updater-$VERSION"
-(cd "$STAGE" && sha256sum "homeserver-updater-$VERSION.tar.gz" > /dev/null 2>&1 || true)
-sha256sum "$OUT/homeserver-updater-$VERSION.tar.gz" | tee "$OUT/homeserver-updater-$VERSION.tar.gz.sha256"
+tar -czf "$ARCHIVE" -C "$OUT" "homeserver-updater-$VERSION"
+(cd "$OUT" && sha256sum "${ARCHIVE##*/}" > "${ARCHIVE##*/}.sha256")
+
+KEY_FILE="${HS_RELEASE_SIGNING_KEY_FILE:-}"
+if [ -z "$KEY_FILE" ] && [ -n "${HS_RELEASE_SIGNING_KEY:-}" ]; then
+  KEY_FILE="$(mktemp)"
+  trap 'rm -f "$KEY_FILE"' EXIT
+  printf '%s\n' "$HS_RELEASE_SIGNING_KEY" > "$KEY_FILE"
+fi
+if [ -n "$KEY_FILE" ]; then
+  openssl pkeyutl -sign -inkey "$KEY_FILE" -rawin -in "$ARCHIVE" -out "$ARCHIVE.sig"
+  echo "  signature : ${ARCHIVE##*/}.sig"
+elif [ "${HS_REQUIRE_SIGNATURE:-0}" = 1 ]; then
+  echo "✗ clé de signature absente (HS_RELEASE_SIGNING_KEY) — release refusée" >&2
+  exit 1
+fi
 
 rm -rf "$STAGE"
-echo "→ $OUT/homeserver-updater-$VERSION.tar.gz (couple $VERSION, panelMin $PANEL_MIN)"
-echo "  attacher le tarball + le .sha256 à la GitHub Release v$VERSION du dépôt homeserver-updater"
+echo "→ $ARCHIVE (couple $VERSION, panelMin $PANEL_MIN)"
+echo "  attacher le tarball, le .sha256 et le .sig à la GitHub Release v$VERSION du dépôt homeserver-updater"

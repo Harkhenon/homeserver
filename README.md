@@ -63,7 +63,7 @@ cd homeserver
 sudo bash scripts/install.sh
 ```
 
-L'installeur détecte la distribution, installe Node.js LTS via nvm, configure
+L'installeur détecte la distribution, installe Node.js LTS (binaires officiels, vérifiés) dans `/opt/homeserver`, configure
 l'utilisateur dédié, les services systemd, et te pose quelques questions
 (port, interface d'écoute, serveur web, paquets recommandés). À la fin :
 

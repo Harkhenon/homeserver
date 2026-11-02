@@ -207,7 +207,24 @@ const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
   'homeserver', 'hs-helper',
 ];
-const CONFIG_PATH_RE =  /^\/etc\/((apache2|nginx)\/sites-(available|enabled)|httpd\/(conf\.d|sites-(available|enabled)))\/[A-Za-z0-9._-]+\.conf|\/etc\/(bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|cron.d\/homeserver-[A-Za-z0-9_-]{1,50}|homeserver\/[A-Za-z0-9._-]+)$/;
+// Ancrée aux deux bouts sur TOUTES les alternatives (l'ancienne version n'ancrait la fin
+// que sur la seconde : ".../sites-available/a.conf/../../cron.d/x" passait).
+const CONFIG_FILE_RE = /^\/etc\/(?:(?:apache2|nginx)\/sites-(?:available|enabled)\/[A-Za-z0-9._-]+\.conf|httpd\/(?:conf\.d|sites-(?:available|enabled))\/[A-Za-z0-9._-]+\.conf|bind\/zones\/[A-Za-z0-9._-]+\.zone|named\/[A-Za-z0-9._-]+\.zone|php\/\d\.\d\/fpm\/pool\.d\/[A-Za-z0-9._-]+\.conf|php-fpm\.d\/[A-Za-z0-9._-]+\.conf|homeserver\/[A-Za-z0-9_-][A-Za-z0-9._-]*)$/;
+const CRON_FILE_PATH_RE = /^\/etc\/cron\.d\/homeserver-[A-Za-z0-9_-]{1,50}$/;
+function isSafeConfigPath(path: string): boolean {
+  return !path.split('/').some((seg) => seg === '..' || seg === '.');
+}
+// Écriture/suppression : pas /etc/cron.d (cron_write valide le contenu, write_config ne le ferait pas)
+function isConfigPath(path: string): boolean {
+  return CONFIG_FILE_RE.test(path) && isSafeConfigPath(path);
+}
+// Lecture : les tâches cron du panel en plus
+function isReadableConfigPath(path: string): boolean {
+  return (CONFIG_FILE_RE.test(path) || CRON_FILE_PATH_RE.test(path)) && isSafeConfigPath(path);
+}
+// Une seule ligne "planification utilisateur commande" : ni variables d'environnement ni
+// lignes supplémentaires glissées dans /etc/cron.d
+const CRON_LINE_RE = /^(?:@(?:reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)|(?:\S+[ \t]+){4}\S+)[ \t]+[a-z_][a-z0-9_-]{0,31}[ \t]+[^\s=][^\n\r]{0,499}\n?$/;
 const DB_NAME_RE = /^[a-zA-Z0-9_]{1,64}$/;
 const DB_USER_RE = /^[a-zA-Z0-9_]{1,32}$/;
 const CRON_FILE_RE = /^homeserver-[A-Za-z0-9_-]{1,50}$/;
@@ -290,18 +307,18 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (raw.kind !== 'php') return null;
       return { action: 'discover', kind: 'php' };
     case 'write_config':
-      if (typeof raw.path !== 'string' || !CONFIG_PATH_RE.test(raw.path)) return null;
+      if (typeof raw.path !== 'string' || !isConfigPath(raw.path)) return null;
       if (typeof raw.content !== 'string' || raw.content.length > 1_000_000) return null;
       return { action: 'write_config', path: raw.path, content: raw.content };
     case 'read_file':
-      if (typeof raw.path !== 'string' || !CONFIG_PATH_RE.test(raw.path)) return null;
+      if (typeof raw.path !== 'string' || !isReadableConfigPath(raw.path)) return null;
       return { action: 'read_file', path: raw.path };
     case 'list_dir':
       if (typeof raw.path !== 'string') return null;
       if (!(DIR_WHITELIST.includes(raw.path) || /^\/etc\/php\/\d\.\d\/fpm\/pool\.d$/.test(raw.path))) return null;
       return { action: 'list_dir', path: raw.path };
     case 'unlink':
-      if (typeof raw.path !== 'string' || !CONFIG_PATH_RE.test(raw.path)) return null;
+      if (typeof raw.path !== 'string' || !isConfigPath(raw.path)) return null;
       return { action: 'unlink', path: raw.path };
     case 'site_enable':
       if (typeof raw.site !== 'string' || !SITE_RE.test(raw.site)) return null;
@@ -370,7 +387,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'user_create':
       if (typeof raw.username !== 'string' || !UNIX_NAME_RE.test(raw.username)) return null;
       if (typeof raw.password !== 'string' || raw.password.length < 6 || raw.password.length > 200) return null;
-      if (typeof raw.home !== 'string' || !(FS_PATH_RE.test(raw.home) || raw.home === '/dev/null' || /^\/home\/[a-z_][a-z0-9_-]{0,31}$/.test(raw.home))) return null;
+      // HOME imposé (/home/<utilisateur>) : un HOME arbitraire sous /var/www ou /home serait chowné
+      if (typeof raw.home !== 'string' || !(raw.home === '/dev/null' || raw.home === `/home/${raw.username}`)) return null;
       if (typeof raw.shell !== 'string' || !['/usr/sbin/nologin', '/bin/false', '/bin/bash'].includes(raw.shell)) return null;
       return { action: 'user_create', username: raw.username, password: raw.password, home: raw.home, shell: raw.shell };
     case 'user_set_password':
@@ -471,7 +489,7 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       return { action: 'backup_restore', file: raw.file, site: raw.site };
     case 'cron_write':
       if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
-      if (typeof raw.content !== 'string' || raw.content.length > 10_000 || raw.content.includes('\n\n\n')) return null;
+      if (typeof raw.content !== 'string' || !CRON_LINE_RE.test(raw.content)) return null;
       return { action: 'cron_write', file: raw.file, content: raw.content };
     case 'cron_delete':
       if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
@@ -505,6 +523,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'systemctl':
       if (!isServiceUnit(raw.unit)) return null;
       if (typeof raw.verb !== 'string' || !['start', 'stop', 'restart', 'reload', 'enable', 'disable', 'status'].includes(raw.verb)) return null;
+      // Le helper ne peut être ni arrêté ni désactivé depuis le panel (il ne reviendrait pas)
+      if (raw.unit === 'hs-helper' && !['restart', 'status'].includes(raw.verb)) return null;
       return { action: 'systemctl', unit: raw.unit, verb: raw.verb as ServiceVerb };
     case 'ssh_hardening_status':
       return { action: 'ssh_hardening_status' };

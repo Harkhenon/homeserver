@@ -16,7 +16,8 @@
 #   HS_INSTALL_EXTRAS      yes | no (MariaDB, Bind9, Certbot, Cron) [yes]
 #   HS_PANEL_DOMAIN        domaine du panel pour HTTPS Let's Encrypt [vide]
 #   HS_LETSENCRYPT_EMAIL   email Let's Encrypt (requis si HS_PANEL_DOMAIN)
-#   HS_UPDATER_TARBALL_URL source du couple updater (URL ou chemin local)
+#   HS_UPDATER_TARBALL_URL source du couple updater (URL signée .sig, ou chemin local)
+#   HS_NODE_MIRROR         miroir des binaires Node.js           [https://nodejs.org/dist]
 #   HS_SKIP_FIREWALL=1     ne pas ouvrir le port du panel dans ufw/firewalld
 set -Eeuo pipefail
 umask 022
@@ -24,7 +25,7 @@ umask 022
 BOLD='\033[1m'; CYAN='\033[1;36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RED='\033[31m'; DIM='\033[2m'; RESET='\033[0m'
 if [ ! -t 1 ]; then BOLD=''; CYAN=''; GREEN=''; YELLOW=''; RED=''; DIM=''; RESET=''; fi
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; }
 
 VERBOSE=false
 UNINSTALL=false
@@ -59,12 +60,14 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NODE_TARGET=22
-NODE_MAJOR_MIN=20
-NVM_VERSION=v0.40.3
 HS_HOME=/var/lib/homeserver
 INSTALL_DIR=/usr/share/homeserver
-RELEASES_DIR="$HS_HOME/releases"
+# Tout ce que root exécute vit sous /opt/homeserver (root, lecture seule) : voir scripts/layout.sh
+OPT_DIR=/opt/homeserver
+RELEASES_DIR="$OPT_DIR/releases"
+HS_NODE_BIN="$OPT_DIR/node/bin/node"
+LAYOUT=(bash "$SCRIPT_DIR/scripts/layout.sh")
+PUBKEY_FILE="$SCRIPT_DIR/keys/release-signing.pub.pem"
 PAIR_DIR=/usr/local/lib/homeserver/updater
 LOG_DIR=/var/log/homeserver
 LOG_FILE="$LOG_DIR/install.log"
@@ -156,7 +159,7 @@ esac
 # --- Désinstallation ----------------------------------------------------------------
 if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
-  echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${HS_HOME} (releases+états), updater, utilisateur hs-*${RESET}"
+  echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${OPT_DIR} (Node + releases), ${HS_HOME} (données), updater, utilisateurs hs-* et homeserver-build${RESET}"
   $PURGE && echo -e "${DIM}  --purge : supprimera aussi ${LOG_DIR} et les groupes homeserver*${RESET}"
   echo -e "${DIM}  Conservés : paquets système (Apache/Nginx, MariaDB, PHP…), sites dans /var/www, bases de données${RESET}"
   if ! $ASSUME_YES; then
@@ -177,10 +180,10 @@ if $UNINSTALL; then
   systemctl reset-failed homeserver hs-helper >/dev/null 2>&1 || true
   rm -rf /usr/local/lib/homeserver
 
-  # Liens node/npm posés par le helper vers le nvm de hs-* (deviendraient orphelins)
+  # Liens node/npm vers notre runtime (ou l'ancien nvm de hs-*) : deviendraient orphelins
   for bin in node npm npx corepack; do
     link="/usr/local/bin/$bin"
-    if [ -L "$link" ] && [[ "$(readlink "$link")" == "$HS_HOME/"* ]]; then rm -f "$link"; fi
+    if [ -L "$link" ] && [[ "$(readlink "$link")" == "$HS_HOME/"* || "$(readlink "$link")" == "$OPT_DIR/"* ]]; then rm -f "$link"; fi
   done
 
   # Vhost du panel (HTTPS) : sinon Apache proxifierait vers un panel absent
@@ -197,9 +200,15 @@ if $UNINSTALL; then
     [ -n "$u" ] || continue
     run_step "Suppression de l'utilisateur $u" userdel -f "$u" || true
   done < <(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1}')
-  rm -rf "$INSTALL_DIR" "$HS_HOME" /run/homeserver
+  if getent passwd homeserver-build >/dev/null; then
+    pkill -KILL -u homeserver-build 2>/dev/null || true
+    run_step "Suppression de l'utilisateur homeserver-build" userdel homeserver-build || true
+  fi
+  getent group homeserver-build >/dev/null && { groupdel homeserver-build 2>/dev/null || true; }
+  rm -rf "$INSTALL_DIR" "$HS_HOME" "$OPT_DIR" /var/lib/homeserver-build /run/homeserver
   if command -v semanage >/dev/null 2>&1; then
     semanage fcontext -d "$HS_HOME/\.nvm/versions/node(/.*)?/bin(/.*)?" >/dev/null 2>&1 || true
+    semanage fcontext -d "$OPT_DIR/node/bin(/.*)?" >/dev/null 2>&1 || true
   fi
 
   if $PURGE; then
@@ -222,7 +231,7 @@ ok "Distribution : $OS_PRETTY (famille $OS_FAMILY)"
 
 case "$(uname -m)" in
   x86_64|aarch64|arm64) : ;;
-  *) warn "Architecture $(uname -m) non testée — Node.js via nvm peut ne pas être disponible." ;;
+  *) fail "Architecture $(uname -m) non supportée (binaires Node.js officiels : x86_64, aarch64)." ;;
 esac
 
 mkdir -p "$HS_HOME"
@@ -242,7 +251,9 @@ cleanup_swap() {
 }
 trap cleanup_swap EXIT
 if [ "$MEM_MB" -lt 1800 ]; then
-  TMP_SWAP="$HS_HOME/.install-swap"
+  # Hors du HOME de hs-* : un lien planté là ferait écrire fallocate/mkswap ailleurs
+  TMP_SWAP=/var/homeserver-install.swap
+  rm -f "$TMP_SWAP"
   if { fallocate -l 2G "$TMP_SWAP" 2>/dev/null || dd if=/dev/zero of="$TMP_SWAP" bs=1M count=2048 status=none; } \
      && chmod 600 "$TMP_SWAP" && mkswap "$TMP_SWAP" >/dev/null 2>&1 && swapon "$TMP_SWAP" 2>/dev/null; then
     warn "RAM+swap = ${MEM_MB} Mo : swap temporaire de 2 Go activé pendant l'installation"
@@ -312,37 +323,32 @@ fi
 id -nG "$HS_USER" | grep -qw "$HS_GROUP" || run_step "Ajout de $HS_USER au groupe $HS_GROUP" usermod -aG "$HS_GROUP" "$HS_USER"
 chown "$HS_USER":"$HS_USER" "$HS_HOME"
 chmod 750 "$HS_HOME"
-mkdir -p "$RELEASES_DIR"
-chown "$HS_USER":"$HS_USER" "$RELEASES_DIR"
-info "répertoire: $HS_HOME — accès admin: sudo -u $HS_USER <cmd>"
+info "données du panel : $HS_HOME — accès admin : sudo -u $HS_USER <cmd>"
 
-NVM_DIR="$HS_HOME/.nvm"
-export NVM_DIR
-HS_NODE_BIN_DIR=""
-# runuser (util-linux) plutôt que sudo : toujours présent, même sur une Debian minimale.
-as_hs() {
-  runuser -u "$HS_USER" -- env -i HOME="$HS_HOME" USER="$HS_USER" NVM_DIR="$NVM_DIR" LANG=C.UTF-8 \
-    PATH="${HS_NODE_BIN_DIR:+$HS_NODE_BIN_DIR:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    ${NVM_NODEJS_ORG_MIRROR:+NVM_NODEJS_ORG_MIRROR="$NVM_NODEJS_ORG_MIRROR"} \
-    ${npm_config_registry:+npm_config_registry="$npm_config_registry"} \
-    bash -c "cd '$HS_HOME' && $*"
+# Vérification Ed25519 (openssl) d'une archive signée par la CI de release.
+verify_signature() { # fichier signature
+  openssl pkeyutl -verify -pubin -inkey "$PUBKEY_FILE" -rawin -in "$1" -sigfile "$2" >/dev/null 2>&1
 }
 
 # --- 2. Couple updater (core + updater, hors des releases du panel) ----------------------
-# L'updater vit dans /usr/local/lib/homeserver/updater/, indépendant du panel.
-# S'il est déjà installé et sain, on n'y touche pas ; sinon : HS_UPDATER_TARBALL_URL,
-# tarball local updater/dist/, dernière release GitHub, puis assemblage depuis les sources.
+# L'updater vit dans /usr/local/lib/homeserver/updater/ (root), indépendant du panel.
+# Source : HS_UPDATER_TARBALL_URL (archive signée) sinon les sources updater/ livrées avec
+# ce dépôt. Un couple déjà installé n'est remplacé que s'il est plus ancien ou abîmé.
 install_pair_tarball() {
-  # $1 = URL (http/https) OU chemin local vers le tarball du couple
+  # $1 = URL (http/https, signature .sig obligatoire) OU chemin local vers le tarball du couple
   local src="$1" tmp dir
   tmp="$(mktemp -d)"
   case "$src" in
-    http://*|https://*) retry "${CURL[@]}" "$src" -o "$tmp/pair.tar.gz" || { rm -rf "$tmp"; return 1; } ;;
-    /*)                 cp "$src" "$tmp/pair.tar.gz" ;;
-    *)                  rm -rf "$tmp"; echo "source invalide: $src" >&2; return 1 ;;
+    http://*|https://*)
+      retry "${CURL[@]}" "$src" -o "$tmp/pair.tar.gz" || { rm -rf "$tmp"; return 1; }
+      retry "${CURL[@]}" "$src.sig" -o "$tmp/pair.tar.gz.sig" || { echo "signature $src.sig introuvable" >&2; rm -rf "$tmp"; return 1; }
+      verify_signature "$tmp/pair.tar.gz" "$tmp/pair.tar.gz.sig" || { echo "signature du couple invalide" >&2; rm -rf "$tmp"; return 1; } ;;
+    /*) cp "$src" "$tmp/pair.tar.gz" ;;
+    *)  rm -rf "$tmp"; echo "source invalide: $src" >&2; return 1 ;;
   esac
-  tar -xzf "$tmp/pair.tar.gz" -C "$tmp" || { rm -rf "$tmp"; return 1; }
-  dir="$(find "$tmp" -maxdepth 2 -name VERSION -printf '%h\n' -quit)"
+  mkdir "$tmp/x"
+  tar -xzf "$tmp/pair.tar.gz" -C "$tmp/x" --no-same-owner || { rm -rf "$tmp"; return 1; }
+  dir="$(find "$tmp/x" -maxdepth 2 -name VERSION -printf '%h\n' -quit)"
   [ -n "$dir" ] && [ -f "$dir/updater-core.sh" ] && [ -f "$dir/updater.sh" ] || { echo "archive du couple incomplète" >&2; rm -rf "$tmp"; return 1; }
   if [ -f "$dir/SHA256SUMS" ]; then
     (cd "$dir" && sha256sum -c --quiet SHA256SUMS) || { echo "checksum du couple invalide" >&2; rm -rf "$tmp"; return 1; }
@@ -352,240 +358,90 @@ install_pair_tarball() {
   rm -rf "$PAIR_DIR.new"
   mkdir -p "$PAIR_DIR.new"
   cp "$dir/updater-core.sh" "$dir/updater.sh" "$dir/VERSION" "$PAIR_DIR.new/"
-  chmod 755 "$PAIR_DIR.new/updater-core.sh" "$PAIR_DIR.new/updater.sh"
+  chown -R root:root "$PAIR_DIR.new"
+  chmod 755 "$PAIR_DIR.new" "$PAIR_DIR.new/updater-core.sh" "$PAIR_DIR.new/updater.sh"
+  chmod 644 "$PAIR_DIR.new/VERSION"
   rm -rf "$PAIR_DIR"
   mv "$PAIR_DIR.new" "$PAIR_DIR"
   rm -rf "$tmp"
 }
-if [ -x "$PAIR_DIR/updater-core.sh" ] && [ -x "$PAIR_DIR/updater.sh" ]; then
-  info "couple updater déjà présent ($PAIR_DIR) — conservé"
+pair_version() { grep -o '"version": *"[^"]*"' "$1" 2>/dev/null | head -1 | grep -o '[0-9][^"]*' || true; }
+version_lt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+LOCAL_PAIR_VERSION="$(tr -dc '0-9.' < "$SCRIPT_DIR/updater/VERSION" 2>/dev/null || true)"
+INSTALLED_PAIR_VERSION="$(pair_version "$PAIR_DIR/VERSION")"
+if [ -n "${HS_UPDATER_TARBALL_URL:-}" ]; then
+  run_step "Installation du couple updater (${HS_UPDATER_TARBALL_URL})" install_pair_tarball "$HS_UPDATER_TARBALL_URL" \
+    || fail "Installation du couple updater depuis HS_UPDATER_TARBALL_URL impossible."
+elif [ -x "$PAIR_DIR/updater-core.sh" ] && [ -x "$PAIR_DIR/updater.sh" ] && [ -n "$INSTALLED_PAIR_VERSION" ] \
+     && { [ -z "$LOCAL_PAIR_VERSION" ] || ! version_lt "$INSTALLED_PAIR_VERSION" "$LOCAL_PAIR_VERSION"; }; then
+  info "couple updater $INSTALLED_PAIR_VERSION déjà présent ($PAIR_DIR) — conservé"
 else
-  pair_ok=false
-  LOCAL_TARBALL="$(find "$SCRIPT_DIR/updater/dist" -maxdepth 1 -name 'homeserver-updater-*.tar.gz' 2>/dev/null | sort -rV | head -1 || true)"
-  if [ -n "${HS_UPDATER_TARBALL_URL:-}" ]; then
-    run_step "Installation du couple updater (${HS_UPDATER_TARBALL_URL})" install_pair_tarball "$HS_UPDATER_TARBALL_URL" && pair_ok=true
-  elif [ -n "$LOCAL_TARBALL" ]; then
-    run_step "Installation du couple updater (${LOCAL_TARBALL##*/})" install_pair_tarball "$LOCAL_TARBALL" && pair_ok=true
-  else
-    UPDATER_LATEST_URL="$("${CURL[@]}" --max-time 20 https://api.github.com/repos/Harkhenon/homeserver-updater/releases/latest 2>/dev/null \
-      | grep -o '"browser_download_url": *"[^"]*homeserver-updater-[^"]*\.tar\.gz"' \
-      | head -1 | grep -o 'https[^"]*' || true)"
-    if [ -n "$UPDATER_LATEST_URL" ]; then
-      run_step "Installation du couple updater (dernière release)" install_pair_tarball "$UPDATER_LATEST_URL" && pair_ok=true
-    fi
-  fi
-  if ! $pair_ok && [ -f "$SCRIPT_DIR/updater/make-release.sh" ]; then
-    info "assemblage du couple updater depuis les sources locales (updater/)"
-    PAIR_BUILD="$(mktemp -d)"
-    cp -r "$SCRIPT_DIR/updater/." "$PAIR_BUILD/"
-    find "$PAIR_BUILD" -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
-    if run_step "Assemblage du couple updater" bash "$PAIR_BUILD/make-release.sh" bootstrap 0.5.0 \
-       && run_step "Installation du couple updater (sources locales)" install_pair_tarball "$PAIR_BUILD/dist/homeserver-updater-bootstrap.tar.gz"; then
-      pair_ok=true
-    fi
+  [ -f "$SCRIPT_DIR/updater/make-release.sh" ] && [ -n "$LOCAL_PAIR_VERSION" ] || fail "Sources du couple updater absentes ($SCRIPT_DIR/updater)."
+  PAIR_BUILD="$(mktemp -d)"
+  cp -r "$SCRIPT_DIR/updater/." "$PAIR_BUILD/"
+  find "$PAIR_BUILD" -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+  if ! { run_step "Assemblage du couple updater $LOCAL_PAIR_VERSION" bash "$PAIR_BUILD/make-release.sh" "$LOCAL_PAIR_VERSION" \
+       && run_step "Installation du couple updater $LOCAL_PAIR_VERSION${INSTALLED_PAIR_VERSION:+ (remplace $INSTALLED_PAIR_VERSION)}" \
+            install_pair_tarball "$PAIR_BUILD/dist/homeserver-updater-$LOCAL_PAIR_VERSION.tar.gz"; }; then
     rm -rf "$PAIR_BUILD"
+    fail "Installation du couple updater impossible."
   fi
-  $pair_ok || fail "Couple updater introuvable (release GitHub injoignable, pas de updater/dist/ local ni de sources updater/)."
+  rm -rf "$PAIR_BUILD"
 fi
-cat > /etc/systemd/system/hs-updater-check.service <<UNIT
-[Unit]
-Description=Homeserver updater - check périodique
-After=network-online.target
-Wants=network-online.target
-[Service]
-Type=oneshot
-ExecStart=$PAIR_DIR/updater-core.sh run check
-UNIT
-cat > /etc/systemd/system/hs-updater-check.timer <<'UNIT'
-[Unit]
-Description=Homeserver updater - check toutes les 6h
-[Timer]
-OnCalendar=*-*-* 00/6:00:00
-RandomizedDelaySec=15min
-Persistent=true
-[Install]
-WantedBy=timers.target
-UNIT
-cat > /etc/systemd/system/hs-updater-apply.service <<UNIT
-[Unit]
-Description=Homeserver updater - application d'une mise à jour
-After=network-online.target hs-helper.service
-Wants=network-online.target
-[Service]
-Type=oneshot
-ExecStart=$PAIR_DIR/updater-core.sh run apply
-TimeoutStartSec=900
-UNIT
-systemctl daemon-reload
-systemctl enable hs-updater-check.timer >/dev/null 2>&1
-systemctl restart hs-updater-check.timer
-ok "Updater installé ($PAIR_DIR, timer 6h)"
 
-# --- 3. Node.js (nvm, en tant que hs-*) -------------------------------------------------
-# Toujours le Node de nvm sous $HS_HOME : c'est celui qu'attendent le helper et l'updater.
-nvm_default_node() { as_hs '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which default 2>/dev/null' 2>/dev/null | tail -1 || true; }
-node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
-
-HS_NODE_BIN="$(nvm_default_node)"
-if [ -n "$HS_NODE_BIN" ] && [ -x "$HS_NODE_BIN" ] && [ "$(node_major "$HS_NODE_BIN")" -ge "$NODE_MAJOR_MIN" ]; then
-  ok "Node.js $("$HS_NODE_BIN" --version) déjà présent pour ${HS_USER}"
-else
-  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    run_step "Installation de nvm ${NVM_VERSION} pour ${HS_USER}" \
-      retry as_hs "curl -fsSL --retry 3 https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh | PROFILE=/dev/null bash" \
-      || fail "Installation de nvm impossible."
-  fi
-  run_step "Installation de Node.js ${NODE_TARGET} (LTS) via nvm" \
-    retry as_hs '. "$NVM_DIR/nvm.sh" && nvm install '"$NODE_TARGET"' && nvm alias default '"$NODE_TARGET" \
-    || fail "Installation de Node.js ${NODE_TARGET} impossible."
-  HS_NODE_BIN="$(nvm_default_node)"
-fi
-[ -n "$HS_NODE_BIN" ] && [ -x "$HS_NODE_BIN" ] || fail "Binaire node introuvable après installation via nvm."
-[ "$(node_major "$HS_NODE_BIN")" -ge "$NODE_MAJOR_MIN" ] || fail "Node $("$HS_NODE_BIN" --version) insuffisant (>= $NODE_MAJOR_MIN requis)."
-HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
-HS_NPM_BIN="$HS_NODE_BIN_DIR/npm"
-[ -x "$HS_NPM_BIN" ] || fail "npm introuvable à côté de $HS_NODE_BIN."
-
-# SELinux (Fedora/RHEL) : systemd refuse d'exécuter un binaire var_lib_t (status=203/EXEC).
-# Node de nvm étiqueté bin_t de façon persistante ; Apache autorisé à proxifier vers le panel
-# et les apps Node (127.0.0.1:<port>).
+# --- 3. Runtime Node, layout root, unités systemd (scripts/layout.sh) ---------------------
+# SELinux : outils pour l'étiquetage persistant du runtime Node ; Apache autorisé à
+# proxifier vers le panel et les apps Node (127.0.0.1:<port>).
 if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
   command -v semanage >/dev/null 2>&1 \
     || run_step "Installation des outils SELinux (semanage)" pkg_install policycoreutils-python-utils \
     || warn "semanage indisponible — étiquetage SELinux non persistant (chcon)"
-  NODE_FCONTEXT="$HS_HOME/\.nvm/versions/node(/.*)?/bin(/.*)?"
-  if command -v semanage >/dev/null 2>&1; then
-    semanage fcontext -l -C 2>/dev/null | grep -qF "$NODE_FCONTEXT" \
-      || run_step "SELinux : contexte bin_t pour Node.js" semanage fcontext -a -t bin_t "$NODE_FCONTEXT"
-    restorecon -R "$NVM_DIR/versions/node"
-  else
-    chcon -R -t bin_t "$NVM_DIR"/versions/node/*/bin
-  fi
   if command -v setsebool >/dev/null 2>&1 && [ "$(getsebool httpd_can_network_connect 2>/dev/null | awk '{print $3}')" != on ]; then
     run_step "SELinux : httpd_can_network_connect (reverse-proxy)" setsebool -P httpd_can_network_connect 1 || warn "booléen SELinux httpd_can_network_connect non activé"
   fi
-  ok "SELinux configuré pour Homeserver"
 fi
+run_step "Runtime Node.js, droits et unités systemd (layout root)" "${LAYOUT[@]}" ensure \
+  || fail "Préparation du layout impossible (voir $LOG_FILE)."
+[ -x "$HS_NODE_BIN" ] || fail "Binaire node introuvable ($HS_NODE_BIN)."
+ok "Node.js $("$HS_NODE_BIN" --version) ($OPT_DIR/node, root) — releases dans $RELEASES_DIR"
+systemctl enable hs-updater-check.timer >/dev/null 2>&1
+systemctl restart hs-updater-check.timer
+ok "Updater installé ($PAIR_DIR, timer 6h)"
 
-# --- 4. Build de la release (à côté de l'actuelle, en tant que hs-*) --------------------
+# --- 4. Build de la release (utilisateur homeserver-build), installée en lecture seule --
 PANEL_VERSION="$("$HS_NODE_BIN" -p "require('$SCRIPT_DIR/package.json').version" 2>/dev/null || true)"
 [[ "$PANEL_VERSION" =~ ^[0-9][0-9A-Za-z.-]{0,31}$ ]] || fail "Version illisible dans $SCRIPT_DIR/package.json."
 RELEASE_DIR="$RELEASES_DIR/$PANEL_VERSION"
-STAGE_DIR="$RELEASES_DIR/.staging-$PANEL_VERSION"
-echo -e "${BOLD}→${RESET} Construction de la release ${PANEL_VERSION}"
+run_step "Construction de la release ${PANEL_VERSION} (npm ci + builds, utilisateur homeserver-build)" \
+  "${LAYOUT[@]}" build "$SCRIPT_DIR" "$PANEL_VERSION" || fail "Build de la release échoué (voir $LOG_FILE)."
 
-run_step "Copie des sources" bash -c "
-  set -e
-  rm -rf '$STAGE_DIR'
-  mkdir -p '$STAGE_DIR'
-  tar -C '$SCRIPT_DIR' \
-    --exclude='./.git' --exclude='./.env' --exclude='./.claude' \
-    --exclude='./node_modules' --exclude='./front/node_modules' \
-    --exclude='./server/dist' --exclude='./front/dist' \
-    --exclude='./dist' --exclude='./updater/dist' \
-    -cf - . | tar -C '$STAGE_DIR' -xf -
-  # Sources préparées sous Windows : fins de ligne CRLF fatales aux scripts bash
-  find '$STAGE_DIR' -type f \\( -name '*.sh' -o -name '*.mjs' \\) -exec sed -i 's/\r\$//' {} +
-  echo '$PANEL_VERSION' > '$STAGE_DIR/VERSION'
-  chown -R '$HS_USER:$HS_USER' '$STAGE_DIR'
-"
-
-NPM_CI="'$HS_NPM_BIN' ci --no-audit --no-fund --loglevel=error"
-run_step "Dépendances du back (npm ci)" retry as_hs "cd '$STAGE_DIR' && $NPM_CI" || fail "npm ci (back) a échoué."
-run_step "Build du back (server/dist, helper inclus)" as_hs "cd '$STAGE_DIR' && '$HS_NPM_BIN' run build" || fail "Build du back échoué."
-test -f "$STAGE_DIR/server/dist/helper/index.js" || fail "server/dist/helper/index.js introuvable après build."
-test -f "$STAGE_DIR/server/dist/server/src/index.js" || fail "server/dist/server/src/index.js introuvable après build."
-run_step "Dépendances du front (npm ci)" retry as_hs "cd '$STAGE_DIR/front' && $NPM_CI" || fail "npm ci (front) a échoué."
-run_step "Build du front" as_hs "cd '$STAGE_DIR/front' && NODE_OPTIONS=--max-old-space-size=1536 '$HS_NPM_BIN' run build" || fail "Build du front échoué."
-test -f "$STAGE_DIR/front/dist/index.html" || fail "front/dist/index.html introuvable après build."
-# Le front n'a besoin que de dist/ à l'exécution
-rm -rf "$STAGE_DIR/front/node_modules"
-
-# Bascule : l'ancienne release du même numéro n'est supprimée qu'une fois la nouvelle en place.
 PREVIOUS_VERSION="$(cat "$INSTALL_DIR/current/VERSION" 2>/dev/null || true)"
-if [ -d "$RELEASE_DIR" ]; then
-  rm -rf "$RELEASE_DIR.old"
-  mv "$RELEASE_DIR" "$RELEASE_DIR.old"
-fi
-mv "$STAGE_DIR" "$RELEASE_DIR"
-rm -rf "$RELEASE_DIR.old"
-
-mkdir -p "$INSTALL_DIR"
-ln -sfn "$RELEASE_DIR" "$INSTALL_DIR/current"
+"${LAYOUT[@]}" switch "$PANEL_VERSION"
 # Ancienne installation (sources + node_modules directement dans $INSTALL_DIR) : ménage.
 # Seuls .env et le lien current y vivent désormais.
 case "$(readlink -f "$SCRIPT_DIR")/" in
   "$(readlink -f "$INSTALL_DIR")/"*) warn "install.sh lancé depuis $INSTALL_DIR — ménage de l'ancien layout ignoré" ;;
   *) find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name .env ! -name current -exec rm -rf {} + ;;
 esac
-chown "$HS_USER:$HS_USER" "$INSTALL_DIR"
-chown -h "$HS_USER:$HS_USER" "$INSTALL_DIR/current"
-chmod 750 "$INSTALL_DIR"
 
-# installed.json : on conserve l'historique d'une installation précédente
-"$HS_NODE_BIN" - "$RELEASES_DIR/installed.json" "$PANEL_VERSION" "$PREVIOUS_VERSION" <<'NODEEOF'
+# installed.json (root) : on conserve l'historique d'une installation précédente
+"$HS_NODE_BIN" - "$RELEASES_DIR/installed.json" "$PANEL_VERSION" "$PREVIOUS_VERSION" "$RELEASES_DIR" <<'NODEEOF'
 const fs = require('fs');
-const [file, cur, prev] = process.argv.slice(2);
+const [file, cur, prev, dir] = process.argv.slice(2);
 let s = {};
 try { s = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
 // Anciennes installations sans fichier VERSION : la version courante vient de l'état
 const before = prev || s.current || '';
-s.previous = before && before !== cur ? before : (s.previous ?? null);
+s.previous = before && before !== cur && fs.existsSync(`${dir}/${before}`) ? before : (s.previous && s.previous !== cur && fs.existsSync(`${dir}/${s.previous}`) ? s.previous : null);
 s.current = cur;
 s.updatedAt = new Date().toISOString();
 s.history = [...(s.history ?? []).slice(-19), { version: cur, at: s.updatedAt, status: 'installed' }];
-fs.writeFileSync(file + '.tmp', JSON.stringify(s, null, 2));
+fs.writeFileSync(file + '.tmp', JSON.stringify(s, null, 2), { mode: 0o644 });
 fs.renameSync(file + '.tmp', file);
 NODEEOF
-chown "$HS_USER:$HS_USER" "$RELEASES_DIR/installed.json"
-ok "Release ${PANEL_VERSION} en place (current -> $RELEASE_DIR)"
+ok "Release ${PANEL_VERSION} en place (current -> $RELEASE_DIR, root, lecture seule)"
 
 # --- 5. Services systemd ----------------------------------------------------------------
-cat > /etc/systemd/system/hs-helper.service <<UNIT
-[Unit]
-Description=Homeserver helper privilégié
-After=network.target
-StartLimitIntervalSec=120
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=root
-Group=$HS_GROUP
-Environment=HS_INSTALL_DIR=$INSTALL_DIR
-ExecStart=$HS_NODE_BIN $INSTALL_DIR/current/server/dist/helper/index.js
-Restart=on-failure
-RestartSec=3
-RuntimeDirectory=homeserver
-RuntimeDirectoryMode=0770
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-cat > /etc/systemd/system/homeserver.service <<UNIT
-[Unit]
-Description=Homeserver panel
-After=network.target hs-helper.service
-Requires=hs-helper.service
-StartLimitIntervalSec=120
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=$HS_USER
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$HS_NODE_BIN $INSTALL_DIR/current/server/dist/server/src/index.js
-Restart=on-failure
-RestartSec=3
-EnvironmentFile=$INSTALL_DIR/.env
-NoNewPrivileges=true
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
 systemctl enable hs-helper >/dev/null 2>&1
 systemctl reset-failed hs-helper homeserver >/dev/null 2>&1 || true
 run_step "(Re)démarrage du service hs-helper" systemctl restart hs-helper
@@ -610,7 +466,7 @@ echo
 cd "$INSTALL_DIR"
 set +e
 runuser -u "$HS_USER" -- env -i \
-  PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  PATH="$OPT_DIR/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   HOME="$HS_HOME" LANG=C.UTF-8 TERM="${TERM:-dumb}" \
   HS_USER="$HS_USER" HS_HOME="$HS_HOME" HS_INSTALL_DIR="$INSTALL_DIR" \
   HS_NODE_BIN="$HS_NODE_BIN" HS_HELPER_SOCKET=/run/homeserver/helper.sock \
@@ -630,9 +486,10 @@ set -e
 
 # --- 7. Pare-feu + vérification finale --------------------------------------------------
 env_get() { sed -n "s/^$1=//p" "$INSTALL_DIR/.env" 2>/dev/null | tail -1; }
-PANEL_PORT="$(env_get HS_PORT)"; PANEL_PORT="${PANEL_PORT:-3000}"
-PANEL_HOST="$(env_get HS_HOST)"
-PANEL_DOMAIN="$(env_get HS_PANEL_DOMAIN)"
+# .env modifiable par hs-* : valeurs filtrées avant usage par root
+PANEL_PORT="$(env_get HS_PORT | tr -dc 0-9)"; PANEL_PORT="${PANEL_PORT:-3000}"
+PANEL_HOST="$(env_get HS_HOST | tr -dc 0-9.)"
+PANEL_DOMAIN="$(env_get HS_PANEL_DOMAIN | tr -dc a-z0-9.-)"
 
 if [ "${HS_SKIP_FIREWALL:-0}" != 1 ]; then
   open_ports=()
@@ -669,6 +526,6 @@ elif [ "$PANEL_HOST" = "0.0.0.0" ]; then
 else
   echo -e "  ${BOLD}Panel${RESET}      : http://127.0.0.1:${PANEL_PORT} (écoute locale — derrière un reverse-proxy TLS)"
 fi
-echo -e "  ${DIM}Identifiants : affichés ci-dessus, aussi dans $INSTALL_DIR/.env (root)${RESET}"
+echo -e "  ${DIM}Identifiants : affichés ci-dessus (mot de passe hashé dans $HS_HOME/auth.json, jamais en clair dans .env)${RESET}"
 echo -e "  ${DIM}Journal      : $LOG_FILE — logs services : journalctl -u homeserver -u hs-helper -f${RESET}"
 echo

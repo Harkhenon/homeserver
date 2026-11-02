@@ -353,9 +353,8 @@ const definition: ModuleDefinition = {
         // C'est la version du symlink current — celle vue par les Réglages — donc
         // cohérente partout (header, Supervision, Réglages), même juste après une
         // bascule de release.
-        const releasesDir = process.env.HS_DATA_DIR
-          ? `${process.env.HS_DATA_DIR}/releases`
-          : '/var/lib/homeserver/releases';
+        // Releases root, en lecture seule (scripts/layout.sh)
+        const releasesDir = process.env.HS_RELEASES_DIR ?? '/opt/homeserver/releases';
         try {
           const installed = JSON.parse(readFileSync(`${releasesDir}/installed.json`, 'utf8')) as {
             current?: string | null;
