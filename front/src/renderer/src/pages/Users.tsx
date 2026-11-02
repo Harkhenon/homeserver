@@ -71,11 +71,11 @@ export function UsersPage() {
             px="md"
             py="sm"
             style={{
-              border: '1px solid var(--mantine-color-dark-4)',
+              border: '1px solid var(--hs-border)',
               borderRadius: 'var(--mantine-radius-lg)',
-              background: 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
+              background: 'var(--hs-surface)',
+              backdropFilter: 'var(--hs-surface-blur)',
+              WebkitBackdropFilter: 'var(--hs-surface-blur)',
               cursor: 'pointer',
               transition: 'border-color 150ms ease, box-shadow 150ms ease',
             }}
@@ -276,7 +276,7 @@ function UserDetail({ user, onClose, onDeleted }: { user: SftpUser; onClose: () 
             {userNodeApps.length > 0 ? (
               <Stack gap="xs">
                 {userNodeApps.map((a) => (
-                  <Group key={a.name} justify="space-between" px="md" py="xs" style={{ border: '1px solid var(--mantine-color-dark-4)', borderRadius: 'var(--mantine-radius-md)' }}>
+                  <Group key={a.name} justify="space-between" px="md" py="xs" style={{ border: '1px solid var(--hs-border)', borderRadius: 'var(--mantine-radius-md)' }}>
                     <Group gap="sm">
                       <ThemeIcon variant="light" size={28} radius="sm">
                         <IconBrandNodejs size={15} stroke={1.5} />

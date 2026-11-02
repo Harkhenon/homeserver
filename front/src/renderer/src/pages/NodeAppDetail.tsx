@@ -197,10 +197,10 @@ export function NodeAppDetailPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="console" pt="xs">
-          <ScrollArea.Autosize mah={520} type="always" offsetScrollbars p="sm" viewportRef={viewportRef} style={{ background: 'var(--mantine-color-dark-8)', borderRadius: 'var(--mantine-radius-lg)' }}>
+          <ScrollArea.Autosize mah={520} type="always" offsetScrollbars p="sm" viewportRef={viewportRef} style={{ background: 'var(--hs-surface-sunken)', borderRadius: 'var(--mantine-radius-lg)' }}>
             <Stack gap={0}>
               {(app?.log ?? []).map((line, i) => (
-                <Text key={i} fz="xs" ff="monospace" c={line.includes('error') || line.includes('Error') ? 'red.4' : 'dark-2'} style={{ whiteSpace: 'pre-wrap' }}>
+                <Text key={i} fz="xs" ff="monospace" c={line.includes('error') || line.includes('Error') ? 'red.4' : 'var(--hs-text-muted)'} style={{ whiteSpace: 'pre-wrap' }}>
                   {line || ' '}
                 </Text>
               ))}
@@ -214,11 +214,11 @@ export function NodeAppDetailPage() {
           {app ? (
             <Stack gap="md" maw={560}>
               <Group grow>
-                <Stack gap={4} p="md" style={{ background: 'var(--mantine-color-dark-7)', borderRadius: 'var(--mantine-radius-lg)' }}>
+                <Stack gap={4} p="md" style={{ background: 'var(--hs-surface-raised)', borderRadius: 'var(--mantine-radius-lg)' }}>
                   <Text size="xs" c="dimmed">CPU</Text>
                   <Text fz="h3" fw={700}>{app.cpuPercent !== null ? `${app.cpuPercent.toFixed(1)} %` : '—'}</Text>
                 </Stack>
-                <Stack gap={4} p="md" style={{ background: 'var(--mantine-color-dark-7)', borderRadius: 'var(--mantine-radius-lg)' }}>
+                <Stack gap={4} p="md" style={{ background: 'var(--hs-surface-raised)', borderRadius: 'var(--mantine-radius-lg)' }}>
                   <Text size="xs" c="dimmed">Mémoire</Text>
                   <Text fz="h3" fw={700}>{app.memPercent !== null ? `${app.memPercent.toFixed(1)} %` : '—'}</Text>
                   <Text size="xs" c="dimmed">{formatBytes(app.memBytes)}</Text>

@@ -1,4 +1,15 @@
+// Fond de page affiché avant le montage de React : doit correspondre à --hs-page-bg
+// de chaque thème. [data-hs-theme] et [data-mantine-color-scheme] sont posés par
+// public/theme-init.js dès le chargement, puis maintenus par AppearanceProvider.
 body {
   margin: 0;
   background-color: #0f1115;
+}
+
+html[data-hs-theme='modern'] body {
+  background-color: #0b0c0f;
+}
+
+html[data-hs-theme='modern'][data-mantine-color-scheme='light'] body {
+  background-color: #f4f5f7;
 }

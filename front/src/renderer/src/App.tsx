@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { AppLayout } from './layout/AppLayout';
 import { LoginPage } from './pages/Login';
@@ -20,8 +19,7 @@ import { BackupsPage } from './pages/Backups';
 import { FirewallPage } from './pages/Firewall';
 import { ServerPage } from './pages/Server';
 import { SettingsPage } from './pages/Settings';
-import type { AccentColor } from './theme/colors';
-import { buildTheme } from './theme/theme';
+import { AppearanceProvider } from './theme/AppearanceProvider';
 import { getToken } from './api/client';
 
 function LoginRoute() {
@@ -29,9 +27,7 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-function AuthGate({ accent, onAccentChange, username, avatarSeed, onAvatarChange }: {
-  accent: AccentColor;
-  onAccentChange: (color: AccentColor) => void;
+function AuthGate({ username, avatarSeed, onAvatarChange }: {
   username: string;
   avatarSeed: string;
   onAvatarChange: (seed: string) => void;
@@ -39,8 +35,6 @@ function AuthGate({ accent, onAccentChange, username, avatarSeed, onAvatarChange
   if (getToken() === null) return <Navigate to="/login" replace />;
   return (
     <AppLayout
-      accent={accent}
-      onAccentChange={onAccentChange}
       username={username}
       avatarSeed={avatarSeed}
       onAvatarChange={onAvatarChange}
@@ -49,23 +43,16 @@ function AuthGate({ accent, onAccentChange, username, avatarSeed, onAvatarChange
 }
 
 function Shell() {
-  const [accent, setAccentState] = useState<AccentColor>(
-    (localStorage.getItem('hs_accent') as AccentColor) ?? 'green',
-  );
   const [avatarSeed, setAvatarSeed] = useState<string>(
     localStorage.getItem('hs_avatar') ?? '',
   );
-  const changeAccent = (color: AccentColor) => {
-    setAccentState(color);
-    localStorage.setItem('hs_accent', color);
-  };
   const changeAvatar = (seed: string) => {
     setAvatarSeed(seed);
     localStorage.setItem('hs_avatar', seed);
   };
 
   return (
-    <MantineProvider theme={buildTheme(accent)} forceColorScheme="dark">
+    <AppearanceProvider>
       <Notifications />
       <BrowserRouter>
         <Routes>
@@ -73,8 +60,6 @@ function Shell() {
           <Route
             element={
               <AuthGate
-                accent={accent}
-                onAccentChange={changeAccent}
                 username={localStorage.getItem('hs_username') ?? 'admin'}
                 avatarSeed={avatarSeed}
                 onAvatarChange={changeAvatar}
@@ -96,11 +81,11 @@ function Shell() {
             <Route path="/backups" element={<BackupsPage />} />
             <Route path="/firewall" element={<FirewallPage />} />
             <Route path="/server" element={<ServerPage />} />
-            <Route path="/settings" element={<SettingsPage accent={accent} onAccentChange={changeAccent} />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
-    </MantineProvider>
+    </AppearanceProvider>
   );
 }
 

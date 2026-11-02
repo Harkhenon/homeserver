@@ -15,9 +15,9 @@ export function WelcomeCard({ title, description, icon: IconCmp, stats }: Welcom
       withBorder
       p="lg"
       style={{
-        background: `linear-gradient(135deg, color-mix(in srgb, var(--mantine-primary-color-filled) 18%, color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)) 0%, color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent) 65%)`,
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        background: 'var(--hs-welcome-bg)',
+        backdropFilter: 'var(--hs-surface-blur)',
+        WebkitBackdropFilter: 'var(--hs-surface-blur)',
       }}
     >
       <Group wrap="nowrap" align="flex-start">

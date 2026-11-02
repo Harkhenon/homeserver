@@ -76,6 +76,7 @@ export function SideNav({ collapsed }: SideNavProps) {
           <Box key={section.label} mb='xs'>
             <MantineNavLink
               onClick={() => toggleSection(section.label)}
+              data-nav-section
               label={section.label}
               leftSection={<section.icon size={18} stroke={1.5} />}
               active={isActive}
@@ -86,7 +87,7 @@ export function SideNav({ collapsed }: SideNavProps) {
                     transform: isOpen ? 'rotate(90deg)' : 'none',
                     transition: 'transform 150ms ease',
                     fontSize: 10,
-                    color: 'var(--mantine-color-dark-2)',
+                    color: 'var(--hs-nav-section)',
                   }}>
                   ▸
                 </Box>
@@ -98,8 +99,8 @@ export function SideNav({ collapsed }: SideNavProps) {
                   letterSpacing: '0.05em',
                   fontSize: 'var(--mantine-font-size-xs)',
                   color: isActive
-                    ? 'var(--mantine-primary-color-filled)'
-                    : 'var(--mantine-color-dark-2)',
+                    ? 'var(--hs-nav-section-active)'
+                    : 'var(--hs-nav-section)',
                 },
               }}
             />

@@ -1,4 +1,7 @@
-import { createTheme, type MantineColorsTuple } from '@mantine/core';
+import { createTheme, type CSSVariablesResolver, type MantineColorsTuple } from '@mantine/core';
+import type { PanelTheme } from '../types';
+
+// Thème « Classique » : style historique du panel (sombre, surfaces vitrées).
 
 // Palette dark ordonnée clair -> sombre (convention Mantine: dark[0] = texte principal en dark)
 const darkColors: MantineColorsTuple = [
@@ -27,7 +30,7 @@ const freshGray: MantineColorsTuple = [
   '#4a5265',
 ];
 
-export function buildTheme(accent: string) {
+function buildClassicTheme(accent: string) {
   return createTheme({
     primaryColor: accent,
     primaryShade: 5,
@@ -154,3 +157,35 @@ export function buildTheme(accent: string) {
     },
   });
 }
+
+// Variables sémantiques utilisées par les pages, calquées sur les valeurs historiques.
+const classicVariables: CSSVariablesResolver = () => ({
+  variables: {
+    '--hs-page-bg': 'var(--mantine-color-dark-9)',
+    '--hs-surface': 'color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)',
+    '--hs-surface-blur': 'blur(12px)',
+    '--hs-surface-raised': 'var(--mantine-color-dark-7)',
+    '--hs-surface-sunken': 'var(--mantine-color-dark-8)',
+    '--hs-border': 'var(--mantine-color-dark-4)',
+    '--hs-text-strong': 'var(--mantine-color-dark-0)',
+    '--hs-text-muted': 'var(--mantine-color-dark-2)',
+    '--hs-nav-section': 'var(--mantine-color-dark-2)',
+    '--hs-nav-section-active': 'var(--mantine-primary-color-filled)',
+    '--hs-welcome-bg':
+      'linear-gradient(135deg, color-mix(in srgb, var(--mantine-primary-color-filled) 18%, color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent)) 0%, color-mix(in srgb, var(--mantine-color-dark-7) 72%, transparent) 65%)',
+  },
+  light: {},
+  dark: {},
+});
+
+export const classicTheme: PanelTheme = {
+  id: 'classic',
+  label: 'Classique',
+  description: 'Le style historique : sombre, surfaces vitrées et dégradé d\'accent.',
+  colorSchemes: ['dark'],
+  build: buildClassicTheme,
+  cssVariablesResolver: classicVariables,
+  preview: {
+    dark: { page: darkColors[9], nav: darkColors[8], card: darkColors[7], border: darkColors[4], text: darkColors[0] },
+  },
+};

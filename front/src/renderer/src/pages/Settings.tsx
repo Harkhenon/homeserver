@@ -4,7 +4,6 @@ import {
   Tabs,
   Select,
   TextInput,
-  Text,
   Button,
   Divider,
   Switch,
@@ -12,11 +11,11 @@ import {
 import { notifications } from '@mantine/notifications';
 import { IconSettings } from '@tabler/icons-react';
 import { PageHeader } from '../components';
-import { ACCENT_COLORS, type AccentColor } from '../theme/colors';
 import { VersionsPanel } from '../components/settings/VersionsPanel';
 import { UpdatePanel } from '../components/settings/UpdatePanel';
 import { SecurityPanel } from '../components/settings/SecurityPanel';
 import { AccessPanel } from '../components/settings/AccessPanel';
+import { AppearancePanel } from '../components/settings/AppearancePanel';
 
 const LANGUAGES = [
   { value: 'fr', label: 'Français' },
@@ -25,12 +24,7 @@ const LANGUAGES = [
   { value: 'de', label: 'Deutsch' },
 ] as const;
 
-interface SettingsPageProps {
-  accent: AccentColor;
-  onAccentChange: (color: AccentColor) => void;
-}
-
-export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
+export function SettingsPage() {
   const [language, setLanguage] = useState('fr');
   const [panelName, setPanelName] = useState('Homeserver');
   const [autoUpdates, setAutoUpdates] = useState(true);
@@ -95,18 +89,7 @@ export function SettingsPage({ accent, onAccentChange }: SettingsPageProps) {
         </Tabs.Panel>
 
         <Tabs.Panel value="appearance" pt="md">
-          <Stack>
-            <Select
-              label="Couleur d'accentuation du panel"
-              placeholder="Choisir une couleur"
-              data={ACCENT_COLORS.map((c) => ({ value: c.value, label: c.label }))}
-              value={accent}
-              onChange={(v) => v && onAccentChange(v as AccentColor)}
-            />
-            <Text size="xs" c="dimmed">
-              La couleur s'applique instantanément et est mémorisée.
-            </Text>
-          </Stack>
+          <AppearancePanel />
         </Tabs.Panel>
         <Tabs.Panel value="update" pt="md">
           <UpdatePanel />

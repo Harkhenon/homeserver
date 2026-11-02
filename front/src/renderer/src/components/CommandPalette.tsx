@@ -278,7 +278,7 @@ export function CommandPalette({ opened, onClose }: CommandPaletteProps) {
           </Group>
         }
         styles={{
-          root: { borderBottom: '1px solid var(--mantine-color-dark-4)' },
+          root: { borderBottom: '1px solid var(--hs-border)' },
           input: { backgroundColor: 'transparent' },
         }}
       />
