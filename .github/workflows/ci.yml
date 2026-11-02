@@ -33,3 +33,26 @@ jobs:
 
       - name: Audit dépendances (prod, vulnérabilités highs bloquantes)
         run: npm audit --omit=dev --audit-level=high || echo "⚠ vulnérabilités détectées — voir le log"
+
+  signing-key:
+    # La clé privée des releases (secret) doit correspondre à keys/release-signing.pub.pem,
+    # sinon l'updater refuserait toutes les releases. Les PR de forks n'ont pas accès aux secrets.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Vérifier la clé de signature (HS_RELEASE_SIGNING_KEY)
+        env:
+          HS_RELEASE_SIGNING_KEY: ${{ secrets.HS_RELEASE_SIGNING_KEY }}
+        run: |
+          [ -n "$HS_RELEASE_SIGNING_KEY" ] || { echo "✗ secret HS_RELEASE_SIGNING_KEY absent" >&2; exit 1; }
+          key="$(mktemp)"; trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$HS_RELEASE_SIGNING_KEY" > "$key"
+          openssl pkey -in "$key" -noout 2>/dev/null || { echo "✗ le secret n'est pas une clé privée PEM lisible" >&2; exit 1; }
+          echo "homeserver $GITHUB_SHA" > probe.txt
+          openssl pkeyutl -sign -inkey "$key" -rawin -in probe.txt -out probe.sig
+          openssl pkeyutl -verify -pubin -inkey keys/release-signing.pub.pem -rawin -in probe.txt -sigfile probe.sig >/dev/null \
+            || { echo "✗ le secret ne correspond pas à keys/release-signing.pub.pem" >&2; exit 1; }
+          echo "✓ clé de signature valide et cohérente avec keys/release-signing.pub.pem"
