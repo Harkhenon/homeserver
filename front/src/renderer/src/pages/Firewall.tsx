@@ -1,12 +1,30 @@
 import { useState } from 'react';
-import { Group, Badge, Button, Modal, NumberInput, Select, Stack, Switch, Table, Text } from '@mantine/core';
+import { Group, Button, Modal, NumberInput, Select, Stack, Switch, Table, Tabs, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
-import { IconFlame } from '@tabler/icons-react';
+import { IconFlame, IconShieldLock, IconListDetails } from '@tabler/icons-react';
+import { Fail2banPanel } from '../components/Fail2banPanel';
 import type { FirewallStatus } from '../types';
 
 export function FirewallPage() {
+  const [tab, setTab] = useState<string | null>('rules');
+  return (
+    <div>
+      <PageHeader icon={IconFlame} title="Pare-feu" description="Ports ouverts et protection contre la force brute (fail2ban)" />
+      <Tabs value={tab} onChange={setTab} keepMounted={false}>
+        <Tabs.List mb="md">
+          <Tabs.Tab value="rules" leftSection={<IconListDetails size={16} />}>Règles de ports</Tabs.Tab>
+          <Tabs.Tab value="fail2ban" leftSection={<IconShieldLock size={16} />}>Fail2ban</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="rules"><FirewallRules /></Tabs.Panel>
+        <Tabs.Panel value="fail2ban"><Fail2banPanel /></Tabs.Panel>
+      </Tabs>
+    </div>
+  );
+}
+
+function FirewallRules() {
   const status = useModuleQuery<FirewallStatus>('firewall', 'status');
   const action = useModuleAction('firewall');
   const [addOpen, setAddOpen] = useState(false);
@@ -38,20 +56,17 @@ export function FirewallPage() {
 
   return (
     <div>
-      <PageHeader
-icon={IconFlame}         title="Pare-feu"
-        description={data ? `Backend : ${data.backend}` : undefined}
-        actions={
-          <Group>
-            <Switch
-              label="Actif"
-              checked={data?.active ?? false}
-              onChange={(e) => void toggle(e.currentTarget.checked)}
-            />
-            <Button size="xs" onClick={() => setAddOpen(true)}>Ajouter un port</Button>
-          </Group>
-        }
-      />
+      <Group justify="space-between" mb="sm">
+        <Text size="sm" c="dimmed">{data ? `Backend : ${data.backend}` : null}</Text>
+        <Group>
+          <Switch
+            label="Actif"
+            checked={data?.active ?? false}
+            onChange={(e) => void toggle(e.currentTarget.checked)}
+          />
+          <Button size="xs" onClick={() => setAddOpen(true)}>Ajouter un port</Button>
+        </Group>
+      </Group>
       <Table>
         <Table.Thead>
           <Table.Tr>

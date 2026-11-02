@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 export const CONTRACT_VERSION = 1;
 
 export type DistroFamily = 'debian' | 'rhel';
@@ -8,7 +10,8 @@ export type ServiceUnitName =
   | 'apache2' | 'httpd' | 'nginx'
   | 'bind9' | 'named'
   | 'php-fpm' | 'mariadb' | 'mysqld'
-  | 'homeserver' | 'hs-helper';
+  | 'homeserver' | 'hs-helper'
+  | 'fail2ban';
 
 export type PrivilegedRequest =
   | { action: 'echo' }
@@ -76,9 +79,12 @@ export type PrivilegedRequest =
   | { action: 'ssh_hardening_status' }
   | { action: 'ssh_hardening_apply' }
   | { action: 'ssh_hardening_revert' }
-  | { action: 'fail2ban_setup' }
+  | { action: 'fail2ban_setup'; web?: 'apache' | 'nginx' }
   | { action: 'fail2ban_status' }
-  | { action: 'fail2ban_unban'; ip: string }
+  | { action: 'fail2ban_unban'; ip: string; jail?: Fail2banJailName }
+  | { action: 'fail2ban_ban'; ip: string; jail: Fail2banJailName }
+  | { action: 'fail2ban_config_get' }
+  | { action: 'fail2ban_config_set'; config: Fail2banConfig }
   | { action: 'unattended_upgrades_enable' };
 
 export type PrivilegedResponse<T = unknown> =
@@ -163,7 +169,51 @@ export interface SshHardeningApplyResult {
 export interface Fail2banStatusResult {
   installed: boolean;
   active: boolean;
-  jails: Array<{ name: string; currentlyBanned: number; totalBanned: number }>;
+  enabled: boolean;          // activé au démarrage (systemctl is-enabled)
+  jails: Array<{ name: string; currentlyBanned: number; totalBanned: number; bannedIps: string[] }>;
+}
+
+// Jails gérables depuis le panel : filtres livrés avec fail2ban, aucun nom libre.
+export const FAIL2BAN_JAILS = [
+  'sshd', 'recidive',
+  'apache-auth', 'apache-badbots', 'apache-noscript',
+  'nginx-http-auth', 'nginx-botsearch',
+] as const;
+export type Fail2banJailName = typeof FAIL2BAN_JAILS[number];
+
+export const FAIL2BAN_LIMITS = {
+  bantime: { min: 60, max: 31_536_000 },   // 1 min → 1 an (secondes)
+  findtime: { min: 60, max: 604_800 },     // 1 min → 7 jours
+  maxretry: { min: 1, max: 100 },
+  ignoreip: 50,
+} as const;
+
+export interface Fail2banTiming {
+  bantime: number;
+  findtime: number;
+  maxretry: number;
+}
+
+export interface Fail2banJailConfig {
+  name: Fail2banJailName;
+  enabled: boolean;
+  // null = valeur globale
+  bantime: number | null;
+  findtime: number | null;
+  maxretry: number | null;
+}
+
+export interface Fail2banConfig {
+  defaults: Fail2banTiming;
+  ignoreip: string[];        // IP ou CIDR, en plus de 127.0.0.1/8 et ::1 toujours ignorés
+  jails: Fail2banJailConfig[];
+}
+
+export interface Fail2banConfigResult {
+  installed: boolean;
+  config: Fail2banConfig;
+  available: Fail2banJailName[];  // jails dont le journal existe sur cette machine
+  file: string;
 }
 
 export interface ServiceStatusResult {
@@ -205,7 +255,7 @@ function isSafeFsPath(path: string, re: RegExp): boolean {
 }
 const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
-  'homeserver', 'hs-helper',
+  'homeserver', 'hs-helper', 'fail2ban',
 ];
 // Ancrée aux deux bouts sur TOUTES les alternatives (l'ancienne version n'ancrait la fin
 // que sur la seconde : ".../sites-available/a.conf/../../cron.d/x" passait).
@@ -286,6 +336,56 @@ const ZONE_FILE_RE = /^\/etc\/(bind\/zones|named)\/[A-Za-z0-9._-]+\.zone$/;
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
+}
+
+function isFail2banJail(v: unknown): v is Fail2banJailName {
+  return typeof v === 'string' && (FAIL2BAN_JAILS as readonly string[]).includes(v);
+}
+
+/** IP v4/v6 seule (pas de zone %eth0, pas d'espaces). */
+export function isValidIp(v: unknown): v is string {
+  return typeof v === 'string' && v.length <= 45 && /^[0-9a-fA-F:.]+$/.test(v) && isIP(v) !== 0;
+}
+
+/** IP ou réseau CIDR (préfixe borné selon la famille). */
+export function isValidIpOrCidr(v: unknown): v is string {
+  if (typeof v !== 'string') return false;
+  const [ip, prefix, ...rest] = v.split('/');
+  if (rest.length > 0 || !isValidIp(ip)) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (isIP(ip) === 4 ? 32 : 128);
+}
+
+function boundedInt(v: unknown, lim: { min: number; max: number }): number | null {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < lim.min || v > lim.max) return null;
+  return v;
+}
+
+/** Valide une configuration fail2ban complète (aussi utilisé par le helper pour relire son état). */
+export function validateFail2banConfig(raw: unknown): Fail2banConfig | null {
+  if (!isObject(raw) || !isObject(raw.defaults) || !Array.isArray(raw.ignoreip) || !Array.isArray(raw.jails)) return null;
+  const bantime = boundedInt(raw.defaults.bantime, FAIL2BAN_LIMITS.bantime);
+  const findtime = boundedInt(raw.defaults.findtime, FAIL2BAN_LIMITS.findtime);
+  const maxretry = boundedInt(raw.defaults.maxretry, FAIL2BAN_LIMITS.maxretry);
+  if (bantime === null || findtime === null || maxretry === null) return null;
+  if (raw.ignoreip.length > FAIL2BAN_LIMITS.ignoreip || !raw.ignoreip.every(isValidIpOrCidr)) return null;
+  const ignoreip = [...new Set(raw.ignoreip as string[])];
+  const jails: Fail2banJailConfig[] = [];
+  for (const j of raw.jails) {
+    if (!isObject(j) || !isFail2banJail(j.name) || typeof j.enabled !== 'boolean') return null;
+    const name = j.name;
+    if (jails.some((x) => x.name === name)) return null;
+    // null/absent = hérite de la valeur globale ; hors bornes = rejet
+    const opt = (v: unknown, lim: { min: number; max: number }): number | null | undefined =>
+      v === null || v === undefined ? null : boundedInt(v, lim) ?? undefined;
+    const jb = opt(j.bantime, FAIL2BAN_LIMITS.bantime);
+    const jf = opt(j.findtime, FAIL2BAN_LIMITS.findtime);
+    const jm = opt(j.maxretry, FAIL2BAN_LIMITS.maxretry);
+    if (jb === undefined || jf === undefined || jm === undefined) return null;
+    jails.push({ name, enabled: j.enabled, bantime: jb, findtime: jf, maxretry: jm });
+  }
+  return { defaults: { bantime, findtime, maxretry }, ignoreip, jails };
 }
 
 function isServiceUnit(v: unknown): v is ServiceUnitName {
@@ -533,13 +633,24 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'ssh_hardening_revert':
       return { action: 'ssh_hardening_revert' };
     case 'fail2ban_setup':
-      return { action: 'fail2ban_setup' };
+      if (raw.web !== undefined && raw.web !== 'apache' && raw.web !== 'nginx') return null;
+      return raw.web ? { action: 'fail2ban_setup', web: raw.web } : { action: 'fail2ban_setup' };
     case 'fail2ban_status':
       return { action: 'fail2ban_status' };
     case 'fail2ban_unban':
-      if (typeof raw.ip !== 'string' || !/^(\d{1,3}\.){3}\d{1,3}$/.test(raw.ip)) return null;
-      if (raw.ip.split('.').some((n) => Number(n) > 255)) return null;
-      return { action: 'fail2ban_unban', ip: raw.ip };
+      if (!isValidIp(raw.ip)) return null;
+      if (raw.jail !== undefined && !isFail2banJail(raw.jail)) return null;
+      return raw.jail ? { action: 'fail2ban_unban', ip: raw.ip, jail: raw.jail } : { action: 'fail2ban_unban', ip: raw.ip };
+    case 'fail2ban_ban':
+      if (!isValidIp(raw.ip) || !isFail2banJail(raw.jail)) return null;
+      return { action: 'fail2ban_ban', ip: raw.ip, jail: raw.jail };
+    case 'fail2ban_config_get':
+      return { action: 'fail2ban_config_get' };
+    case 'fail2ban_config_set': {
+      const config = validateFail2banConfig(raw.config);
+      if (!config) return null;
+      return { action: 'fail2ban_config_set', config };
+    }
     case 'unattended_upgrades_enable':
       return { action: 'unattended_upgrades_enable' };
     default:

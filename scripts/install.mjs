@@ -316,6 +316,16 @@ async function main() {
     warn(`Service web non démarré (${e.message}) — un autre serveur occupe peut-être le port 80`);
   }
 
+  // Après le serveur web : ses journaux doivent exister pour que la jail web démarre
+  log('Installation et activation de fail2ban (jails sshd + web)...');
+  try {
+    const res = await callHelper({ action: 'fail2ban_setup', web: webServer }, 2_400_000);
+    if (res.active) ok(`fail2ban actif (jails : ${res.jails.join(', ') || 'aucune'})`);
+    else warn('fail2ban installé mais inactif — à vérifier dans Pare-feu → Fail2ban');
+  } catch (e) {
+    warn(`fail2ban non installé (${e.message.split('\n').slice(-3).join(' ')}) — le serveur n'est pas protégé contre le brute-force SSH. Réessaie depuis Pare-feu → Fail2ban`);
+  }
+
   log('Démarrage du panel...');
   await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'enable' });
   await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'restart' });

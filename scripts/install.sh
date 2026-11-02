@@ -161,7 +161,7 @@ if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
   echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${OPT_DIR} (Node + releases), ${HS_HOME} (données), updater, utilisateurs hs-* et homeserver-build${RESET}"
   $PURGE && echo -e "${DIM}  --purge : supprimera aussi ${LOG_DIR} et les groupes homeserver*${RESET}"
-  echo -e "${DIM}  Conservés : paquets système (Apache/Nginx, MariaDB, PHP…), sites dans /var/www, bases de données${RESET}"
+  echo -e "${DIM}  Conservés : paquets système (Apache/Nginx, MariaDB, PHP…), fail2ban et ses jails, sites dans /var/www, bases de données${RESET}"
   if ! $ASSUME_YES; then
     [ -r /dev/tty ] || fail "Pas de terminal pour confirmer — relance avec --yes."
     read -r -p "  Continuer ? [y/N] " confirm </dev/tty
