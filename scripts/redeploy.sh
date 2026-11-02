@@ -30,14 +30,14 @@ for arg in "$@"; do
   esac
   prev="$arg"
 done
+fail() { echo -e "${RED}✗ $1${RESET}"; exit 1; }
+
 [ -z "$FORCE_VERSION" ] || [[ "$FORCE_VERSION" =~ ^(latest|[0-9]+\.[0-9]+(\.[0-9]+)?$) ]] || fail "--force attend 'latest' ou X.Y.Z (reçu: $FORCE_VERSION)"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "${RED}✗ Cette opération requiert root (relance avec sudo).${RESET}"
   exit 1
 fi
-
-fail() { echo -e "${RED}✗ $1${RESET}"; exit 1; }
 
 run_step() {
   local msg="$1"; shift
@@ -77,7 +77,9 @@ INSTALL_DIR=/usr/share/homeserver
 RELEASES_DIR="$HS_HOME/releases"
 STATE_FILE="$RELEASES_DIR/installed.json"
 CURRENT_LINK="$INSTALL_DIR/current"
-PANEL_PORT="${HS_PORT:-3000}"
+# Port réel du panel : le .env fait foi (HS_PORT de l'environnement en secours)
+PANEL_PORT="$(grep -m1 '^HS_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -dc '0-9' || true)"
+PANEL_PORT="${PANEL_PORT:-${HS_PORT:-3000}}"
 HS_USER="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
 
 [ -n "$HS_USER" ] || fail "Aucun utilisateur hs-* trouvé — lance d'abord scripts/install.sh."
@@ -87,18 +89,20 @@ NVM_DIR="$HS_HOME/.nvm"
 export NVM_DIR
 test -s "$NVM_DIR/nvm.sh" || fail "nvm introuvable dans $NVM_DIR — installation incomplète ?"
 
-HS_NODE_BIN="$(sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" \
-  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  bash -c '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which current' 2>/dev/null || true)"
-[ -n "$HS_NODE_BIN" ] || HS_NODE_BIN="$(sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" \
-  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  bash -c '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which default' 2>/dev/null || true)"
-[ -n "$HS_NODE_BIN" ] || fail "Node.js introuvable pour $HS_USER (nvm install ?)."
+# runuser (util-linux) plutôt que sudo : toujours présent, même sur une Debian minimale.
+nvm_which() {
+  runuser -u "$HS_USER" -- env -i HOME="$HS_HOME" NVM_DIR="$NVM_DIR" \
+    PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    bash -c '. "$NVM_DIR/nvm.sh" >/dev/null 2>&1 && nvm which '"$1" 2>/dev/null | tail -1 || true
+}
+HS_NODE_BIN="$(nvm_which default)"
+[ -x "$HS_NODE_BIN" ] || HS_NODE_BIN="$(nvm_which current)"
+[ -x "$HS_NODE_BIN" ] || fail "Node.js introuvable pour $HS_USER (nvm install ?)."
 
 HS_NPM_BIN="$(dirname "$HS_NODE_BIN")/npm"
 HS_NODE_BIN_DIR="$(dirname "$HS_NODE_BIN")"
 
-as_hs() { sudo -u "$HS_USER" -H HOME="$HS_HOME" NVM_DIR="$NVM_DIR" PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "$1"; }
+as_hs() { runuser -u "$HS_USER" -- env -i HOME="$HS_HOME" NVM_DIR="$NVM_DIR" LANG=C.UTF-8 PATH="$HS_NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" bash -c "$1"; }
 
 # Bascule + health-check + rollback + mise à jour installed.json (commun aux deux modes)
 switch_and_verify() {

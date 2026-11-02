@@ -72,6 +72,18 @@ l'utilisateur dédié, les services systemd, et te pose quelques questions
 → Identifiants : affichés à l'installation
 ```
 
+Installation sans question (provisioning, cloud-init, CI) :
+
+```bash
+sudo HS_WEB_SERVER=nginx HS_PHP_VERSION=latest bash scripts/install.sh --yes
+```
+
+`scripts/install.sh --help` liste toutes les variables (port, interface, domaine HTTPS…).
+L'installeur vérifie la machine avant de commencer (distribution, systemd, disque, mémoire,
+accès réseau), journalise tout dans `/var/log/homeserver/install.log` et peut être relancé
+sans risque : la configuration existante est conservée.
+Désinstallation : `sudo bash scripts/install.sh --uninstall` (`--purge` pour les logs et groupes).
+
 Pour mettre à jour un panneau existant : **Paramètres → Mise à jour → Mettre à jour le panel**.
 Le panel construit la nouvelle version à côté de l'actuelle, bascule, vérifie
 sa propre santé — et revient tout seul à la version précédente si quelque
@@ -79,8 +91,9 @@ chose cloche. Zéro stress, zéro downtime prolongé.
 
 ## 📋 Prérequis
 
-- Linux x86_64 — Debian/Ubuntu ou RHEL/Rocky/Alma
-- Accès root
+- Linux x86_64 ou arm64 — Debian/Ubuntu ou RHEL/Rocky/Alma/Fedora, avec systemd
+- Accès root, accès réseau sortant (nodejs.org, registry npm, GitHub)
+- 3 Go d'espace disque libres ; 2 Go de RAM conseillés (swap temporaire créé sinon)
 - `git`
 - Un serveur web par machine : Apache ou Nginx (au choix à l'installation)
 
