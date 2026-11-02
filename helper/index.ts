@@ -120,22 +120,106 @@ function detectFamily(): 'debian' | 'rhel' {
   }
 }
 
+// --- Gestionnaire de paquets ----------------------------------------------------
+// apt/dnf lancés depuis un service sans terminal : jamais de question debconf/needrestart,
+// attente du verrou dpkg (cloud-init, unattended-upgrades) au lieu d'échouer, timeout
+// large (un apt tué en plein dpkg laisse le système à réparer) et sortie non tronquée.
+const PKG_ENV = { ...process.env, DEBIAN_FRONTEND: 'noninteractive', NEEDRESTART_MODE: 'a', NEEDRESTART_SUSPEND: '1' };
+const APT_OPTS = ['-o', 'DPkg::Lock::Timeout=600', '-o', 'Dpkg::Options::=--force-confdef', '-o', 'Dpkg::Options::=--force-confold'];
+const PKG_TIMEOUT = 1_800_000;
+const PKG_MAX_BUFFER = 64 * 1024 * 1024;
+
+async function pkgRun(cmd: 'apt-get' | 'dnf', args: string[], timeoutMs = PKG_TIMEOUT): Promise<string> {
+  try {
+    const { stdout } = await run(cmd, cmd === 'apt-get' ? [...APT_OPTS, ...args] : args, { timeout: timeoutMs, env: PKG_ENV, maxBuffer: PKG_MAX_BUFFER });
+    return stdout;
+  } catch (e) {
+    const err = e as Error & { stderr?: string; killed?: boolean };
+    const tail = (err.stderr ?? '').trim().split('\n').slice(-5).join(' | ');
+    throw new Error(`${cmd} ${args.join(' ')} : ${err.killed ? 'timeout' : tail || err.message}`);
+  }
+}
+
+const apt = (args: string[], timeoutMs?: number) => pkgRun('apt-get', args, timeoutMs);
+const dnf = (args: string[], timeoutMs?: number) => pkgRun('dnf', args, timeoutMs);
+
+async function pkgInstall(family: 'debian' | 'rhel', packages: string[]): Promise<void> {
+  if (family === 'debian') await apt(['install', '-y', ...packages]);
+  else await dnf(['install', '-y', ...packages]);
+}
+
+function osRelease(): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    for (const line of readFileSync('/etc/os-release', 'utf8').split('\n')) {
+      const m = line.match(/^([A-Z_]+)=["']?(.*?)["']?$/);
+      if (m?.[1] !== undefined) out[m[1]] = m[2] ?? '';
+    }
+  } catch { /* distribution inconnue */ }
+  return out;
+}
+
+/** apt-cache policy : "Candidate: (none)" veut dire indisponible. */
+function hasCandidate(policy: string): boolean {
+  const m = policy.match(/Candidate:\s*(\S+)/);
+  return !!m && m[1] !== '(none)';
+}
+
+let aptUpdatedAt = 0;
+async function aptUpdate(force = false): Promise<void> {
+  if (!force && Date.now() - aptUpdatedAt < 10 * 60_000) return;
+  await apt(['update'], 600_000);
+  aptUpdatedAt = Date.now();
+}
+
+// Dépôt PHP multi-versions : Sury (Debian) / PPA ondrej (Ubuntu) / Remi (RHEL-like).
+// Un dépôt qui ne supporte pas la version de la distribution casserait tous les
+// apt-get update suivants : il est retiré aussitôt si la mise à jour échoue.
 async function ensureSuryRepo(family: 'debian' | 'rhel'): Promise<void> {
   if (family === 'debian') {
-    await exec('apt-get', ['update']);
-    const sury = await exec('apt-cache', ['policy', 'php8.4-fpm']).catch(() => '');
-    if (!sury.includes('Candidate:')) {
-      await exec('apt-get', ['install', '-y', 'apt-transport-https', 'ca-certificates', 'curl', 'gnupg']);
-      await exec('bash', ['-c', 'curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg']);
-      await exec('bash', ['-c', 'echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list']);
-      await exec('apt-get', ['update']);
+    await aptUpdate();
+    if (hasCandidate(await exec('apt-cache', ['policy', 'php8.4-fpm']).catch(() => ''))) return;
+    const os = osRelease();
+    const codename = os.VERSION_CODENAME || os.UBUNTU_CODENAME || '';
+    if (!codename) return;
+    if (os.ID === 'ubuntu') {
+      if (!existsSync('/usr/bin/add-apt-repository')) await apt(['install', '-y', 'software-properties-common']);
+      try {
+        await exec('add-apt-repository', ['-y', '--no-update', 'ppa:ondrej/php'], 120_000);
+        await aptUpdate(true);
+      } catch (e) {
+        await tryExec('add-apt-repository', ['-y', '--remove', 'ppa:ondrej/php']);
+        await aptUpdate(true).catch(() => {});
+        log(`PPA ondrej/php indisponible pour ${codename} : ${(e as Error).message}`);
+      }
+      return;
+    }
+    const list = '/etc/apt/sources.list.d/php.list';
+    const key = '/usr/share/keyrings/deb.sury.org-php.gpg';
+    if (existsSync(list)) return;
+    await apt(['install', '-y', '--no-install-recommends', 'ca-certificates', 'curl', 'gnupg']);
+    await exec('bash', ['-c', `curl -fsSL --retry 3 https://packages.sury.org/php/apt.gpg | gpg --batch --yes --dearmor -o ${key}`]);
+    writeFileSync(list, `deb [signed-by=${key}] https://packages.sury.org/php/ ${codename} main\n`, { mode: 0o644 });
+    try {
+      await aptUpdate(true);
+    } catch (e) {
+      rmSync(list, { force: true });
+      rmSync(key, { force: true });
+      await aptUpdate(true).catch(() => {});
+      log(`dépôt Sury indisponible pour ${codename} : ${(e as Error).message}`);
     }
   } else {
     const remi = await exec('dnf', ['repolist']).catch(() => '');
-    if (!remi.includes('remi')) {
-      await exec('dnf', ['install', '-y', 'epel-release']);
-      await exec('dnf', ['install', '-y', 'https://rpms.remirepo.net/enterprise/remi-release-$(rpm -E %rhel).rpm']).catch(async () => {
-        await exec('dnf', ['install', '-y', 'remi-release']);
+    if (remi.includes('remi')) return;
+    const os = osRelease();
+    const major = (os.VERSION_ID ?? '').split('.')[0] ?? '';
+    if (!/^\d+$/.test(major)) return;
+    if (os.ID === 'fedora') {
+      await dnf(['install', '-y', `https://rpms.remirepo.net/fedora/remi-release-${major}.rpm`]);
+    } else {
+      await dnf(['install', '-y', 'epel-release']).catch(() => {});
+      await dnf(['install', '-y', `https://rpms.remirepo.net/enterprise/remi-release-${major}.rpm`]).catch(async () => {
+        await dnf(['install', '-y', 'remi-release']);
       });
     }
   }
@@ -155,13 +239,20 @@ async function isPackageInstalled(family: 'debian' | 'rhel', pkg: string): Promi
 }
 
 async function handleDiscoverPhp(family: 'debian' | 'rhel'): Promise<unknown> {
-  const versions = ['8.1', '8.2', '8.3', '8.4'];
+  const known = ['8.1', '8.2', '8.3', '8.4', '8.5'];
+  let versions = known;
+  if (family === 'debian') {
+    // Versions réellement proposées par les dépôts (ex: 8.5 sur une distribution récente)
+    const names = await exec('apt-cache', ['pkgnames', 'php']).catch(() => '');
+    const found = names.split('\n').map((n) => n.match(/^php(\d\.\d)-fpm$/)?.[1]).filter((v): v is string => !!v);
+    versions = [...new Set([...known, ...found])].sort((a, b) => Number(a) - Number(b));
+  }
   const pkgFor = (v: string) => family === 'debian' ? `php${v}-fpm` : `php${v.replace('.', '')}-php-fpm`;
   const result = await Promise.all(versions.map(async (v) => ({
     version: v,
     package: pkgFor(v),
     installed: await isPackageInstalled(family, pkgFor(v)),
-    available: family === 'rhel' ? true : await exec('apt-cache', ['policy', pkgFor(v)]).then((o) => o.includes('Candidate:')).catch(() => false),
+    available: family === 'rhel' ? true : await exec('apt-cache', ['policy', pkgFor(v)]).then(hasCandidate).catch(() => false),
   })));
   return { kind: 'php', versions: result };
 }
@@ -214,9 +305,13 @@ async function handleRequest(raw: unknown): Promise<unknown> {
     case 'echo':
       return { echo: true, family };
     case 'install_packages':
-      await ensureSuryRepo(family).catch(() => {});
-      if (family === 'debian') await exec('apt-get', ['install', '-y', ...req.packages]);
-      else await exec('dnf', ['install', '-y', ...req.packages]);
+      // Le dépôt PHP tiers n'est utile (et risqué) que pour installer PHP
+      if (req.packages.some((p) => p.startsWith('php'))) {
+        await ensureSuryRepo(family).catch((e: Error) => log(`dépôt PHP ignoré : ${e.message}`));
+      } else if (family === 'debian') {
+        await aptUpdate().catch((e: Error) => log(`apt-get update : ${e.message}`));
+      }
+      await pkgInstall(family, req.packages);
       return { family, installed: req.packages };
     case 'discover':
       return handleDiscoverPhp(family);
@@ -436,10 +531,11 @@ WantedBy=multi-user.target
       return handlePendingUpdates(family);
     case 'packages_upgrade': {
       if (family === 'debian') {
-        await run('apt-get', ['-y', 'upgrade'], { timeout: 1_800_000 });
+        await aptUpdate(true);
+        await apt(['-y', 'upgrade']);
         return { family, upgraded: true };
       }
-      await run('dnf', ['-y', 'upgrade'], { timeout: 1_800_000 });
+      await dnf(['-y', 'upgrade']);
       return { family, upgraded: true };
     }
     case 'user_create': {
@@ -682,8 +778,8 @@ WantedBy=multi-user.target
       return { path: req.path, owner: req.owner };
     }
     case 'packages_remove':
-      if (family === 'debian') await exec('apt-get', ['remove', '-y', ...req.packages]);
-      else await exec('dnf', ['remove', '-y', ...req.packages]);
+      if (family === 'debian') await apt(['remove', '-y', ...req.packages]);
+      else await dnf(['remove', '-y', ...req.packages]);
       return { family, removed: req.packages };
     case 'cert_issue': {
       const args = ['--apache', '-d', req.domain, '--non-interactive', '--agree-tos', '-m', req.email, '--keep-until-expiring', '--redirect'];
@@ -1031,9 +1127,15 @@ WantedBy=multi-user.target
     case 'panel_https_setup': {
       // 1. Vhost Apache 80 pour le domaine (prérequis validation ACME)
       const isDebian = existsSync('/etc/apache2');
+      if (!isDebian && !existsSync('/etc/httpd')) throw new Error('Apache non installé — HTTPS automatique du panel disponible uniquement avec Apache');
       const confDir = isDebian ? '/etc/apache2/sites-available' : '/etc/httpd/conf.d';
       const confPath = `${confDir}/homeserver-panel.conf`;
-      const port = Number(process.env.HS_PORT ?? 3000) || 3000;
+      // Le helper n'hérite pas du .env du panel : le port réel y est lu
+      const panelEnv = findPanelEnv();
+      const port = Number((panelEnv ? readFileSync(panelEnv, 'utf8') : '').match(/^HS_PORT=(\d+)/m)?.[1] ?? process.env.HS_PORT ?? 3000) || 3000;
+      // Modules requis par les vhosts ci-dessous (absents d'une installation Apache fraîche)
+      if (isDebian) await exec('a2enmod', ['-q', 'proxy', 'proxy_http', 'ssl', 'headers'], 30_000);
+      else if (!existsSync('/etc/httpd/conf.d/ssl.conf')) await pkgInstall('rhel', ['mod_ssl']);
       const httpConf = [
         `<VirtualHost *:80>`,
         `  ServerName ${req.domain}`,
@@ -1050,7 +1152,11 @@ WantedBy=multi-user.target
       await exec('apache2ctl', ['-t'], 10_000).catch(async () => exec('httpd', ['-t'], 10_000));
       await exec('systemctl', ['reload', isDebian ? 'apache2' : 'httpd'], 30_000);
       // 2. Certificat Let's Encrypt (validation via le vhost 80)
-      const args = ['certonly', '--apache', '-d', req.domain, '--non-interactive', '--agree-tos', '-m', req.email, '--keep-until-expiring'];
+      if (!(await tryExec('certbot', ['--version']))) {
+        if (isDebian) await aptUpdate();
+        await pkgInstall(isDebian ? 'debian' : 'rhel', ['certbot', 'python3-certbot-apache']);
+      }
+      const args =['certonly', '--apache', '-d', req.domain, '--non-interactive', '--agree-tos', '-m', req.email, '--keep-until-expiring'];
       await exec('certbot', args, 300_000);
       // 3. Vhost 443 proxy vers le panel + redirection 80 -> 443
       const sslConf = [
@@ -1228,7 +1334,8 @@ WantedBy=multi-user.target
       try {
         await exec('fail2ban-client', ['version'], 5000);
       } catch {
-        await exec('apt-get', ['install', '-y', 'fail2ban'], 300_000);
+        if (family === 'debian') await aptUpdate();
+        await pkgInstall(family, ['fail2ban']);
       }
       // Jails : sshd + nginx/apache (le serveur web principal du panel)
       const jailConf = '/etc/fail2ban/jail.d/homeserver.conf';
@@ -1300,7 +1407,8 @@ WantedBy=multi-user.target
     }
     case 'unattended_upgrades_enable': {
       try {
-        await exec('apt-get', ['install', '-y', 'unattended-upgrades'], 300_000);
+        await aptUpdate();
+        await apt(['install', '-y', 'unattended-upgrades']);
       } catch (e) {
         throw new Error(`Installation impossible : ${(e as Error).message}`);
       }

@@ -77,8 +77,17 @@ sudo bash scripts/install.sh
 L'installateur : détecte la distro, crée l'utilisateur système aléatoire `hs-*` (nologin, sans mot de passe — l'admin interagit via `sudo -u hs-*`), installe nvm + Node LTS **pour cet utilisateur**, copie le panel dans `/usr/share/homeserver` (propriété `hs-*`), installe les dépendances et le build en tant que `hs-*`, installe les paquets système, génère `.env` (secret JWT, identifiants admin, `640` propriété `hs-*`), installe et démarre le service systemd.
 
 Chemins d'installation :
-- `/usr/share/homeserver` — code du panel, `node_modules`, build (propriétaire `hs-*`, `750`)
-- `/var/lib/homeserver` — données et nvm de l'utilisateur (`750`)
+- `/usr/share/homeserver` — `.env` (chmod 600) + lien `current` vers la release active (propriétaire `hs-*`, `750`)
+- `/var/lib/homeserver/releases/<version>` — releases construites (code, `node_modules`, builds), bascule atomique via `current`
+- `/var/lib/homeserver` — données, états (`installed.json`, `update-status.json`, `auth.json`) et nvm de l'utilisateur (`750`)
+- `/usr/local/lib/homeserver/updater` — couple updater (timer systemd 6h)
+- `/var/log/homeserver/install.log` — journal complet de chaque installation
+
+Installation automatisée (sans question) : `sudo bash scripts/install.sh --yes`, avec au besoin
+`HS_ADMIN_USER`, `HS_PORT`, `HS_HOST`, `HS_WEB_SERVER`, `HS_PHP_VERSION`, `HS_INSTALL_EXTRAS`,
+`HS_PANEL_DOMAIN`, `HS_LETSENCRYPT_EMAIL` (détail : `scripts/install.sh --help`).
+L'installation est rejouable : une relance conserve le `.env` (secrets, domaine HTTPS, réglages)
+et ne demande que les valeurs manquantes.
 
 ## Ajouter un module
 

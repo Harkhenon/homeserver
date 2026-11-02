@@ -17,7 +17,9 @@ RELEASES_DIR="$HS_HOME/releases"
 CURRENT_LINK="$INSTALL_DIR/current"
 STATE_FILE="$RELEASES_DIR/installed.json"
 STATUS_FILE="$HS_HOME/update-status.json"
-PANEL_PORT="${HS_PORT:-3000}"
+# Port réel du panel : le .env fait foi (le service updater n'hérite pas de HS_PORT)
+PANEL_PORT="$(grep -m1 '^HS_PORT=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -dc '0-9' || true)"
+PANEL_PORT="${PANEL_PORT:-${HS_PORT:-3000}}"
 PANEL_REPO_API="${PANEL_REPO_API:-https://api.github.com/repos/Harkhenon/homeserver/releases/latest}"
 KEEP_RELEASES="${HS_KEEP_RELEASES:-5}"
 MIN_FREE_MB="${HS_MIN_FREE_MB:-1024}"
@@ -140,7 +142,7 @@ NODEEOF
   fi
   latest_version="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})")"
   local current
-  current="$(cat "$RELEASES_DIR/current/VERSION" 2>/dev/null || "$NODE_BIN" -e "try{console.log(require('$STATE_FILE').current||'unknown')}catch{console.log('unknown')}" 2>/dev/null || echo unknown)"
+  current="$(cat "$CURRENT_LINK/VERSION" 2>/dev/null || "$NODE_BIN" -e "try{console.log(require('$STATE_FILE').current||'unknown')}catch{console.log('unknown')}" 2>/dev/null || echo unknown)"
   local available=false
   [ "$latest_version" != "unknown" ] && [ "$current" != "unknown" ] && semver_gt "$latest_version" "$current" && available=true
 
@@ -230,7 +232,7 @@ mode_apply() {
   hs_user="$(getent passwd | awk -F: '$1 ~ /^hs-/ {print $1; exit}')"
   chown -R "$hs_user:$hs_user" "$new_dir"
 
-  local as_hs="sudo -u $hs_user -H HOME=$HS_HOME PATH=$(dirname "$NODE_BIN"):/usr/bin:/bin:/usr/sbin:/sbin"
+  local as_hs="runuser -u $hs_user -- env HOME=$HS_HOME PATH=$(dirname "$NODE_BIN"):/usr/bin:/bin:/usr/sbin:/sbin"
   $as_hs bash -c "cd '$new_dir' && '$NPM_BIN' ci --no-audit --no-fund" >/dev/null 2>&1 || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"npm ci back\"}"; exit 1; }
   $as_hs bash -c "cd '$new_dir' && '$NPM_BIN' run build" >/dev/null 2>&1 || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"build back\"}"; exit 1; }
   $as_hs bash -c "cd '$new_dir/front' && '$NPM_BIN' ci --no-audit --no-fund" >/dev/null 2>&1 || { json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"npm ci front\"}"; exit 1; }

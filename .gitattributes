@@ -1,0 +1,6 @@
+# Scripts exécutés sur le serveur Linux : toujours LF, même sur un clone Windows
+# (CRLF => "set: pipefail: invalid option name" au lancement de install.sh).
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.service text eol=lf
+*.timer   text eol=lf

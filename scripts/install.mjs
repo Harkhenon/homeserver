@@ -1,16 +1,22 @@
-import { existsSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { existsSync, writeFileSync, readFileSync, renameSync, chmodSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { createServer, connect } from 'node:net';
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { connect } from 'node:net';
 
-const rl = readline.createInterface({ input: stdin, output: stdout });
+// Mode non interactif : --yes côté install.sh, ou stdin sans terminal.
+// Chaque question peut aussi être pré-remplie par une variable HS_* (voir install.sh --help).
+const NONINTERACTIVE = process.env.HS_NONINTERACTIVE === '1';
+const rl = NONINTERACTIVE ? null : readline.createInterface({ input: stdin, output: stdout });
 
 function log(msg) { console.log(`\x1b[36m→\x1b[0m ${msg}`); }
 function ok(msg) { console.log(`\x1b[32m✓\x1b[0m ${msg}`); }
-function die(msg) { console.error(`\x1b[31m✗ ${msg}\x1b[0m`); process.exit(1); }
-
-const sh = (cmd) => execSync(cmd, { stdio: 'pipe' }).toString().trim();
+function warn(msg) { console.log(`\x1b[33m! ${msg}\x1b[0m`); }
+function die(msg) {
+  console.error(`\x1b[31m✗ ${msg}\x1b[0m`);
+  if (process.env.HS_INSTALL_LOG) console.error(`\x1b[2m  journal : ${process.env.HS_INSTALL_LOG}\x1b[0m`);
+  process.exit(1);
+}
 
 const SOCKET = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
 
@@ -23,12 +29,56 @@ async function callHelper(request, timeoutMs = 300_000) {
       buf += chunk.toString('utf8');
       const idx = buf.indexOf('\n');
       if (idx < 0) return;
-      const res = JSON.parse(buf.slice(0, idx));
       socket.end();
-      res.ok ? resolve(res.data) : reject(new Error(`[${res.code}] ${res.error}`));
+      try {
+        const res = JSON.parse(buf.slice(0, idx));
+        res.ok ? resolve(res.data) : reject(new Error(`[${res.code}] ${res.error}`));
+      } catch (e) {
+        reject(new Error(`Réponse du helper illisible (${e.message})`));
+      }
     });
     socket.on('error', reject);
     socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error('Timeout du helper')); });
+  });
+}
+
+/**
+ * Pose une question (ou lit la variable d'environnement `envKey`), valide la réponse.
+ * validate(valeur) renvoie la valeur normalisée, ou null si invalide.
+ */
+async function ask(question, { def = '', envKey, validate = (v) => v, hint = 'valeur invalide' } = {}) {
+  const fromEnv = envKey ? process.env[envKey] : undefined;
+  if (fromEnv !== undefined && fromEnv !== '') {
+    const v = validate(fromEnv.trim());
+    if (v === null) die(`${envKey}=${fromEnv} : ${hint}`);
+    return v;
+  }
+  if (NONINTERACTIVE) {
+    const v = validate(def);
+    if (v === null) die(`${question} : aucune valeur par défaut valide (${envKey ?? 'non interactif'})`);
+    return v;
+  }
+  for (;;) {
+    const answer = ((await rl.question(`${question}${def !== '' ? ` [${def}]` : ''}: `)).trim()) || def;
+    const v = validate(answer);
+    if (v !== null) return v;
+    warn(hint);
+  }
+}
+
+const yesNo = (v) => {
+  const s = String(v).toLowerCase();
+  if (['', 'o', 'oui', 'y', 'yes', '1', 'true'].includes(s)) return true;
+  if (['n', 'non', 'no', '0', 'false'].includes(s)) return false;
+  return null;
+};
+
+function portFree(port) {
+  return new Promise((resolve) => {
+    const srv = createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    srv.listen(port, '0.0.0.0');
   });
 }
 
@@ -40,12 +90,22 @@ function detectDistro() {
   const like = get('ID_LIKE').toLowerCase();
   const pretty = get('PRETTY_NAME') || 'Unknown';
   if (id.includes('debian') || id.includes('ubuntu') || like.includes('debian')) return { family: 'debian', pretty };
-  if (['fedora', 'rhel', 'rocky', 'almalinux', 'centos'].some((d) => id.includes(d))) return { family: 'rhel', pretty };
+  if (['fedora', 'rhel', 'rocky', 'almalinux', 'centos'].some((d) => id.includes(d) || like.includes(d))) return { family: 'rhel', pretty };
   return { family: 'unknown', pretty };
 }
 
+/** .env existant → Map ordonnée (les clés inconnues de l'installeur sont conservées). */
+function parseEnv(content) {
+  const map = new Map();
+  for (const line of (content ?? '').split('\n')) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (m) map.set(m[1], m[2]);
+  }
+  return map;
+}
+
 async function main() {
-  console.log('\x1b[1m=== Homeserver — Installation (hs-utilisateur) ===\x1b[0m\n');
+  console.log('\x1b[1m=== Homeserver — Configuration (hs-utilisateur) ===\x1b[0m\n');
 
   const installDir = process.env.HS_INSTALL_DIR ?? process.cwd();
   if (!process.env.HS_USER) die('HS_USER manquant : lance via scripts/install.sh.');
@@ -58,119 +118,186 @@ async function main() {
   let echo = null;
   for (let attempt = 1; attempt <= 15; attempt++) {
     try {
-      echo = await callHelper({ action: 'echo' });
+      echo = await callHelper({ action: 'echo' }, 5_000);
       break;
     } catch (e) {
-      if (attempt === 15) die(`Helper inaccessible (${e.message})`);
+      if (attempt === 15) die(`Helper inaccessible (${e.message}) — journalctl -u hs-helper -n 50`);
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
   ok(`Helper opérationnel (famille: ${echo.family})`);
-
-  const adminUser = (await rl.question('Utilisateur admin du panel [admin]: ')) || 'admin';
+  const family = echo.family;
 
   const envPath = `${installDir}/.env`;
-  const existingEnv = existsSync(envPath) ? readFileSync(envPath, 'utf8') : null;
-  const existingPort = existingEnv?.match(/^HS_PORT=(.+)$/m)?.[1] ?? null;
-  const existingHost = existingEnv?.match(/^HS_HOST=(.+)$/m)?.[1] ?? null;
-  const existingSecure = existingEnv?.match(/^HS_SECURE_COOKIES=(.+)$/m)?.[1] ?? null;
-  const existingPassword = existingEnv?.match(/^HS_ADMIN_PASSWORD=(.+)$/m)?.[1] ?? null;
-  const existingJwt = existingEnv?.match(/^HS_JWT_SECRET=(.+)$/m)?.[1] ?? null;
-  const existingModules = existingEnv?.match(/^HS_MODULES=(.+)$/m)?.[1] ?? null;
+  const existing = parseEnv(existsSync(envPath) ? readFileSync(envPath, 'utf8') : null);
+  const reinstall = existing.has('HS_JWT_SECRET');
+  if (reinstall) ok('.env existant détecté — configuration conservée, seules les valeurs manquantes sont demandées');
 
-  const port = existingPort ?? ((await rl.question("Port de l'API [3000]: ")) || '3000');
-  let panelDomain = existingEnv?.match(/^HS_PANEL_DOMAIN=(.+)$/m)?.[1] ?? null;
-  if (!panelDomain) {
-    const d = await rl.question('Domaine du panel pour HTTPS Let\'s Encrypt (vide = HTTP sur IP) : ');
-    if (d.trim() !== '' && d.includes('.')) panelDomain = d.trim().toLowerCase();
+  // --- Questions (les valeurs déjà configurées ne sont pas redemandées) ---
+  const adminUser = existing.get('HS_ADMIN_USER') || await ask('Utilisateur admin du panel', {
+    def: 'admin', envKey: 'HS_ADMIN_USER',
+    validate: (v) => (/^[a-zA-Z][a-zA-Z0-9._-]{1,31}$/.test(v) ? v : null),
+    hint: '2 à 32 caractères : lettres, chiffres, . _ - (commence par une lettre)',
+  });
+
+  let port = existing.get('HS_PORT');
+  if (!port) {
+    port = await ask("Port de l'API", {
+      def: '3000', envKey: 'HS_PORT',
+      validate: (v) => (/^\d+$/.test(v) && Number(v) >= 1024 && Number(v) <= 65535 ? v : null),
+      hint: 'port entre 1024 et 65535',
+    });
+    if (!(await portFree(Number(port)))) die(`Le port ${port} est déjà utilisé sur cette machine (ss -ltnp | grep :${port}).`);
   }
+
+  const host = existing.get('HS_HOST') || await ask("Interface d'écoute [1=Toutes (0.0.0.0), 2=Local (127.0.0.1, derrière reverse-proxy TLS)]", {
+    def: '1', envKey: 'HS_HOST',
+    validate: (v) => (['1', '0.0.0.0'].includes(v) ? '0.0.0.0' : ['2', '127.0.0.1'].includes(v) ? '127.0.0.1' : null),
+    hint: 'réponds 1 ou 2',
+  });
+
+  const existingWeb = (existing.get('HS_MODULES') ?? '').split(',').find((m) => m === 'apache' || m === 'nginx') ?? null;
+  const webServer = existingWeb ?? (family === 'rhel' ? 'apache' : await ask('Serveur web [1=Apache, 2=Nginx]', {
+    def: '1', envKey: 'HS_WEB_SERVER',
+    validate: (v) => (['1', 'apache', 'apache2'].includes(v.toLowerCase()) ? 'apache' : ['2', 'nginx'].includes(v.toLowerCase()) ? 'nginx' : null),
+    hint: 'réponds 1 (Apache) ou 2 (Nginx)',
+  }));
+
+  let panelDomain = existing.get('HS_PANEL_DOMAIN') || null;
   let letsencryptEmail = null;
-  if (panelDomain) {
-    letsencryptEmail = (await rl.question(`Email pour le certificat de ${panelDomain} : `)).trim();
-    if (!letsencryptEmail.includes('@')) {
-      console.log('\x1b[33m! Email invalide — HTTPS ignoré (activable plus tard dans Paramètres → Accès réseau)\x1b[0m');
-      panelDomain = null;
+  if (!panelDomain) {
+    if (webServer !== 'apache') {
+      if (process.env.HS_PANEL_DOMAIN) warn('HTTPS automatique du panel disponible uniquement avec Apache — HS_PANEL_DOMAIN ignoré');
+    } else {
+      panelDomain = await ask("Domaine du panel pour HTTPS Let's Encrypt (vide = HTTP sur IP)", {
+        def: '', envKey: 'HS_PANEL_DOMAIN',
+        validate: (v) => (v === '' ? '' : /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(v) ? v.toLowerCase() : null),
+        hint: 'domaine invalide (ex: panel.exemple.fr) — laisse vide pour HTTP',
+      }) || null;
+      if (panelDomain) {
+        letsencryptEmail = await ask(`Email pour le certificat de ${panelDomain}`, {
+          def: '', envKey: 'HS_LETSENCRYPT_EMAIL',
+          validate: (v) => (v === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null),
+          hint: 'email invalide',
+        });
+        if (!letsencryptEmail) {
+          warn('Pas d\'email — HTTPS ignoré (activable plus tard dans Paramètres → Accès réseau)');
+          panelDomain = null;
+        }
+      }
     }
   }
-  const hostAnswer = existingHost ?? ((await rl.question("Interface d'écoute [1=Toutes (0.0.0.0), 2=Local (127.0.0.1, derrière reverse-proxy TLS)] [1]: ")) || '1');
-  const host = hostAnswer === '2' || hostAnswer === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
-  const secureCookies = existingSecure ?? (host === '127.0.0.1' ? 'true' : 'false');
-  const webServer = echo.family === 'rhel' ? 'apache' : ((await rl.question('Serveur web [1=Apache, 2=Nginx] [1]: ')) === '2' ? 'nginx' : 'apache');
-  const installExtras = (await rl.question("Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui]: ")).toLowerCase();
-  const extras = installExtras === '' || ['o', 'oui', 'y', 'yes'].includes(installExtras);
 
-  let adminPassword = sh('openssl rand -base64 12');
-  if (existingPassword) {
-    adminPassword = existingPassword;
-    ok(`.env existant conservé (identifiants inchangés: ${adminUser})`);
-  }
-  const jwtSecret = existingJwt ?? sh('openssl rand -hex 32');
+  const extras = await ask('Installer les paquets recommandés (MariaDB, Bind9, Certbot, Cron) [oui/non]', {
+    def: 'oui', envKey: 'HS_INSTALL_EXTRAS', validate: yesNo, hint: 'réponds oui ou non',
+  });
 
-  const existingWeb = existingModules?.match(/,(apache|nginx),/)?.[1] ?? null;
-  const modulesList = existingWeb ?? webServer;
-
-  const env = [
-    `HS_PORT=${port}`,
-    `HS_HOST=${host}`,
-    `HS_JWT_SECRET=${jwtSecret}`,
-    `HS_ADMIN_USER=${adminUser}`,
-    `HS_ADMIN_PASSWORD=${adminPassword}`,
-    `HS_USER=${user}`,
-    `HS_MODULES=system,${modulesList},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`,
-    `# Auth : stockage du hash scrypt + secret TOTP (chmod 600)`,
-    `HS_AUTH_STORE=/var/lib/homeserver/auth.json`,
-    `# Cookies de session httpOnly Secure (désactive si le panel est en HTTP local/VPN)`,
-    `HS_SECURE_COOKIES=${secureCookies}`,
+  // --- .env : fusion avec l'existant (HS_PANEL_DOMAIN, HS_FORCE_HTTPS, CORS… conservés) ---
+  const authStore = existing.get('HS_AUTH_STORE') || '/var/lib/homeserver/auth.json';
+  const passwordMigrated = existsSync(authStore);
+  const adminPassword = existing.get('HS_ADMIN_PASSWORD') || randomBytes(12).toString('base64url');
+  const env = new Map(existing);
+  const set = (k, v) => env.set(k, v);
+  set('HS_PORT', port);
+  set('HS_HOST', host);
+  set('HS_JWT_SECRET', existing.get('HS_JWT_SECRET') || randomBytes(32).toString('hex'));
+  set('HS_ADMIN_USER', adminUser);
+  set('HS_ADMIN_PASSWORD', adminPassword);
+  set('HS_USER', user);
+  set('HS_MODULES', existing.get('HS_MODULES') || `system,${webServer},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`);
+  set('HS_AUTH_STORE', authStore);
+  set('HS_SECURE_COOKIES', existing.get('HS_SECURE_COOKIES') || (host === '127.0.0.1' ? 'true' : 'false'));
+  const content = [
+    '# Généré par scripts/install.sh — modifiable aussi depuis Paramètres → Accès réseau',
+    '# Auth : HS_AUTH_STORE contient le hash scrypt + secret TOTP (chmod 600)',
+    ...[...env].map(([k, v]) => `${k}=${v}`),
   ].join('\n') + '\n';
-  writeFileSync(`${installDir}/.env`, env);
-  chmodSync(`${installDir}/.env`, 0o600);
-  ok(`.env généré (${installDir}/.env, chmod 600)`);
+  writeFileSync(`${envPath}.tmp`, content, { mode: 0o600 });
+  chmodSync(`${envPath}.tmp`, 0o600);
+  renameSync(`${envPath}.tmp`, envPath);
+  ok(`.env ${reinstall ? 'mis à jour' : 'généré'} (${envPath}, chmod 600)`);
 
+  // --- PHP ---
   log('Découverte des versions de PHP disponibles...');
-  let phpChoice = 'aucune';
+  let phpChoice = null;
   try {
     const discovered = await callHelper({ action: 'discover', kind: 'php' });
     const available = discovered.versions.filter((v) => v.available);
     if (available.length > 0) {
+      const newest = available.length;
       const labels = available.map((v, i) => `${i + 1}) PHP ${v.version}`).join('  ');
-      const answer = await rl.question(`Versions de PHP disponibles — ${labels} [1]: `);
-      const idx = Math.max(0, Math.min(available.length - 1, parseInt(answer || '1', 10) - 1));
-      phpChoice = available[idx]?.version ?? 'aucune';
-      ok(`PHP sélectionné : ${phpChoice}`);
+      phpChoice = await ask(`Versions de PHP disponibles — ${labels}  0) aucune`, {
+        def: String(newest), envKey: 'HS_PHP_VERSION',
+        validate: (v) => {
+          if (['0', 'none', 'aucune'].includes(v)) return 'none';
+          if (v === 'latest') return available[newest - 1].version;
+          const byVersion = available.find((a) => a.version === v);
+          if (byVersion) return byVersion.version;
+          const idx = /^\d+$/.test(v) ? Number(v) - 1 : -1;
+          return available[idx]?.version ?? null;
+        },
+        hint: `choisis un numéro entre 0 et ${newest}`,
+      });
+      if (phpChoice === 'none') phpChoice = null;
+      ok(`PHP sélectionné : ${phpChoice ?? 'aucun'}`);
     } else {
-      ok('Aucune version de PHP disponible pour le moment');
+      ok('Aucune version de PHP disponible pour le moment (installable plus tard depuis le panel)');
     }
   } catch (e) {
-    console.log(`\x1b[33m! Découverte PHP ignorée: ${e.message}\x1b[0m`);
+    warn(`Découverte PHP ignorée: ${e.message}`);
   }
 
-  log('Installation des paquets système (via helper)...');
-  const family = echo.family;
+  // --- Paquets système (via helper) ---
+  // Serveur web obligatoire ; PHP et extras en best-effort (rattrapables depuis le panel).
   const webUnit = family === 'debian' ? (webServer === 'nginx' ? 'nginx' : 'apache2') : (webServer === 'nginx' ? 'nginx' : 'httpd');
-  const certbotPlugin = webUnit === 'nginx' ? 'python3-certbot-nginx' : 'python3-certbot-apache';
-  const packages = family === 'debian'
-    ? [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice}-fpm`] : []), ...(extras ? ['mariadb-server', 'bind9', 'certbot', certbotPlugin, 'cron'] : [])]
-    : [webUnit, ...(phpChoice !== 'aucune' ? [`php${phpChoice.replace('.', '')}-php-fpm`] : []), ...(extras ? ['mariadb-server', 'bind', 'certbot', certbotPlugin, 'cronie'] : [])];
-  await callHelper({ action: 'install_packages', packages });
-  ok(`Paquets installés: ${packages.join(', ')}`);
-  // --- Sécurité : unattended-upgrades (correctifs sécurité automatiques) ---
-  if (family === 'debian') {
+  const certbotPlugin = webServer === 'nginx' ? 'python3-certbot-nginx' : 'python3-certbot-apache';
+  const extraPkgs = family === 'debian'
+    ? ['mariadb-server', 'bind9', 'certbot', certbotPlugin, 'cron']
+    : ['mariadb-server', 'bind', 'certbot', certbotPlugin, 'cronie'];
+  const phpPkg = phpChoice ? (family === 'debian' ? `php${phpChoice}-fpm` : `php${phpChoice.replace('.', '')}-php-fpm`) : null;
+
+  const installGroup = async (label, packages, required) => {
+    log(`Installation : ${label} (${packages.join(', ')})...`);
     try {
-      await callHelper({ action: 'install_packages', packages: ['unattended-upgrades'] });
-      ok('unattended-upgrades installé (correctifs sécurité automatiques)');
+      await callHelper({ action: 'install_packages', packages }, 2_400_000);
+      ok(`${label} installé`);
+      return true;
     } catch (e) {
-      console.log(`\x1b[33m! unattended-upgrades ignoré: ${e.message}\x1b[0m`);
+      const msg = `${label} : installation échouée — ${e.message.split('\n').slice(-3).join(' ')}`;
+      if (required) die(msg);
+      warn(`${msg} (installable plus tard depuis le panel)`);
+      return false;
+    }
+  };
+  await installGroup(`serveur web ${webUnit}`, [webUnit], true);
+  if (phpPkg) await installGroup(`PHP ${phpChoice}`, [phpPkg], false);
+  const extrasOk = extras ? await installGroup('paquets recommandés', extraPkgs, false) : false;
+  // RHEL/Fedora : contrairement à Debian, un paquet installé n'active pas son service
+  if (extrasOk && family === 'rhel') {
+    for (const unit of ['mariadb', 'named']) {
+      try {
+        await callHelper({ action: 'systemctl', unit, verb: 'enable' });
+        await callHelper({ action: 'systemctl', unit, verb: 'start' });
+        ok(`Service ${unit} activé`);
+      } catch (e) {
+        warn(`Service ${unit} non démarré (${e.message})`);
+      }
     }
   }
+  if (family === 'debian') await installGroup('unattended-upgrades (correctifs sécurité auto)', ['unattended-upgrades'], false);
 
   log('Activation du service web (via helper)...');
-  await callHelper({ action: 'systemctl', unit: webUnit, verb: 'enable' });
-  await callHelper({ action: 'systemctl', unit: webUnit, verb: 'start' });
-  ok(`Service web activé (${webUnit})`);
+  try {
+    await callHelper({ action: 'systemctl', unit: webUnit, verb: 'enable' });
+    await callHelper({ action: 'systemctl', unit: webUnit, verb: 'start' });
+    ok(`Service web activé (${webUnit})`);
+  } catch (e) {
+    warn(`Service web non démarré (${e.message}) — un autre serveur occupe peut-être le port 80`);
+  }
 
   log('Démarrage du panel...');
-  await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'restart' });
   await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'enable' });
+  await callHelper({ action: 'systemctl', unit: 'homeserver', verb: 'restart' });
   ok('Panel démarré et activé au boot');
 
   if (panelDomain && letsencryptEmail) {
@@ -179,18 +306,18 @@ async function main() {
       const res = await callHelper({ action: 'panel_https_setup', domain: panelDomain, email: letsencryptEmail });
       ok(`Panel en HTTPS : ${res.url}`);
     } catch (e) {
-      console.log(`\x1b[33m! HTTPS ignoré (${e.message}) — vérifie que le domaine pointe vers ce serveur. Activable plus tard dans Paramètres → Accès réseau\x1b[0m`);
+      warn(`HTTPS ignoré (${e.message}) — vérifie que le domaine pointe vers ce serveur. Activable plus tard dans Paramètres → Accès réseau`);
     }
   }
 
-  console.log(`\n\x1b[32mInstallation terminée !\x1b[0m`);
-  console.log(`  Admin      : ${adminUser} / ${adminPassword}`);
-  const apiLine = panelDomain
-    ? `https://${panelDomain}/api`
-    : `http://${host === '0.0.0.0' ? '<IP-serveur>' : 'localhost'}:${port}/api`;
-  console.log(`  API        : ${apiLine}`);
-  console.log(`  Utilisateur système : ${user} (accès admin: sudo -u ${user} <cmd>)\n`);
-  rl.close();
+  console.log(`\n\x1b[32mConfiguration terminée.\x1b[0m`);
+  if (reinstall && passwordMigrated) {
+    console.log(`  Admin      : ${adminUser} / (mot de passe inchangé — celui défini dans le panel)`);
+  } else {
+    console.log(`  Admin      : ${adminUser} / ${adminPassword}`);
+  }
+  console.log(`  Utilisateur système : ${user} (accès admin: sudo -u ${user} <cmd>)`);
+  rl?.close();
 }
 
 main().catch((err) => die(err.message));
