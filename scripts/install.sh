@@ -193,6 +193,9 @@ if $UNINSTALL; then
     systemctl disable --now postfix dovecot opendkim >/dev/null 2>&1 || true
     rm -rf /etc/postfix/homeserver /etc/dovecot/homeserver-users /etc/homeserver-mail /etc/systemd/system/opendkim.service.d/zz-homeserver.conf
     rm -f /etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh
+    rm -f /etc/apache2/sites-enabled/homeserver-mail-autoconfig.conf /etc/apache2/sites-available/homeserver-mail-autoconfig.conf /etc/httpd/conf.d/homeserver-mail-autoconfig.conf
+    rm -f /etc/nginx/sites-enabled/homeserver-mail-autoconfig.conf /etc/nginx/sites-available/homeserver-mail-autoconfig.conf /etc/nginx/conf.d/homeserver-mail-autoconfig.conf
+    rm -rf /var/www/homeserver-mail
     if [ -f /etc/dovecot/dovecot.conf.homeserver-orig ]; then mv -f /etc/dovecot/dovecot.conf.homeserver-orig /etc/dovecot/dovecot.conf; fi
     if [ -f /etc/opendkim.conf.homeserver-orig ]; then mv -f /etc/opendkim.conf.homeserver-orig /etc/opendkim.conf; fi
     systemctl daemon-reload

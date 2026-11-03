@@ -32,7 +32,7 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/firewall/:action` | `status`, `enable`, `rules.add/remove` (ufw/firewalld) |
 | `POST /api/monitor/:action` | `history`, `latest`, `summary` (échantillons 1/min, 12h) |
 | `POST /api/node/:action` | `apps.list/create/delete/service`, `ports.check` — apps Node SSR en systemd `hs-app-*`, port dédié, proxy Apache/Nginx |
-| `POST /api/mail/:action` | `status`, `setup`, `service.set`, `tls.issue`, `domains.list/add/update/delete`, `boxes.list/add/update/password/delete` — service e-mail (Postfix + Dovecot + OpenDKIM) |
+| `POST /api/mail/:action` | `status`, `setup`, `service.set`, `tls.issue`, `settings.set`, `relay.set/clear`, `deliverability.check`, `test.send`, `dns.records/apply`, `dkim.rotate/activate`, `domains.list/add/update/delete`, `boxes.list/add/update/password/delete` — service e-mail (Postfix + Dovecot + OpenDKIM) |
 | `POST /api/nginx/:action` | `vhosts.list/get/create/delete`, `service.status/reload` — alternative à Apache, PHP-FPM ou proxy Node |
 
 Exemple :
@@ -102,6 +102,9 @@ Le mail dépend d'un **domaine**, pas d'un site : supprimer un site ne touche pa
 - `/var/lib/homeserver-mail/state.json` (root, 0600) est la source de vérité : les maps Postfix (`/etc/postfix/homeserver/`), le passwd-file Dovecot (`/etc/dovecot/homeserver-users`) et les tables OpenDKIM en sont régénérés et validés ; ne pas les éditer à la main.
 - Messages : `/var/vmail/<domaine>/<boîte>/Maildir`, utilisateur `vmail`. Mots de passe hashés par `doveadm pw`, jamais visibles par `hs-*`.
 - Tous les domaines partagent le nom d'hôte du serveur (MX, logiciels de messagerie, certificat Let's Encrypt). Dovecot 2.3 et 2.4 sont gérés par deux gabarits.
+- **DNS** : le panel calcule les enregistrements attendus (A, MX, SPF, DKIM, DMARC, TLS-RPT, autoconfig, SRV), vérifie leur publication et les écrit dans la zone Bind du domaine. Un enregistrement existant et différent n'est jamais remplacé sans confirmation. Pour un domaine chez un registrar, les valeurs sont à copier. `HS_MAIL_DNS_SERVER` impose un résolveur pour ces vérifications (DNS interne, zone pas encore déléguée).
+- **Délivrabilité** : diagnostic (IP, DNS inversé, port 25 sortant, listes noires), e-mail de test suivi jusqu'à sa remise, relais SMTP authentifié quand le port 25 est bloqué, rotation de la clé DKIM en deux temps (publier, puis activer).
+- **Logiciels de messagerie** : autoconfig pour Thunderbird et compatibles (`autoconfig.<domaine>`), SRV pour les autres. La découverte Outlook et MTA-STS exigent un HTTPS par domaine : pas encore gérés.
 - La désinstallation retire la configuration et conserve `/var/vmail`, sauf avec `--purge`.
 
 ## Ajouter un module

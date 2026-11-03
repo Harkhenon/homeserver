@@ -6,7 +6,7 @@ import type { DirEntryInfo, ServiceStatusResult } from '../../core/privileged/co
 const SITES_AVAILABLE = '/etc/nginx/sites-available';
 const SITES_ENABLED = '/etc/nginx/sites-enabled';
 const SITE_FILE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
-const BASE_SITES = new Set(['000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
+const BASE_SITES = new Set(['homeserver-mail-autoconfig.conf', '000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 
 interface NginxVhost {

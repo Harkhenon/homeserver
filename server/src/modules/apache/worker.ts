@@ -34,7 +34,7 @@ function confPath(site: string): string {
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 const SITE_FILE_RE = /^[A-Za-z0-9._-]{1,100}\.conf$/;
-const BASE_SITES = new Set(['000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
+const BASE_SITES = new Set(['homeserver-mail-autoconfig.conf', '000-default', '000-default.conf', 'default', 'default.conf', 'default-ssl', 'default-ssl.conf']);
 
 function parseVhostConf(site: string, content: string, enabled: boolean): Vhost {
   const id = site.replace(/\.conf$/, '');

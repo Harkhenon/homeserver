@@ -160,6 +160,8 @@ export interface MailStatus {
   services: Record<string, boolean>;
   dovecotVersion: string | null;
   tls: { mode: 'selfsigned' | 'letsencrypt' | null; expiresAt: string | null };
+  publicIp: string | null;
+  relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
   domainCount: number;
   boxCount: number;
 }
@@ -170,7 +172,44 @@ export interface MailDomain {
   defaultQuotaMb: number;
   boxCount: number;
   dkim: { selector: string; record: string } | null;
+  dkimPending: { selector: string; record: string } | null;
   createdAt: string;
+}
+
+export interface MailDnsRecord {
+  key: string;
+  label: string;
+  purpose: string;
+  required: boolean;
+  fqdn: string;
+  type: string;
+  value: string;
+  status: 'ok' | 'missing' | 'different' | 'error';
+  current: string | null;
+}
+
+export interface MailDnsApplyResult {
+  added: string[];
+  replaced: string[];
+  unchanged: string[];
+  conflicts: Array<{ label: string; current: string; expected: string }>;
+}
+
+export interface MailDeliverabilityReport {
+  ip: string | null;
+  ipPrivate: boolean;
+  hostname: string;
+  hostnameResolves: boolean;
+  rdns: { ptr: string[]; matches: boolean } | null;
+  port25: { ok: boolean; detail: string };
+  relay: { ok: boolean; detail: string } | null;
+  blacklists: Array<{ list: string; listed: boolean | null }>;
+}
+
+export interface MailTestResult {
+  messageId: string;
+  status: 'sent' | 'deferred' | 'bounced' | 'pending';
+  detail: string;
 }
 
 export interface MailBox {

@@ -1,9 +1,11 @@
 import { parentPort } from 'node:worker_threads';
 import { randomBytes } from 'node:crypto';
+import { isIP } from 'node:net';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import { validatePasswordPolicy } from '../../core/password-policy.js';
-import type { MailStatusResult, MailDomainInfo, MailBoxInfo } from '../../core/privileged/contract.js';
+import type { MailStatusResult, MailDomainInfo, MailBoxInfo, MailTestResult } from '../../core/privileged/contract.js';
+import { applyRecords, checkRecords, deliverabilityReport, expectedRecords, hasLocalZone, type ExpectedRecord } from './dns.js';
 
 // Le helper revalide tout (contrat) : ici, des messages d'erreur lisibles pour le panel.
 const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -53,6 +55,16 @@ function booleanOf(v: unknown, label: string): boolean {
   return v;
 }
 
+async function expectedFor(domain: string): Promise<ExpectedRecord[]> {
+  const [status, list] = await Promise.all([
+    callHelper<MailStatusResult>({ action: 'mail_status' }),
+    callHelper<{ domains: MailDomainInfo[] }>({ action: 'mail_domain_list' }),
+  ]);
+  const info = list.domains.find((d) => d.domain === domain);
+  if (!info) throw new Error(`Domaine ${domain} inconnu`);
+  return expectedRecords(domain, status, info);
+}
+
 /** Mot de passe aléatoire conforme à la politique (lettres, chiffres, spéciaux). */
 function generatePassword(): string {
   return `${randomBytes(18).toString('base64url')}-A1`;
@@ -86,6 +98,81 @@ const definition: ModuleDefinition = {
         const email = typeof ((payload ?? {}) as Payload).email === 'string' ? ((payload as Payload).email as string).trim() : '';
         if (!EMAIL_RE.test(email)) throw new Error('Email invalide');
         return callHelper<MailStatusResult>({ action: 'mail_tls_issue', email }, undefined, TLS_TIMEOUT_MS);
+      },
+    },
+    'settings.set': {
+      summary: 'IP publique du serveur quand il est derrière un NAT (payload: { publicIp: string | null })',
+      handler: (payload) => {
+        const v = ((payload ?? {}) as Payload).publicIp;
+        const publicIp = typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+        if (publicIp !== null && isIP(publicIp) === 0) throw new Error('Adresse IP invalide');
+        return callHelper<MailStatusResult>({ action: 'mail_settings_set', publicIp });
+      },
+    },
+    'relay.set': {
+      summary: 'Envoyer via un relais SMTP (payload: { host, port, username, password, spfInclude? })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const host = typeof p.host === 'string' ? p.host.trim().toLowerCase() : '';
+        if (!DOMAIN_RE.test(host) && isIP(host) === 0) throw new Error('Serveur relais invalide');
+        if (p.port !== 25 && p.port !== 465 && p.port !== 587 && p.port !== 2525) throw new Error('Port du relais invalide (25, 465, 587 ou 2525)');
+        const username = typeof p.username === 'string' ? p.username.trim() : '';
+        if (!/^[^\s:]{1,255}$/.test(username)) throw new Error('Identifiant du relais invalide');
+        const password = typeof p.password === 'string' ? p.password : '';
+        if (password === '' || password.length > 512) throw new Error('Mot de passe du relais requis');
+        const spf = typeof p.spfInclude === 'string' ? p.spfInclude.trim().toLowerCase() : '';
+        if (spf !== '' && !DOMAIN_RE.test(spf)) throw new Error('Domaine SPF du relais invalide (ex : spf.brevo.com)');
+        return callHelper<MailStatusResult>({ action: 'mail_relay_set', host, port: p.port, username, password, spfInclude: spf === '' ? null : spf });
+      },
+    },
+    'relay.clear': {
+      summary: 'Envoyer directement, sans relais',
+      handler: () => callHelper<MailStatusResult>({ action: 'mail_relay_clear' }),
+    },
+    'deliverability.check': {
+      summary: 'Diagnostic d\'envoi : IP, rDNS, port 25 sortant, listes noires',
+      handler: async () => deliverabilityReport(await callHelper<MailStatusResult>({ action: 'mail_status' })),
+    },
+    'test.send': {
+      summary: 'Envoyer un e-mail de test depuis postmaster@domaine et suivre sa livraison (payload: { domain, to })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const to = typeof p.to === 'string' ? p.to.trim() : '';
+        if (!EMAIL_RE.test(to)) throw new Error('Adresse du destinataire invalide');
+        return callHelper<MailTestResult>({ action: 'mail_test_send', domain: domainOf(p), to });
+      },
+    },
+    'dns.records': {
+      summary: 'Enregistrements DNS attendus pour un domaine et leur état public (payload: { domain })',
+      handler: async (payload) => {
+        const domain = domainOf((payload ?? {}) as Payload);
+        const expected = await expectedFor(domain);
+        return { zone: await hasLocalZone(domain), records: await checkRecords(expected) };
+      },
+    },
+    'dns.apply': {
+      summary: 'Publier les enregistrements dans la zone Bind du domaine (payload: { domain, replace? })',
+      handler: async (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const domain = domainOf(p);
+        if (!(await hasLocalZone(domain))) throw new Error(`Aucune zone Bind pour ${domain} : publie les enregistrements chez le registrar`);
+        return applyRecords(domain, await expectedFor(domain), p.replace === true);
+      },
+    },
+    'dkim.rotate': {
+      summary: 'Préparer une nouvelle clé DKIM, à publier avant de l\'activer (payload: { domain })',
+      handler: (payload) => callHelper<MailDomainInfo>({ action: 'mail_dkim_rotate', domain: domainOf((payload ?? {}) as Payload) }),
+    },
+    'dkim.activate': {
+      summary: 'Signer avec la nouvelle clé DKIM, une fois publiée (payload: { domain, force? })',
+      handler: async (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const domain = domainOf(p);
+        if (p.force !== true) {
+          const records = await checkRecords((await expectedFor(domain)).filter((r) => r.key === 'dkim-pending'));
+          if (records.some((r) => r.status !== 'ok')) throw new Error('La nouvelle clé n\'est pas encore visible dans le DNS : activer maintenant ferait échouer DKIM sur les messages envoyés');
+        }
+        return callHelper<MailDomainInfo>({ action: 'mail_dkim_activate', domain });
       },
     },
     'domains.list': {
