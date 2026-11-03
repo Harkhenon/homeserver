@@ -192,6 +192,46 @@ if (req.op === 'list') {
 
 const run = promisify(execFile);
 
+// --- Bind : emplacements selon la famille ---------------------------------------------------------
+
+function bindZonesDir(): string {
+  // Debian/Ubuntu : AppArmor interdit à named de lire hors de /etc/bind
+  if (!existsSync('/etc/bind')) return '/etc/named';
+  mkdirSync('/etc/bind/zones', { recursive: true, mode: 0o755 });
+  return '/etc/bind/zones';
+}
+
+/** RHEL/Fedora : /etc/named.conf n'inclut pas nos zones et n'écoute que sur localhost. */
+function ensureRhelNamedConf(includeFile: string): void {
+  const conf = '/etc/named.conf';
+  if (!existsSync(conf)) return;
+  const current = readFileSync(conf, 'utf8');
+  let next = current
+    .replace(/listen-on port 53 \{ 127\.0\.0\.1; \};/, 'listen-on port 53 { any; };')
+    .replace(/listen-on-v6 port 53 \{ ::1; \};/, 'listen-on-v6 port 53 { any; };');
+  if (!next.includes(includeFile)) next = `${next.trimEnd()}\ninclude "${includeFile}";\n`;
+  if (next !== current) writeFileSync(conf, next, { mode: statSync(conf).mode & 0o777 });
+}
+
+/** Anciennes versions : zones écrites dans /etc/named sur Debian/Ubuntu, jamais servies par Bind. */
+function migrateBindZones(): void {
+  if (!existsSync('/etc/bind') || !existsSync('/etc/named')) return;
+  try {
+    const zones = readdirSync('/etc/named').filter((f) => f.endsWith('.zone'));
+    if (zones.length === 0) return;
+    const dir = bindZonesDir();
+    for (const z of zones) if (!existsSync(`${dir}/${z}`)) renameSync(`/etc/named/${z}`, `${dir}/${z}`);
+    const include = '/etc/bind/homeserver-zones.conf';
+    if (existsSync(include)) {
+      writeFileSync(include, readFileSync(include, 'utf8').replaceAll('"/etc/named/', '"/etc/bind/zones/'), { mode: 0o644 });
+      execFile('systemctl', ['reload', 'bind9'], () => undefined);
+    }
+    log(`bind : ${zones.length} zone(s) déplacée(s) de /etc/named vers ${dir}`);
+  } catch (e) {
+    log(`bind : migration des zones impossible : ${(e as Error).message}`);
+  }
+}
+
 function log(line: string): void {
   mkdirSync(LOG_FILE.replace(/\/[^/]+$/, ''), { recursive: true });
   import('node:fs').then((fs) => fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${line}\n`));
@@ -1445,7 +1485,7 @@ WantedBy=multi-user.target
     }
     case 'dns_slaves_config': {
       const confDir = existsSync('/etc/bind') ? '/etc/bind' : '/etc/named';
-      const zonesDir = existsSync('/etc/bind/zones') ? '/etc/bind/zones' : '/etc/named';
+      const zonesDir = bindZonesDir();
       const includeFile = `${confDir}/homeserver-zones.conf`;
       const ipList = req.slaves.map((s) => s.ip);
       const transferBlock = ipList.length > 0
@@ -1463,12 +1503,15 @@ WantedBy=multi-user.target
           `zone "${domain}" {`,
           '  type master;',
           `  file "${zonesDir}/${zf}";`,
+          // Zone publique (RHEL/Fedora limitent allow-query à localhost globalement) ; la récursion reste locale
+          '  allow-query { any; };',
           ...transferBlock,
           '};',
           '',
         );
       }
       writeFileSync(includeFile, lines.join('\n') + '\n', { mode: 0o644 });
+      if (confDir === '/etc/named') ensureRhelNamedConf(includeFile);
       const namedConf = `${confDir}/named.conf.local`;
       const includeLine = `include "${includeFile}";`;
       const currentConf = existsSync(namedConf) ? readFileSync(namedConf, 'utf8') : '';
@@ -1995,6 +2038,7 @@ const server = createServer((socket) => {
 });
 
 server.maxConnections = MAX_CONNECTIONS;
+migrateBindZones();
 mkdirSync(SOCKET_PATH.replace(/\/[^/]+$/, ''), { recursive: true });
 if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
 server.listen(SOCKET_PATH, () => {

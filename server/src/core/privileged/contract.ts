@@ -103,7 +103,13 @@ export type MailRequest =
   | { action: 'mail_box_add'; domain: string; local: string; password: string; quotaMb: number; displayName: string }
   | { action: 'mail_box_set'; domain: string; local: string; quotaMb?: number; suspended?: boolean; displayName?: string }
   | { action: 'mail_box_password'; domain: string; local: string; password: string }
-  | { action: 'mail_box_remove'; domain: string; local: string; deleteData: boolean };
+  | { action: 'mail_box_remove'; domain: string; local: string; deleteData: boolean }
+  | { action: 'mail_settings_set'; publicIp: string | null }
+  | { action: 'mail_relay_set'; host: string; port: number; username: string; password: string; spfInclude: string | null }
+  | { action: 'mail_relay_clear' }
+  | { action: 'mail_dkim_rotate'; domain: string }
+  | { action: 'mail_dkim_activate'; domain: string }
+  | { action: 'mail_test_send'; domain: string; to: string };
 
 export interface MailStatusResult {
   installed: boolean;
@@ -113,6 +119,9 @@ export interface MailStatusResult {
   services: Record<string, boolean>;
   dovecotVersion: string | null;
   tls: { mode: 'selfsigned' | 'letsencrypt' | null; expiresAt: string | null };
+  /** IP publique saisie (serveur derrière un NAT), sinon null : serverIp fait foi. */
+  publicIp: string | null;
+  relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
   domainCount: number;
   boxCount: number;
 }
@@ -123,7 +132,15 @@ export interface MailDomainInfo {
   defaultQuotaMb: number;
   boxCount: number;
   dkim: { selector: string; record: string } | null;
+  /** Nouvelle clé en cours de rotation : à publier dans le DNS avant de l'activer. */
+  dkimPending: { selector: string; record: string } | null;
   createdAt: string;
+}
+
+export interface MailTestResult {
+  messageId: string;
+  status: 'sent' | 'deferred' | 'bounced' | 'pending';
+  detail: string;
 }
 
 export interface MailBoxInfo {
@@ -409,6 +426,12 @@ function isMailDisplayName(v: unknown): v is string {
 function isMailPassword(v: unknown): v is string {
   // eslint-disable-next-line no-control-regex
   return typeof v === 'string' && v.length >= 12 && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v);
+}
+
+const MAIL_RELAY_USER_RE = /^[^\s:]{1,255}$/;
+function isMailRelayPassword(v: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return v.length <= 512 && !/[\x00-\x1f\x7f]/.test(v);
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -788,6 +811,28 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'mail_box_remove':
       if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || typeof raw.deleteData !== 'boolean') return null;
       return { action: 'mail_box_remove', domain: raw.domain, local: raw.local, deleteData: raw.deleteData };
+    case 'mail_settings_set':
+      if (raw.publicIp !== null && !isValidIp(raw.publicIp)) return null;
+      return { action: 'mail_settings_set', publicIp: raw.publicIp };
+    case 'mail_relay_set': {
+      if (!isMailDomain(raw.host) && !isValidIp(raw.host)) return null;
+      if (raw.port !== 25 && raw.port !== 465 && raw.port !== 587 && raw.port !== 2525) return null;
+      if (typeof raw.username !== 'string' || !MAIL_RELAY_USER_RE.test(raw.username)) return null;
+      if (typeof raw.password !== 'string' || raw.password.length < 1 || !isMailRelayPassword(raw.password)) return null;
+      if (raw.spfInclude !== null && !isMailDomain(raw.spfInclude)) return null;
+      return { action: 'mail_relay_set', host: raw.host as string, port: raw.port, username: raw.username, password: raw.password, spfInclude: raw.spfInclude };
+    }
+    case 'mail_relay_clear':
+      return { action: 'mail_relay_clear' };
+    case 'mail_dkim_rotate':
+      if (!isMailDomain(raw.domain)) return null;
+      return { action: 'mail_dkim_rotate', domain: raw.domain };
+    case 'mail_dkim_activate':
+      if (!isMailDomain(raw.domain)) return null;
+      return { action: 'mail_dkim_activate', domain: raw.domain };
+    case 'mail_test_send':
+      if (!isMailDomain(raw.domain) || typeof raw.to !== 'string' || !MAIL_ADDRESS_RE.test(raw.to)) return null;
+      return { action: 'mail_test_send', domain: raw.domain, to: raw.to };
     default:
       return null;
   }

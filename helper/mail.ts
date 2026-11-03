@@ -7,12 +7,12 @@
 // Multi-distro : maps `texthash:` (hash/lmdb varient selon les paquets), services Postfix
 // déclarés par numéro de port (/etc/services varie), un gabarit par génération de Dovecot.
 import { execFile, spawn } from 'node:child_process';
-import { X509Certificate, createPublicKey, generateKeyPairSync } from 'node:crypto';
+import { X509Certificate, createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
-  chmodSync, chownSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync,
+  chmodSync, chownSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { promisify } from 'node:util';
-import type { MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult } from '../server/src/core/privileged/contract.js';
+import type { MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult } from '../server/src/core/privileged/contract.js';
 
 const run = promisify(execFile);
 
@@ -31,6 +31,9 @@ const OPENDKIM_DROPIN = '/etc/systemd/system/opendkim.service.d/zz-homeserver.co
 const TLS_DIR = '/etc/homeserver-mail/tls';
 const TLS_CERT = `${TLS_DIR}/fullchain.pem`;
 const TLS_KEY = `${TLS_DIR}/privkey.pem`;
+const RELAY_PASSWD = `${POSTFIX_MAPS}/relay_passwd`;
+const AUTOCONFIG_ROOT = '/var/www/homeserver-mail';
+const AUTOCONFIG_SITE = 'homeserver-mail-autoconfig.conf';
 const CERTBOT_HOOK = '/etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh';
 const DKIM_SELECTOR = 'hs1';
 const CONF_MARKER = '# Généré par Homeserver';
@@ -56,6 +59,7 @@ interface DomainState {
   suspended: boolean;
   defaultQuotaMb: number;
   dkimSelector: string;
+  dkimPending?: string;
   createdAt: string;
   boxes: Record<string, BoxState>;
 }
@@ -64,6 +68,9 @@ interface MailState {
   schema: 1;
   hostname: string | null;
   tlsMode: 'selfsigned' | 'letsencrypt' | null;
+  publicIp?: string | null;
+  // Mot de passe du relais en clair ici et dans la map Postfix : root seul (0600), inévitable pour s'y authentifier
+  relay?: { host: string; port: number; username: string; password: string; spfInclude: string | null } | null;
   domains: Record<string, DomainState>;
 }
 
@@ -296,6 +303,10 @@ interface OutFile {
   gid: number;
 }
 
+function relayDest(relay: { host: string; port: number }): string {
+  return `[${relay.host}]:${relay.port}`;
+}
+
 function dkimKeyPath(domain: string, selector: string): string {
   return `${OPENDKIM_DIR}/keys/${domain}/${selector}.private`;
 }
@@ -332,6 +343,12 @@ async function renderFiles(state: MailState, version: string): Promise<OutFile[]
     { path: `${POSTFIX_MAPS}/mailboxes`, content: text(mailboxes), mode: 0o644, ...root },
     { path: `${POSTFIX_MAPS}/aliases`, content: '', mode: 0o644, ...root },
     { path: `${POSTFIX_MAPS}/senders`, content: text(senders), mode: 0o644, ...root },
+    {
+      path: RELAY_PASSWD,
+      content: state.relay ? `${relayDest(state.relay)} ${state.relay.username}:${state.relay.password}\n` : '',
+      mode: 0o600,
+      ...root,
+    },
     { path: DOVECOT_USERS, content: text(users), mode: 0o640, uid: 0, gid: dovecot.gid },
     { path: `${OPENDKIM_DIR}/KeyTable`, content: text(keyTable), mode: 0o640, ...opendkim },
     { path: `${OPENDKIM_DIR}/SigningTable`, content: text(signingTable), mode: 0o640, ...opendkim },
@@ -368,6 +385,157 @@ async function applyState(state: MailState, deps: MailDeps): Promise<void> {
   // Maps texthash : lues au démarrage des processus Postfix, d'où le reload
   if (await serviceActive('postfix')) await exec('postfix', ['reload'], 30_000);
   if (await serviceActive('opendkim')) await exec('systemctl', ['restart', 'opendkim'], 30_000);
+  // Confort pour les logiciels de messagerie : un échec ne doit jamais bloquer le service mail
+  await writeAutoconfig(state).catch((e: Error) => deps.log(`mail : autoconfig non publiée : ${e.message}`));
+}
+
+// --- Configuration automatique des logiciels de messagerie (Thunderbird et compatibles) ---------
+
+function renderAutoconfigXml(state: MailState): string {
+  const host = state.hostname as string;
+  const domains = Object.keys(state.domains).map((d) => `    <domain>${d}</domain>`).join('\n');
+  const incoming = (type: string, port: number): string => `    <incomingServer type="${type}">
+      <hostname>${host}</hostname>
+      <port>${port}</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<clientConfig version="1.1">
+  <emailProvider id="${host}">
+${domains}
+    <displayName>${host}</displayName>
+${incoming('imap', 993)}
+${incoming('pop3', 995)}
+    <outgoingServer type="smtp">
+      <hostname>${host}</hostname>
+      <port>587</port>
+      <socketType>STARTTLS</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </outgoingServer>
+  </emailProvider>
+</clientConfig>
+`;
+}
+
+async function writeAutoconfig(state: MailState): Promise<void> {
+  const aliases = Object.keys(state.domains).map((d) => `autoconfig.${d}`);
+  const apacheDebian = existsSync('/etc/apache2/sites-available');
+  const apache = (await serviceActive('apache2')) || (await serviceActive('httpd'));
+  const nginx = !apache && (await serviceActive('nginx'));
+  if (!apache && !nginx) return;
+  const nginxDebian = existsSync('/etc/nginx/sites-available');
+  const available = apache
+    ? (apacheDebian ? `/etc/apache2/sites-available/${AUTOCONFIG_SITE}` : `/etc/httpd/conf.d/${AUTOCONFIG_SITE}`)
+    : (nginxDebian ? `/etc/nginx/sites-available/${AUTOCONFIG_SITE}` : `/etc/nginx/conf.d/${AUTOCONFIG_SITE}`);
+  const enabled = apache
+    ? (apacheDebian ? `/etc/apache2/sites-enabled/${AUTOCONFIG_SITE}` : null)
+    : (nginxDebian ? `/etc/nginx/sites-enabled/${AUTOCONFIG_SITE}` : null);
+  const test: [string, string[]] = apache ? [apacheDebian ? 'apache2ctl' : 'httpd', ['-t']] : ['nginx', ['-t']];
+  const unit = apache ? (apacheDebian ? 'apache2' : 'httpd') : 'nginx';
+  const previous = existsSync(available) ? readFileSync(available, 'utf8') : null;
+
+  if (aliases.length === 0) {
+    if (previous === null) return;
+    if (enabled) rmSync(enabled, { force: true });
+    rmSync(available, { force: true });
+    await exec('systemctl', ['reload', unit], 30_000);
+    return;
+  }
+  mkdirSync(`${AUTOCONFIG_ROOT}/mail`, { recursive: true, mode: 0o755 });
+  writeFileSync(`${AUTOCONFIG_ROOT}/mail/config-v1.1.xml`, renderAutoconfigXml(state), { mode: 0o644 });
+  const conf = apache ? `${CONF_MARKER}
+<VirtualHost *:80>
+  ServerName ${aliases[0]}
+  ServerAlias ${aliases.join(' ')}
+  DocumentRoot ${AUTOCONFIG_ROOT}
+  <Directory ${AUTOCONFIG_ROOT}>
+    Options None
+    AllowOverride None
+    Require all granted
+  </Directory>
+</VirtualHost>
+` : `${CONF_MARKER}
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${aliases.join(' ')};
+  root ${AUTOCONFIG_ROOT};
+}
+`;
+  if (conf === previous) return;
+  writeFileSync(available, conf, { mode: 0o644 });
+  if (enabled && !existsSync(enabled)) symlinkSync(available, enabled);
+  try {
+    await exec(test[0], test[1], 30_000);
+  } catch (e) {
+    if (previous === null) {
+      if (enabled) rmSync(enabled, { force: true });
+      rmSync(available, { force: true });
+    } else {
+      writeFileSync(available, previous, { mode: 0o644 });
+    }
+    throw new Error(`configuration web refusée : ${errText(e)}`);
+  }
+  await exec('systemctl', ['reload', unit], 30_000);
+}
+
+// --- E-mail de test ------------------------------------------------------------------------------
+
+/** Envoie un message signé et suit sa livraison dans le journal de Postfix (~25 s au plus). */
+async function sendTestMail(domain: string, to: string): Promise<MailTestResult> {
+  const messageId = `hs-test-${randomBytes(9).toString('hex')}@${domain}`;
+  const from = `postmaster@${domain}`;
+  const body = [
+    `From: ${from}`,
+    `To: ${to}`,
+    'Subject: Test de messagerie Homeserver',
+    `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
+    `Message-ID: <${messageId}>`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    '',
+    `Ce message de test a ete envoye depuis le panel Homeserver pour le domaine ${domain}.`,
+    '',
+  ].join('\n');
+  await execInput('sendmail', ['-i', '-f', from, '--', to], body, 30_000);
+  let queueId = '';
+  let last: { status: MailTestResult['status']; detail: string } = { status: 'pending', detail: 'Message en file d\'attente' };
+  for (let i = 0; i < 25; i++) {
+    const log = (await tryExec('journalctl', ['-S', '-5min', '-o', 'cat', '--no-pager', '-n', '5000'], 15_000)) ?? '';
+    const lines = log.split('\n');
+    queueId ||= lines.find((l) => l.includes(`message-id=<${messageId}>`))?.match(/([0-9A-Za-z]+): message-id=/)?.[1] ?? '';
+    const line = queueId ? lines.find((l) => l.includes(`${queueId}: to=<`)) : undefined;
+    const m = line?.match(/status=(sent|deferred|bounced) \((.*)\)$/);
+    if (m) {
+      last = { status: m[1] as MailTestResult['status'], detail: m[2] ?? '' };
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { messageId, ...last };
+}
+
+async function configureRelay(relay: MailState['relay']): Promise<void> {
+  const settings: Record<string, string> = relay ? {
+    relayhost: relayDest(relay),
+    smtp_sasl_auth_enable: 'yes',
+    smtp_sasl_password_maps: `texthash:${RELAY_PASSWD}`,
+    smtp_sasl_security_options: 'noanonymous',
+    smtp_sasl_tls_security_options: 'noanonymous',
+    // Jamais d'identifiants en clair vers le relais ; 465 = TLS implicite
+    smtp_tls_security_level: 'encrypt',
+    smtp_tls_wrappermode: relay.port === 465 ? 'yes' : 'no',
+  } : {
+    relayhost: '',
+    smtp_sasl_auth_enable: 'no',
+    smtp_sasl_password_maps: '',
+    smtp_tls_security_level: 'may',
+    smtp_tls_wrappermode: 'no',
+  };
+  await exec('postconf', ['-e', ...Object.entries(settings).map(([k, v]) => `${k}=${v}`)], 30_000);
 }
 
 // --- Installation --------------------------------------------------------------------------
@@ -394,9 +562,23 @@ async function assertNoForeignMailServer(state: MailState): Promise<void> {
   if (vdomains && !vdomains.includes(POSTFIX_MAPS) && vdomains !== '$virtual_mailbox_maps') {
     throw new Error(`Postfix est déjà configuré pour des domaines virtuels (${vdomains}) : installation annulée pour ne pas écraser ce serveur`);
   }
-  const listeners = (await tryExec('ss', ['-H', '-ltnp', 'sport = :25'], 10_000)) ?? '';
-  if (listeners.trim() && !/"master"|"postfix"/.test(listeners)) {
-    throw new Error(`Le port 25 est déjà utilisé par un autre service : ${listeners.trim().slice(0, 200)}`);
+  // Le helper n'a pas la capacité de voir le processus (ss -p) : on raisonne sur l'adresse. Un MTA
+  // local (exim4 tiré par Debian, sendmail) n'écoute qu'en boucle locale et sera remplacé ; un
+  // service qui écoute publiquement est un vrai serveur de mail, à ne pas écraser.
+  const listeners = ((await tryExec('ss', ['-H', '-ltn', 'sport = :25'], 10_000)) ?? '').trim().split('\n').filter(Boolean);
+  const isPublic = listeners.some((l) => !/\s(127\.0\.0\.1|\[::1\]):25\s/.test(l));
+  if (isPublic && !(await serviceActive('postfix'))) {
+    throw new Error(`Le port 25 est déjà utilisé par un autre service : ${listeners.join(' ; ').slice(0, 200)}`);
+  }
+}
+
+/** MTA local par défaut encore présent après l'installation de Postfix : il occuperait le port 25. */
+async function stopLocalMta(deps: MailDeps): Promise<void> {
+  for (const unit of ['exim4', 'sendmail']) {
+    if (await serviceActive(unit)) {
+      await exec('systemctl', ['disable', '--now', unit], 60_000);
+      deps.log(`mail : ${unit} arrêté, remplacé par Postfix`);
+    }
   }
 }
 
@@ -473,6 +655,7 @@ async function configurePostfix(hostname: string): Promise<void> {
     smtpd_tls_mandatory_protocols: '>=TLSv1.2',
     smtp_tls_security_level: 'may',
     smtp_tls_loglevel: '1',
+    smtp_address_preference: 'ipv4',
     smtpd_sasl_type: 'dovecot',
     smtpd_sasl_path: 'private/auth',
     milter_default_action: 'accept',
@@ -603,6 +786,8 @@ async function status(): Promise<MailStatusResult> {
     services,
     dovecotVersion: await dovecotVersion(),
     tls: { mode: state.tlsMode, expiresAt },
+    publicIp: state.publicIp ?? null,
+    relay: state.relay ? { host: state.relay.host, port: state.relay.port, username: state.relay.username, spfInclude: state.relay.spfInclude } : null,
     domainCount: domains.length,
     boxCount: domains.reduce((n, d) => n + Object.keys(d.boxes).length, 0),
   };
@@ -640,6 +825,7 @@ function domainInfo(domain: string, d: DomainState): MailDomainInfo {
     defaultQuotaMb: d.defaultQuotaMb,
     boxCount: Object.keys(d.boxes).length,
     dkim: dkimRecord(domain, d.dkimSelector),
+    dkimPending: d.dkimPending ? dkimRecord(domain, d.dkimPending) : null,
     createdAt: d.createdAt,
   };
 }
@@ -729,6 +915,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const state = loadState();
         await assertNoForeignMailServer(state);
         await installPackages(deps);
+        await stopLocalMta(deps);
         const version = await dovecotVersion();
         if (!version) throw new Error('Dovecot introuvable après installation');
         await ensureVmailUser();
@@ -860,6 +1047,61 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         await kick(`${req.local}@${req.domain}`);
         if (req.deleteData) rmSync(`${VMAIL_DIR}/${req.domain}/${req.local}`, { recursive: true, force: true });
         return { deleted: true, dataDeleted: req.deleteData };
+      });
+    case 'mail_settings_set':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        state.publicIp = req.publicIp;
+        saveState(state);
+        return status();
+      });
+    case 'mail_relay_set':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        state.relay = { host: req.host, port: req.port, username: req.username, password: req.password, spfInclude: req.spfInclude };
+        await configureRelay(state.relay);
+        await applyState(state, deps);
+        return status();
+      });
+    case 'mail_relay_clear':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        state.relay = null;
+        await configureRelay(null);
+        await applyState(state, deps);
+        return status();
+      });
+    case 'mail_dkim_rotate':
+      return locked(async () => {
+        const state = loadState();
+        const d = getDomain(state, req.domain);
+        if (d.dkimPending) return domainInfo(req.domain, d);
+        const n = Number(d.dkimSelector.match(/(\d+)$/)?.[1] ?? 1) + 1;
+        const selector = `hs${n}`;
+        await ensureDkimKey(req.domain, selector);
+        d.dkimPending = selector;
+        saveState(state);
+        return domainInfo(req.domain, d);
+      });
+    case 'mail_dkim_activate':
+      return locked(async () => {
+        const state = loadState();
+        const d = getDomain(state, req.domain);
+        if (!d.dkimPending) throw new Error('Aucune rotation de clé en cours');
+        d.dkimSelector = d.dkimPending;
+        delete d.dkimPending;
+        await applyState(state, deps);
+        return domainInfo(req.domain, d);
+      });
+    case 'mail_test_send':
+      return Promise.resolve().then(() => {
+        const state = loadState();
+        assertConfigured(state);
+        getDomain(state, req.domain);
+        return sendTestMail(req.domain, req.to);
       });
     default: {
       const unreachable: never = req;

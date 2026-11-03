@@ -1,40 +1,16 @@
 import { parentPort } from 'node:worker_threads';
-import { existsSync } from 'node:fs';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
-import type { DirEntryInfo, ServiceStatusResult } from '../../core/privileged/contract.js';
-import { platform } from '../../core/platform/index.js';
+import type { ServiceStatusResult } from '../../core/privileged/contract.js';
+import {
+  BIND_UNIT, RECORD_TYPES, ZONES_DIR, ZONE_FILE_RE, listZoneFiles, loadZone, parseZone, readZone, writeZoneChecked,
+  type DnsRecord, type RecordType, type Zone,
+} from './zonefile.js';
 
-const BIND_UNIT = platform.serviceName('bind9') as 'bind9' | 'named';
-
-const ZONES_DIR = existsSync('/etc/bind/zones') ? '/etc/bind/zones' : '/etc/named';
-const ZONE_FILE_RE = /^[A-Za-z0-9._-]+\.zone$/;
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
-const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'PTR'] as const;
-type RecordType = (typeof RECORD_TYPES)[number];
-
-interface DnsRecord {
-  name: string;
-  type: RecordType;
-  value: string;
-  ttl: number;
-}
-
-interface Zone {
-  id: string;
-  domain: string;
-  file: string;
-  serial: number;
-  records: DnsRecord[];
-}
-
-function zoneFilePath(domain: string): string {
-  return `${ZONES_DIR}/${domain}.zone`;
-}
-
 function detectPublicIp(): string {
   const interfaces = os.networkInterfaces();
   const excluded = /^((172\.(1[6-9]|2\d|3[01]))\.|192\.168\.|10\.|127\.|169\.254\.)/;
@@ -55,74 +31,6 @@ function detectPublicIp(): string {
   return '127.0.0.1';
 }
 
-function escapeZoneValue(value: string): string {
-  return value.replace(/"/g, '\\"');
-}
-
-function parseZone(file: string, content: string): Zone {
-  const id = file.replace(/\.zone$/, '');
-  const records: DnsRecord[] = [];
-  let serial = 0;
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('$')) {
-      continue;
-    }
-    if (/^\d{10}\s*;/.test(trimmed)) {
-      serial = Number(trimmed.slice(0, 10));
-      continue;
-    }
-    if (trimmed.includes('Serial')) {
-      const parts = trimmed.split(/\s+/);
-      for (const p of parts) if (/^\d{10}$/.test(p)) serial = Number(p);
-      continue;
-    }
-    const soa = trimmed.match(/^@\s+IN\s+SOA/i);
-    if (soa) continue;
-    const m = trimmed.match(/^(?:([A-Za-z0-9@*._-]+)\s+)?(?:(\d+)\s+)?IN\s+([A-Z]{1,5})\s+(.+)$/);
-    if (!m) continue;
-    const type = (m[3] ?? '').toUpperCase() as RecordType;
-    if (!RECORD_TYPES.includes(type)) continue;
-    records.push({
-      name: m[1] ?? '@',
-      type,
-      ttl: m[2] ? Number(m[2]) : 3600,
-      value: type === 'TXT' ? (m[4] ?? '').trim().replace(/^"|"$/g, '').replace(/\\"/g, '"') : (m[4] ?? '').trim(),
-    });
-  }
-  return { id, domain: id, file, serial, records };
-}
-
-function renderZone(domain: string, records: DnsRecord[], serial: number): string {
-  const lines = [
-    `$ORIGIN ${domain}.`,
-    '$TTL 3600',
-    `@ IN SOA ns1.${domain}. hostmaster.${domain}. (`,
-    `  ${serial}   ; serial`,
-    '  7200       ; refresh',
-    '  3600       ; retry',
-    '  1209600    ; expire',
-    '  3600 )     ; ttl negative',
-    '',
-  ];
-  for (const r of records) {
-    const name = r.name === '@' ? '@' : r.name;
-    const value = r.type === 'TXT' && !r.value.startsWith('"') ? `"${escapeZoneValue(r.value)}"` : r.value;
-    lines.push(`${name} ${r.ttl} IN ${r.type} ${value}`);
-  }
-  return lines.join('\n') + '\n';
-}
-
-async function listZoneFiles(): Promise<string[]> {
-  const res = await callHelper<{ entries: DirEntryInfo[] }>({ action: 'list_dir', path: ZONES_DIR });
-  return (res.entries ?? []).filter((e) => e.type === 'file' && ZONE_FILE_RE.test(e.name)).map((e) => e.name);
-}
-
-async function readZone(file: string): Promise<string> {
-  const res = await callHelper<{ content: string }>({ action: 'read_file', path: `${ZONES_DIR}/${file}` });
-  return res.content;
-}
-
 function validateRecordInput(p: Record<string, unknown>): DnsRecord {
   const name = typeof p.name === 'string' ? p.name.trim() : '';
   if (name.length === 0 || name.length > 253 || /[\/\\]/.test(name)) throw new Error('Nom d\'enregistrement invalide');
@@ -132,24 +40,6 @@ function validateRecordInput(p: Record<string, unknown>): DnsRecord {
   if (value.length === 0 || value.length > 2000) throw new Error('Valeur requise');
   const ttl = typeof p.ttl === 'number' && p.ttl >= 60 && p.ttl <= 604800 ? Math.floor(p.ttl) : 3600;
   return { name, type: type as RecordType, value, ttl };
-}
-
-async function loadZone(id: string): Promise<Zone> {
-  const file = id.endsWith('.zone') ? id : `${id}.zone`;
-  if (!ZONE_FILE_RE.test(file)) throw new Error('Identifiant de zone invalide');
-  const content = await readZone(file);
-  return parseZone(file, content);
-}
-
-async function writeZoneChecked(domain: string, records: DnsRecord[], serial: number): Promise<void> {
-  const content = renderZone(domain, records, serial);
-  const path = zoneFilePath(domain);
-  await callHelper({ action: 'write_config', path, content });
-  const check = await callHelper<{ valid: boolean; errors?: string }>({ action: 'check_zone', zone: domain, file: path });
-  if (!check.valid) {
-    await callHelper({ action: 'unlink', path });
-    throw new Error(`Zone invalide: ${check.errors ?? 'erreur inconnue'}`);
-  }
 }
 
 interface DnsSlave {

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Autocomplete, Badge, Button, Card, Group, Modal, NumberInput, SimpleGrid, Stack, Table, Text, TextInput, ThemeIcon,
+  Alert, Autocomplete, Badge, Button, Card, Group, Modal, NumberInput, SimpleGrid, Stack, Table, Tabs, Text, TextInput, ThemeIcon,
 } from '@mantine/core';
-import { IconChevronRight, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
+import { IconChevronRight, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconWorld } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useModuleQuery } from '../api/hooks';
 import { ErrorBlock, LoadingBlock, PageHeader } from '../components';
 import { mailCall } from '../components/mail/MailboxesPanel';
+import { MailDeliverabilityPanel } from '../components/mail/MailDeliverabilityPanel';
 import type { MailDomain, MailStatus, Zone } from '../types';
 
 const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)' };
@@ -191,6 +192,15 @@ export function MailPage() {
         <Stack>
           <ServiceCard status={status.data} onChanged={reload} />
           {domains.error && <ErrorBlock error={domains.error} />}
+          <Tabs defaultValue="domains">
+            <Tabs.List mb="md">
+              <Tabs.Tab value="domains" leftSection={<IconWorld size={16} stroke={1.5} />}>Domaines</Tabs.Tab>
+              <Tabs.Tab value="deliverability" leftSection={<IconSend size={16} stroke={1.5} />}>Délivrabilité</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="deliverability">
+              <MailDeliverabilityPanel status={status.data} domains={list} onChanged={reload} />
+            </Tabs.Panel>
+            <Tabs.Panel value="domains">
           {list.length === 0 ? (
             <Text c="dimmed" ta="center" py="xl">Aucun domaine pour l'instant : ajoute le premier pour créer des boîtes.</Text>
           ) : (
@@ -210,6 +220,8 @@ export function MailPage() {
               </Table.Tbody>
             </Table>
           )}
+            </Tabs.Panel>
+          </Tabs>
         </Stack>
       )}
       <AddDomainModal

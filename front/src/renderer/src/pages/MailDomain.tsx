@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
-  Alert, Button, Card, Checkbox, Code, Group, Modal, Stack, Switch, Text, TextInput,
+  Alert, Button, Checkbox, Group, Modal, Stack, Switch, Tabs, Text, TextInput,
 } from '@mantine/core';
-import { IconMail, IconTrash } from '@tabler/icons-react';
+import { IconBinaryTree, IconMail, IconTrash, IconUsers } from '@tabler/icons-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useModuleQuery } from '../api/hooks';
 import { ErrorBlock, LoadingBlock, PageHeader } from '../components';
-import { CopyValue, MailboxesPanel, mailCall } from '../components/mail/MailboxesPanel';
+import { MailboxesPanel, mailCall } from '../components/mail/MailboxesPanel';
+import { MailDnsPanel } from '../components/mail/MailDnsPanel';
 import type { MailDomain } from '../types';
 
 function DeleteDomainModal({ domain, opened, onClose, onDone }: { domain: string; opened: boolean; onClose: () => void; onDone: () => void }) {
@@ -80,20 +81,14 @@ export function MailDomainPage() {
       />
       <Stack>
         {info.suspended && <Alert color="orange">Domaine suspendu : aucune boîte ne reçoit ni n'envoie de message. Les données sont conservées.</Alert>}
-        <MailboxesPanel domain={domain} />
-        {info.dkim && (
-          <Card withBorder>
-            <Text fw={600} mb={4}>Signature DKIM</Text>
-            <Text size="sm" c="dimmed" mb="xs">À publier dans le DNS pour que les messages envoyés soient reconnus (TXT).</Text>
-            <Group wrap="nowrap" justify="space-between" align="flex-start">
-              <div style={{ minWidth: 0 }}>
-                <Code block mb={4}>{`${info.dkim.selector}._domainkey.${domain}`}</Code>
-                <Code block style={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{info.dkim.record}</Code>
-              </div>
-              <CopyValue value={info.dkim.record} />
-            </Group>
-          </Card>
-        )}
+        <Tabs defaultValue="boxes">
+          <Tabs.List mb="md">
+            <Tabs.Tab value="boxes" leftSection={<IconUsers size={16} stroke={1.5} />}>Boîtes</Tabs.Tab>
+            <Tabs.Tab value="dns" leftSection={<IconBinaryTree size={16} stroke={1.5} />}>DNS</Tabs.Tab>
+          </Tabs.List>
+          <Tabs.Panel value="boxes"><MailboxesPanel domain={domain} /></Tabs.Panel>
+          <Tabs.Panel value="dns"><MailDnsPanel domain={domain} info={info} onChanged={() => void domains.reload(true)} /></Tabs.Panel>
+        </Tabs>
       </Stack>
       <DeleteDomainModal domain={domain} opened={deleteOpen} onClose={() => setDeleteOpen(false)} onDone={() => navigate('/mail')} />
     </div>
