@@ -34,7 +34,8 @@ import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, validateFail2banConfig, CONTRACT_VERSION, FAIL2BAN_JAILS } from '../server/src/core/privileged/contract.js';
-import type { SshHardeningStatusResult, SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
+import { handleMail } from './mail.js';
+import type { MailRequest, SshHardeningStatusResult,SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
 // Layout (scripts/layout.sh) : tout ce que root lit pour décider ou exécute vit dans des
@@ -814,6 +815,14 @@ async function handleRequest(raw: unknown): Promise<unknown> {
   const req = validateRequest(raw);
   if (!req) throw Object.assign(new Error('Requête invalide'), { code: 'VALIDATION' });
   const family = detectFamily();
+  if (req.action.startsWith('mail_')) {
+    return handleMail(req as MailRequest, {
+      family,
+      pkgInstall: (packages) => pkgInstall(family, packages),
+      pkgRefresh: () => (family === 'debian' ? aptUpdate() : Promise.resolve()),
+      log,
+    });
+  }
   switch (req.action) {
     case 'echo':
       return { echo: true, family };

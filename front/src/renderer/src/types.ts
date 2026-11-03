@@ -151,3 +151,34 @@ export interface ServiceStatus {
   active: boolean;
   enabled: boolean;
 }
+
+export interface MailStatus {
+  installed: boolean;
+  configured: boolean;
+  hostname: string | null;
+  serverIp: string | null;
+  services: Record<string, boolean>;
+  dovecotVersion: string | null;
+  tls: { mode: 'selfsigned' | 'letsencrypt' | null; expiresAt: string | null };
+  domainCount: number;
+  boxCount: number;
+}
+
+export interface MailDomain {
+  domain: string;
+  suspended: boolean;
+  defaultQuotaMb: number;
+  boxCount: number;
+  dkim: { selector: string; record: string } | null;
+  createdAt: string;
+}
+
+export interface MailBox {
+  address: string;
+  local: string;
+  displayName: string;
+  quotaMb: number;
+  usedMb: number;
+  suspended: boolean;
+  createdAt: string;
+}

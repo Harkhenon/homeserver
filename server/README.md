@@ -32,6 +32,7 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/firewall/:action` | `status`, `enable`, `rules.add/remove` (ufw/firewalld) |
 | `POST /api/monitor/:action` | `history`, `latest`, `summary` (échantillons 1/min, 12h) |
 | `POST /api/node/:action` | `apps.list/create/delete/service`, `ports.check` — apps Node SSR en systemd `hs-app-*`, port dédié, proxy Apache/Nginx |
+| `POST /api/mail/:action` | `status`, `setup`, `service.set`, `tls.issue`, `domains.list/add/update/delete`, `boxes.list/add/update/password/delete` — service e-mail (Postfix + Dovecot + OpenDKIM) |
 | `POST /api/nginx/:action` | `vhosts.list/get/create/delete`, `service.status/reload` — alternative à Apache, PHP-FPM ou proxy Node |
 
 Exemple :
@@ -92,6 +93,16 @@ Installation automatisée (sans question) : `sudo bash scripts/install.sh --yes`
 `HS_PANEL_DOMAIN`, `HS_LETSENCRYPT_EMAIL` (détail : `scripts/install.sh --help`).
 L'installation est rejouable : une relance conserve le `.env` (secrets, domaine HTTPS, réglages)
 et ne demande que les valeurs manquantes.
+
+## Service e-mail
+
+Activé à la demande depuis la page **E-mails** du panel, ou à l'installation avec `HS_INSTALL_MAIL=yes HS_MAIL_HOSTNAME=mail.exemple.fr`.
+Le mail dépend d'un **domaine**, pas d'un site : supprimer un site ne touche pas aux boîtes. L'onglet E-mails d'un site est un raccourci vers les boîtes de son domaine.
+
+- `/var/lib/homeserver-mail/state.json` (root, 0600) est la source de vérité : les maps Postfix (`/etc/postfix/homeserver/`), le passwd-file Dovecot (`/etc/dovecot/homeserver-users`) et les tables OpenDKIM en sont régénérés et validés ; ne pas les éditer à la main.
+- Messages : `/var/vmail/<domaine>/<boîte>/Maildir`, utilisateur `vmail`. Mots de passe hashés par `doveadm pw`, jamais visibles par `hs-*`.
+- Tous les domaines partagent le nom d'hôte du serveur (MX, logiciels de messagerie, certificat Let's Encrypt). Dovecot 2.3 et 2.4 sont gérés par deux gabarits.
+- La désinstallation retire la configuration et conserve `/var/vmail`, sauf avec `--purge`.
 
 ## Ajouter un module
 

@@ -10,6 +10,8 @@ import { NodeAppsPage } from './pages/NodeApps';
 import { NodeAppDetailPage } from './pages/NodeAppDetail';
 import { DomainsPage } from './pages/Domains';
 import { DomainDetailPage } from './pages/DomainDetail';
+import { MailPage } from './pages/Mail';
+import { MailDomainPage } from './pages/MailDomain';
 import { DatabasesPage } from './pages/Databases';
 import { SslPage } from './pages/Ssl';
 import { UsersPage } from './pages/Users';
@@ -73,6 +75,8 @@ function Shell() {
             <Route path="/node/:name" element={<NodeAppDetailPage />} />
             <Route path="/domains" element={<DomainsPage />} />
             <Route path="/domains/:id" element={<DomainDetailPage />} />
+            <Route path="/mail" element={<MailPage />} />
+            <Route path="/mail/:domain" element={<MailDomainPage />} />
             <Route path="/databases" element={<DatabasesPage />} />
             <Route path="/ssl" element={<SslPage />} />
             <Route path="/users" element={<UsersPage />} />

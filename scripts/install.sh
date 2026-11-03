@@ -19,6 +19,8 @@
 #   HS_UPDATER_TARBALL_URL source du couple updater (URL signée .sig, ou chemin local)
 #   HS_NODE_MIRROR         miroir des binaires Node.js           [https://nodejs.org/dist]
 #   HS_SKIP_FIREWALL=1     ne pas ouvrir le port du panel dans ufw/firewalld
+#   HS_INSTALL_MAIL=yes    active le service e-mail (activable sinon depuis le panel)
+#   HS_MAIL_HOSTNAME       nom d'hôte du serveur de mail (requis avec HS_INSTALL_MAIL)
 set -Eeuo pipefail
 umask 022
 
@@ -161,7 +163,7 @@ if $UNINSTALL; then
   echo -e "${BOLD}→${RESET} Désinstallation de Homeserver"
   echo -e "${DIM}  Supprimera: services systemd, ${INSTALL_DIR}, ${OPT_DIR} (Node + releases), ${HS_HOME} (données), updater, utilisateurs hs-* et homeserver-build${RESET}"
   $PURGE && echo -e "${DIM}  --purge : supprimera aussi ${LOG_DIR} et les groupes homeserver*${RESET}"
-  echo -e "${DIM}  Conservés : paquets système (Apache/Nginx, MariaDB, PHP…), fail2ban et ses jails, sites dans /var/www, bases de données${RESET}"
+  echo -e "${DIM}  Conservés : paquets système (Apache/Nginx, MariaDB, PHP…), fail2ban et ses jails, sites dans /var/www, bases de données, boîtes e-mail (sauf --purge)${RESET}"
   if ! $ASSUME_YES; then
     [ -r /dev/tty ] || fail "Pas de terminal pour confirmer — relance avec --yes."
     read -r -p "  Continuer ? [y/N] " confirm </dev/tty
@@ -185,6 +187,23 @@ if $UNINSTALL; then
     link="/usr/local/bin/$bin"
     if [ -L "$link" ] && [[ "$(readlink "$link")" == "$HS_HOME/"* || "$(readlink "$link")" == "$OPT_DIR/"* ]]; then rm -f "$link"; fi
   done
+
+  # Service e-mail : configuration retirée, boîtes conservées sauf avec --purge
+  if [ -f /var/lib/homeserver-mail/state.json ]; then
+    systemctl disable --now postfix dovecot opendkim >/dev/null 2>&1 || true
+    rm -rf /etc/postfix/homeserver /etc/dovecot/homeserver-users /etc/homeserver-mail /etc/systemd/system/opendkim.service.d/zz-homeserver.conf
+    rm -f /etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh
+    if [ -f /etc/dovecot/dovecot.conf.homeserver-orig ]; then mv -f /etc/dovecot/dovecot.conf.homeserver-orig /etc/dovecot/dovecot.conf; fi
+    if [ -f /etc/opendkim.conf.homeserver-orig ]; then mv -f /etc/opendkim.conf.homeserver-orig /etc/opendkim.conf; fi
+    systemctl daemon-reload
+    if $PURGE; then
+      rm -rf /var/vmail /var/lib/homeserver-mail /etc/opendkim/keys
+      userdel vmail >/dev/null 2>&1 || true
+      info "service e-mail retiré, messages et clés DKIM supprimés"
+    else
+      info "service e-mail retiré ; messages conservés dans /var/vmail, état dans /var/lib/homeserver-mail (--purge pour les supprimer)"
+    fi
+  fi
 
   # Vhost du panel (HTTPS) : sinon Apache proxifierait vers un panel absent
   panel_vhost_removed=false
@@ -477,6 +496,8 @@ runuser -u "$HS_USER" -- env -i \
   ${HS_WEB_SERVER:+HS_WEB_SERVER="$HS_WEB_SERVER"} \
   ${HS_PHP_VERSION:+HS_PHP_VERSION="$HS_PHP_VERSION"} \
   ${HS_INSTALL_EXTRAS:+HS_INSTALL_EXTRAS="$HS_INSTALL_EXTRAS"} \
+  ${HS_INSTALL_MAIL:+HS_INSTALL_MAIL="$HS_INSTALL_MAIL"} \
+  ${HS_MAIL_HOSTNAME:+HS_MAIL_HOSTNAME="$HS_MAIL_HOSTNAME"} \
   ${HS_PANEL_DOMAIN:+HS_PANEL_DOMAIN="$HS_PANEL_DOMAIN"} \
   ${HS_LETSENCRYPT_EMAIL:+HS_LETSENCRYPT_EMAIL="$HS_LETSENCRYPT_EMAIL"} \
   "$HS_NODE_BIN" "$RELEASE_DIR/scripts/install.mjs"
