@@ -88,6 +88,29 @@ Pour mettre à jour un panneau existant : **Paramètres → Mise à jour → Met
 Le panel construit la nouvelle version à côté de l'actuelle, bascule, vérifie
 sa propre santé — et revient tout seul à la version précédente si quelque
 chose cloche. Zéro stress, zéro downtime prolongé.
+Le bouton **Vérifier** interroge GitHub immédiatement (une fois par minute au plus) ;
+sinon le serveur vérifie de lui-même toutes les 6 h. Seules les releases signées sont appliquées.
+
+> Installations en 0.8.0 ou antérieure (updater 1.0.7) : la mise à jour depuis le panel
+> ne peut pas aboutir, il faut réinstaller une fois depuis la release (voir les notes de la v0.9.0).
+
+## 📦 Publier une release
+
+Après une modification, depuis `main` (prérequis : `gh` authentifié, Node, OpenSSL) :
+
+```bash
+bash tools/release.sh patch --dry-run        # tout vérifier sans rien publier
+bash tools/release.sh patch -m "Correctif X"  # commite, publie, vérifie
+```
+
+`patch`, `minor`, `major` ou un numéro `X.Y.Z`. L'outil fait tout en une commande :
+- il contrôle le code (typecheck, build du front, syntaxe des scripts, clé publique) ;
+- il commite les modifications en cours ;
+- il met à jour les versions (back, front, lockfiles) ;
+- si `updater/` a changé, il publie d'abord le couple updater sur `homeserver-updater` ;
+- il pousse `main` et le tag, attend la CI, puis vérifie la release publiée (assets, signature Ed25519, checksum, version).
+
+En cas d'échec avant publication, les commits locaux sont annulés. Options et détails : `bash tools/release.sh --help`.
 
 ## 📋 Prérequis
 

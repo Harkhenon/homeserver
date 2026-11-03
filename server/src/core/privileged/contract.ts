@@ -65,7 +65,7 @@ export type PrivilegedRequest =
   | { action: 'node_app_info'; name: string }
   | { action: 'node_app_update'; name: string; port?: number; entry?: string }
   | { action: 'web_server_detect' }
-  | { action: 'panel_check' }
+  | { action: 'panel_check'; force?: boolean }
   | { action: 'panel_update' }
   | { action: 'panel_rollback' }
   | { action: 'panel_releases' }
@@ -120,7 +120,8 @@ export interface PanelUpdateApplyResult {
 export interface PanelRollbackResult {
   rolledBack?: boolean;
   current?: string;
-  active?: boolean;
+  /** Redémarrage du panel programmé ~2 s après la réponse */
+  restarting?: boolean;
 }
 
 export interface PanelReleasesResult {
@@ -595,7 +596,8 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (typeof raw.file !== 'string' || !CRON_FILE_RE.test(raw.file)) return null;
       return { action: 'cron_delete', file: raw.file };
     case 'panel_check':
-      return { action: 'panel_check' };
+      if (raw.force !== undefined && typeof raw.force !== 'boolean') return null;
+      return { action: 'panel_check', force: raw.force === true };
     case 'panel_update':
       return { action: 'panel_update' };
     case 'panel_rollback':

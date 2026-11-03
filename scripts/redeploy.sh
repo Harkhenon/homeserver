@@ -100,11 +100,12 @@ switch_and_verify() {
   prev_version="$(cat "$CURRENT_LINK/VERSION" 2>/dev/null || echo '')"
 
   bash "$layout" switch "$new_version"
-  run_step "Redémarrage des services" systemctl restart hs-helper homeserver
+  systemctl reset-failed hs-helper homeserver >/dev/null 2>&1 || true
+  run_step "Redémarrage des services" systemctl restart hs-helper homeserver || true
   sleep 5
 
   local healthy=false
-  for _ in 1 2 3 4 5 6; do
+  for _ in $(seq 1 12); do
     if systemctl is-active --quiet homeserver && curl -fsS "http://127.0.0.1:$PANEL_PORT/api/health" >/dev/null 2>&1; then
       healthy=true; break
     fi
@@ -129,7 +130,9 @@ NODEEOF
   else
     if [ -n "$prev_version" ] && [ "$prev_version" != "$new_version" ] && [ -d "$RELEASES_DIR/$prev_version" ]; then
       bash "$layout" switch "$prev_version"
-      systemctl restart hs-helper homeserver
+      # La release cassée a pu épuiser StartLimitBurst : sans reset-failed, le redémarrage est refusé
+      systemctl reset-failed hs-helper homeserver >/dev/null 2>&1 || true
+      systemctl restart hs-helper homeserver || true
       echo -e "${RED}✗ Health-check échoué — retour à $prev_version${RESET}"
     else
       echo -e "${RED}✗ Health-check échoué (pas de release précédente pour rollback)${RESET}"

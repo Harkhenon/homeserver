@@ -15,6 +15,7 @@ import {
   IconHistory, IconArrowBackUp,
 } from '@tabler/icons-react';
 import { useModuleQuery, useModuleAction } from '../../api/hooks';
+import { call } from '../../api/client';
 import { usePanelUpdateModal } from '../PanelUpdateModal';
 
 interface PanelCheckInfo {
@@ -26,7 +27,7 @@ interface PanelCheckInfo {
 interface PanelRollbackResult {
   rolledBack?: boolean;
   current?: string;
-  active?: boolean;
+  restarting?: boolean;
 }
 
 interface PanelReleasesInfo {
@@ -54,16 +55,24 @@ export function UpdatePanel() {
       notifications.show({ message: action.error, color: 'red' });
     }
   };
-  const [busy, setBusy] = useState<'rollback' | null>(null);
+  const [busy, setBusy] = useState<'rollback' | 'check' | null>(null);
+  // « Vérifier » : check GitHub forcé (sinon l'état mis en cache 30 min serait relu) ;
+  // la notification utilise la réponse, pas check.data (périmé dans cette closure).
   const reloadAll = async () => {
-    await check.reload();
-    void releases.reload();
-    if (check.error) {
-      notifications.show({ message: `Vérification impossible : ${check.error}`, color: 'red' });
+    let fresh: PanelCheckInfo;
+    setBusy('check');
+    try {
+      fresh = await call<PanelCheckInfo>('system', 'panel.check', { force: true });
+    } catch (err) {
+      notifications.show({ message: `Vérification impossible : ${err instanceof Error ? err.message : 'erreur inconnue'}`, color: 'red' });
       return;
+    } finally {
+      setBusy(null);
     }
-    if (check.data?.available) {
-      notifications.show({ message: `Nouvelle version ${check.data?.latest?.version ?? '?'} disponible`, color: 'orange' });
+    void check.reload(true);
+    void releases.reload();
+    if (fresh.available) {
+      notifications.show({ message: `Nouvelle version ${fresh.latest?.version ?? '?'} disponible`, color: 'orange' });
     } else {
       notifications.show({ message: 'Le panel est à jour', color: 'green' });
     }
@@ -73,11 +82,9 @@ export function UpdatePanel() {
     const res = await action.run<PanelRollbackResult>('panel.rollback');
     setBusy(null);
     if (res !== null) {
-      notifications.show({
-        message: `Retour à la version ${res.current ?? '?'} — recharge la page`,
-        color: res.active ? 'green' : 'red',
-      });
-      reloadAll();
+      // Le panel redémarre ~2 s après la réponse : rechargement une fois revenu
+      notifications.show({ message: `Retour à la version ${res.current ?? '?'} — redémarrage du panel…`, color: 'green' });
+      setTimeout(() => window.location.reload(), 8_000);
     } else if (action.error) {
       notifications.show({ message: action.error, color: 'red' });
     }

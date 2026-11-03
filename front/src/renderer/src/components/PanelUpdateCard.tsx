@@ -3,7 +3,9 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconRocket, IconRefresh, IconCircleCheck, IconArrowUp, IconCircleX } from '@tabler/icons-react';
+import { useState } from 'react';
 import { useModuleQuery } from '../api/hooks';
+import { call } from '../api/client';
 import { usePanelUpdateModal } from './PanelUpdateModal';
 
 interface PanelCheckInfo {
@@ -16,27 +18,33 @@ export function PanelUpdateCard() {
     refetchInterval: 60_000,
   });
   const versionQuery = useModuleQuery<{ version: string }>('system', 'panel.version');
+  const [checking, setChecking] = useState(false);
   const { open } = usePanelUpdateModal();
   const version = versionQuery.data?.version ?? '…';
   const available = check.data?.available ?? false;
   const loading = check.loading && !check.data;
 
-  // « Vérifier » : reload avec notification du résultat
+  // « Vérifier » : check GitHub forcé (l'état est sinon mis en cache 30 min) ; la notification
+  // utilise la réponse directe, check.data / available étant périmés dans cette closure.
   const checkNow = async () => {
-    await check.reload();
-    // après le reload, relire l'état fraîchement chargé via un 2e call direct
-    // (check.data est déjà mis à jour par reload)
-    if (check.error) {
+    setChecking(true);
+    let fresh: PanelCheckInfo;
+    try {
+      fresh = await call<PanelCheckInfo>('system', 'panel.check', { force: true });
+    } catch (err) {
       notifications.show({
-        message: `Vérification impossible : ${check.error}`,
+        message: `Vérification impossible : ${err instanceof Error ? err.message : 'erreur inconnue'}`,
         color: 'red',
         icon: <IconCircleX size={16} stroke={1.5} />,
       });
       return;
+    } finally {
+      setChecking(false);
     }
-    if (available) {
+    void check.reload(true);
+    if (fresh.available) {
       notifications.show({
-        message: `Nouvelle version v${check.data?.latest?.version ?? '?'} disponible`,
+        message: `Nouvelle version v${fresh.latest?.version ?? '?'} disponible`,
         color: 'orange',
         icon: <IconArrowUp size={16} stroke={1.5} />,
       });
@@ -85,7 +93,7 @@ export function PanelUpdateCard() {
           variant="light"
           color={available ? 'orange' : 'teal'}
           leftSection={<IconRefresh size={14} stroke={1.5} />}
-          loading={check.loading}
+          loading={check.loading || checking}
           onClick={() => void checkNow()}
         >
           Vérifier
