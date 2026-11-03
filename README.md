@@ -35,6 +35,7 @@ depuis une seule interface web sombre, moderne, et qui ne te demande
 | 🌐 **Domaines & DNS** | Zones Bind9 avec esclaves DNS, redondance NS, health-checks — ou domaines gérés par ton registrar (OVH, Gandi...) sans polluer Bind | 🔒 **SSL** | Certificats Let's Encrypt émis et renouvelés via Certbot |
 | 🗄️ **Bases de données** | MariaDB : bases, utilisateurs, grants, tailles | 👥 **Utilisateurs** | Comptes système, SFTP chrooté, clés SSH |
 | 📁 **Fichiers** | Explorateur intégré | ⏰ **Cron** | Tâches planifiées par site |
+| ✉️ **E-mails** | Boîtes par domaine (Postfix, Dovecot, DKIM), activables à la demande : quotas, suspension, IMAP/POP3/SMTP chiffrés | 🧰 **Exploitation** | Journaux d'installation, health-checks et retour arrière automatiques |
 | 💾 **Sauvegardes** | Création / restauration de tarballs par site | 🔥 **Pare-feu** | UFW/Firewalld : ports, règles, statut en un coup d'œil |
 | 📊 **Supervision** | CPU, RAM, disques, réseau, processus, températures | 🔄 **Auto-update** | Le panel se met à jour lui-même depuis l'interface : build à côté, bascule atomique, health-check, rollback automatique en cas de souci |
 
@@ -82,6 +83,7 @@ sudo HS_WEB_SERVER=nginx HS_PHP_VERSION=latest bash scripts/install.sh --yes
 L'installeur vérifie la machine avant de commencer (distribution, systemd, disque, mémoire,
 accès réseau), journalise tout dans `/var/log/homeserver/install.log` et peut être relancé
 sans risque : la configuration existante est conservée.
+Service e-mail à l'installation (sinon depuis la page **E-mails** du panel) : `HS_INSTALL_MAIL=yes HS_MAIL_HOSTNAME=mail.exemple.fr`.
 Désinstallation : `sudo bash scripts/install.sh --uninstall` (`--purge` pour les logs et groupes).
 
 Pour mettre à jour un panneau existant : **Paramètres → Mise à jour → Mettre à jour le panel**.

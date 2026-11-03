@@ -224,7 +224,7 @@ async function main() {
   set('HS_ADMIN_USER', adminUser);
   env.delete('HS_ADMIN_PASSWORD');
   set('HS_USER', user);
-  set('HS_MODULES', existing.get('HS_MODULES') || `system,${webServer},bind9,users,files,php,ssl,mariadb,cron,backups,firewall,monitor,node`);
+  set('HS_MODULES', existing.get('HS_MODULES') || `system,${webServer},bind9,users,files,php,ssl,mariadb,mail,cron,backups,firewall,monitor,node`);
   set('HS_AUTH_STORE', authStore);
   set('HS_SECURE_COOKIES', existing.get('HS_SECURE_COOKIES') || (host === '127.0.0.1' ? 'true' : 'false'));
   const content = [
@@ -324,6 +324,20 @@ async function main() {
     else warn('fail2ban installé mais inactif — à vérifier dans Pare-feu → Fail2ban');
   } catch (e) {
     warn(`fail2ban non installé (${e.message.split('\n').slice(-3).join(' ')}) — le serveur n'est pas protégé contre le brute-force SSH. Réessaie depuis Pare-feu → Fail2ban`);
+  }
+
+  // Service e-mail : à la demande (Postfix, Dovecot, OpenDKIM), activable aussi depuis le panel
+  const mailHostname = process.env.HS_INSTALL_MAIL === 'yes' ? process.env.HS_MAIL_HOSTNAME : null;
+  if (process.env.HS_INSTALL_MAIL === 'yes' && !mailHostname) {
+    warn('HS_INSTALL_MAIL=yes sans HS_MAIL_HOSTNAME : service e-mail ignoré (activable depuis le panel)');
+  } else if (mailHostname) {
+    log(`Activation du service e-mail (${mailHostname})...`);
+    try {
+      await callHelper({ action: 'mail_setup', hostname: mailHostname.trim().toLowerCase() }, 2_400_000);
+      ok('Service e-mail activé');
+    } catch (e) {
+      warn(`Service e-mail non activé (${e.message.split('\n')[0]}) — réessaie depuis le panel, page E-mails`);
+    }
   }
 
   log('Démarrage du panel...');

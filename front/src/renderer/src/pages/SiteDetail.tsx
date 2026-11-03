@@ -5,7 +5,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  IconWorld, IconLock, IconDatabaseImport, IconCode, IconRefresh, IconTrash,
+  IconWorld, IconLock, IconDatabaseImport, IconCode, IconRefresh, IconTrash, IconMail,
 } from '@tabler/icons-react';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
@@ -13,6 +13,7 @@ import { SiteGeneralTab } from '../components/site/SiteGeneralTab';
 import { SiteSslTab } from '../components/site/SiteSslTab';
 import { SiteBackupsTab } from '../components/site/SiteBackupsTab';
 import { SitePhpTab } from '../components/site/SitePhpTab';
+import { SiteMailTab } from '../components/site/SiteMailTab';
 import type { Vhost, NginxVhost, BackupInfo } from '../types';
 
 type ServerKind = 'apache' | 'nginx';
@@ -79,6 +80,7 @@ export function SiteDetailPage() {
           <Tabs.Tab value="general" leftSection={<IconCode size={16} stroke={1.5} />}>Général</Tabs.Tab>
           <Tabs.Tab value="ssl" leftSection={<IconLock size={16} stroke={1.5} />}>SSL</Tabs.Tab>
           <Tabs.Tab value="backups" leftSection={<IconDatabaseImport size={16} stroke={1.5} />}>Sauvegardes</Tabs.Tab>
+          <Tabs.Tab value="mail" leftSection={<IconMail size={16} stroke={1.5} />}>E-mails</Tabs.Tab>
           {vhost.phpVersion && (
             <Tabs.Tab value="php" leftSection={<IconRefresh size={16} stroke={1.5} />}>PHP {vhost.phpVersion}</Tabs.Tab>
           )}
@@ -88,6 +90,9 @@ export function SiteDetailPage() {
         </Tabs.Panel>
         <Tabs.Panel value="ssl" pt="xs">
           <SiteSslTab vhost={vhost} />
+        </Tabs.Panel>
+        <Tabs.Panel value="mail" pt="xs">
+          <SiteMailTab vhost={vhost} />
         </Tabs.Panel>
         <Tabs.Panel value="backups" pt="xs">
           <SiteBackupsTab vhost={vhost} />

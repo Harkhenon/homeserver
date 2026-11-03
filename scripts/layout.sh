@@ -363,6 +363,18 @@ TimeoutStartSec=1800
 $updater_hardening"
 }
 
+# .env conservé d'une version à l'autre : un module ajouté depuis ne se chargerait jamais.
+ensure_modules() {
+  local env="$INSTALL_DIR/.env" mods
+  [ -f "$env" ] || return 0
+  mods="$(sed -n 's/^HS_MODULES=//p' "$env" | tail -1)"
+  [ -n "$mods" ] || return 0
+  case ",$mods," in
+    *,mail,*) ;;
+    *) sed -i "s/^HS_MODULES=.*/HS_MODULES=$mods,mail/" "$env"; say "module mail ajouté à HS_MODULES" ;;
+  esac
+}
+
 cmd_ensure() {
   local u
   u="$(hs_user)"
@@ -375,6 +387,7 @@ cmd_ensure() {
   migrate_legacy
   ensure_links
   ensure_units "$u"
+  ensure_modules
   if $UNITS_CHANGED; then systemctl daemon-reload; fi
   # nvm de hs-* : plus rien ne l'utilise une fois les unités basculées sur $NODE_DIR
   if [ -d "$HS_HOME/.nvm" ] && ! grep -qs "$HS_HOME/.nvm" /etc/systemd/system/homeserver.service /etc/systemd/system/hs-helper.service; then

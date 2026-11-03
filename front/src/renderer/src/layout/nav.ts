@@ -2,7 +2,7 @@ import {
   IconDashboard, IconServer, IconWorld, IconBrandNodejs,
   IconDatabase, IconUsers, IconFileDescription,
   IconClock, IconDatabaseImport, IconFlame, IconSettings,
-  IconApps, IconTool, IconAdjustments,
+  IconApps, IconTool, IconAdjustments, IconMail,
 } from '@tabler/icons-react';
 
 export interface NavItem {
@@ -33,6 +33,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/sites', label: 'Sites', icon: IconWorld },
       { to: '/node', label: 'Apps Node', icon: IconBrandNodejs },
       { to: '/domains', label: 'Domaines', icon: IconWorld },
+      { to: '/mail', label: 'E-mails', icon: IconMail },
     ],
   },
   {

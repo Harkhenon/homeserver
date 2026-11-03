@@ -11,7 +11,8 @@ export type ServiceUnitName =
   | 'bind9' | 'named'
   | 'php-fpm' | 'mariadb' | 'mysqld'
   | 'homeserver' | 'hs-helper'
-  | 'fail2ban';
+  | 'fail2ban'
+  | 'postfix' | 'dovecot' | 'opendkim';
 
 export type PrivilegedRequest =
   | { action: 'echo' }
@@ -85,7 +86,55 @@ export type PrivilegedRequest =
   | { action: 'fail2ban_ban'; ip: string; jail: Fail2banJailName }
   | { action: 'fail2ban_config_get' }
   | { action: 'fail2ban_config_set'; config: Fail2banConfig }
-  | { action: 'unattended_upgrades_enable' };
+  | { action: 'unattended_upgrades_enable' }
+  | MailRequest;
+
+/** Service e-mail (Postfix + Dovecot + OpenDKIM) : voir helper/mail.ts. */
+export type MailRequest =
+  | { action: 'mail_status' }
+  | { action: 'mail_setup'; hostname: string }
+  | { action: 'mail_service'; enabled: boolean }
+  | { action: 'mail_tls_issue'; email: string }
+  | { action: 'mail_domain_list' }
+  | { action: 'mail_domain_add'; domain: string; defaultQuotaMb: number }
+  | { action: 'mail_domain_set'; domain: string; suspended?: boolean; defaultQuotaMb?: number }
+  | { action: 'mail_domain_remove'; domain: string; deleteData: boolean }
+  | { action: 'mail_box_list'; domain: string }
+  | { action: 'mail_box_add'; domain: string; local: string; password: string; quotaMb: number; displayName: string }
+  | { action: 'mail_box_set'; domain: string; local: string; quotaMb?: number; suspended?: boolean; displayName?: string }
+  | { action: 'mail_box_password'; domain: string; local: string; password: string }
+  | { action: 'mail_box_remove'; domain: string; local: string; deleteData: boolean };
+
+export interface MailStatusResult {
+  installed: boolean;
+  configured: boolean;
+  hostname: string | null;
+  serverIp: string | null;
+  services: Record<string, boolean>;
+  dovecotVersion: string | null;
+  tls: { mode: 'selfsigned' | 'letsencrypt' | null; expiresAt: string | null };
+  domainCount: number;
+  boxCount: number;
+}
+
+export interface MailDomainInfo {
+  domain: string;
+  suspended: boolean;
+  defaultQuotaMb: number;
+  boxCount: number;
+  dkim: { selector: string; record: string } | null;
+  createdAt: string;
+}
+
+export interface MailBoxInfo {
+  address: string;
+  local: string;
+  displayName: string;
+  quotaMb: number;
+  usedMb: number;
+  suspended: boolean;
+  createdAt: string;
+}
 
 export type PrivilegedResponse<T = unknown> =
   | { ok: true; data: T; contract_version: number }
@@ -256,7 +305,7 @@ function isSafeFsPath(path: string, re: RegExp): boolean {
 }
 const SERVICE_UNITS: readonly ServiceUnitName[] = [
   'apache2', 'httpd', 'nginx', 'bind9', 'named', 'php-fpm', 'mariadb', 'mysqld',
-  'homeserver', 'hs-helper', 'fail2ban',
+  'homeserver', 'hs-helper', 'fail2ban', 'postfix', 'dovecot', 'opendkim',
 ];
 // Ancrée aux deux bouts sur TOUTES les alternatives (l'ancienne version n'ancrait la fin
 // que sur la seconde : ".../sites-available/a.conf/../../cron.d/x" passait).
@@ -334,6 +383,33 @@ const DIR_WHITELIST: readonly string[] = [
 
 const ZONE_NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.?$/i;
 const ZONE_FILE_RE = /^\/etc\/(bind\/zones|named)\/[A-Za-z0-9._-]+\.zone$/;
+
+// --- Service e-mail : ces valeurs finissent dans des maps Postfix/Dovecot et des chemins
+// sous /var/vmail. Minuscules seules, pas de séparateur de conf ni de « .. » possible.
+const MAIL_DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const MAIL_LOCAL_RE = /^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$/;
+const MAIL_ADDRESS_RE = /^[a-zA-Z0-9._%+-]{1,64}@[a-zA-Z0-9.-]{1,253}\.[a-zA-Z]{2,63}$/;
+const MAIL_DISPLAY_NAME_RE = /^[\p{L}\p{N} .'_-]{0,64}$/u;
+/** Quota en Mo ; 0 = illimité, 10 To maximum. */
+const MAIL_MAX_QUOTA_MB = 10_485_760;
+
+function isMailDomain(v: unknown): v is string {
+  return typeof v === 'string' && MAIL_DOMAIN_RE.test(v);
+}
+function isMailLocal(v: unknown): v is string {
+  return typeof v === 'string' && MAIL_LOCAL_RE.test(v) && !v.includes('..');
+}
+function isMailQuota(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAIL_MAX_QUOTA_MB;
+}
+function isMailDisplayName(v: unknown): v is string {
+  return typeof v === 'string' && MAIL_DISPLAY_NAME_RE.test(v);
+}
+/** Le mot de passe est transmis sur une ligne de stdin : aucun caractère de contrôle. */
+function isMailPassword(v: unknown): v is string {
+  // eslint-disable-next-line no-control-regex
+  return typeof v === 'string' && v.length >= 12 && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v);
+}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
@@ -655,6 +731,63 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     }
     case 'unattended_upgrades_enable':
       return { action: 'unattended_upgrades_enable' };
+    case 'mail_status':
+      return { action: 'mail_status' };
+    case 'mail_setup':
+      if (!isMailDomain(raw.hostname)) return null;
+      return { action: 'mail_setup', hostname: raw.hostname };
+    case 'mail_service':
+      if (typeof raw.enabled !== 'boolean') return null;
+      return { action: 'mail_service', enabled: raw.enabled };
+    case 'mail_tls_issue':
+      if (typeof raw.email !== 'string' || !MAIL_ADDRESS_RE.test(raw.email)) return null;
+      return { action: 'mail_tls_issue', email: raw.email };
+    case 'mail_domain_list':
+      return { action: 'mail_domain_list' };
+    case 'mail_domain_add':
+      if (!isMailDomain(raw.domain) || !isMailQuota(raw.defaultQuotaMb)) return null;
+      return { action: 'mail_domain_add', domain: raw.domain, defaultQuotaMb: raw.defaultQuotaMb };
+    case 'mail_domain_set': {
+      if (!isMailDomain(raw.domain)) return null;
+      if (raw.suspended !== undefined && typeof raw.suspended !== 'boolean') return null;
+      if (raw.defaultQuotaMb !== undefined && !isMailQuota(raw.defaultQuotaMb)) return null;
+      return {
+        action: 'mail_domain_set',
+        domain: raw.domain,
+        ...(raw.suspended !== undefined ? { suspended: raw.suspended } : {}),
+        ...(raw.defaultQuotaMb !== undefined ? { defaultQuotaMb: raw.defaultQuotaMb } : {}),
+      };
+    }
+    case 'mail_domain_remove':
+      if (!isMailDomain(raw.domain) || typeof raw.deleteData !== 'boolean') return null;
+      return { action: 'mail_domain_remove', domain: raw.domain, deleteData: raw.deleteData };
+    case 'mail_box_list':
+      if (!isMailDomain(raw.domain)) return null;
+      return { action: 'mail_box_list', domain: raw.domain };
+    case 'mail_box_add':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailPassword(raw.password)) return null;
+      if (!isMailQuota(raw.quotaMb) || !isMailDisplayName(raw.displayName)) return null;
+      return { action: 'mail_box_add', domain: raw.domain, local: raw.local, password: raw.password, quotaMb: raw.quotaMb, displayName: raw.displayName };
+    case 'mail_box_set': {
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local)) return null;
+      if (raw.quotaMb !== undefined && !isMailQuota(raw.quotaMb)) return null;
+      if (raw.suspended !== undefined && typeof raw.suspended !== 'boolean') return null;
+      if (raw.displayName !== undefined && !isMailDisplayName(raw.displayName)) return null;
+      return {
+        action: 'mail_box_set',
+        domain: raw.domain,
+        local: raw.local,
+        ...(raw.quotaMb !== undefined ? { quotaMb: raw.quotaMb } : {}),
+        ...(raw.suspended !== undefined ? { suspended: raw.suspended } : {}),
+        ...(raw.displayName !== undefined ? { displayName: raw.displayName } : {}),
+      };
+    }
+    case 'mail_box_password':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailPassword(raw.password)) return null;
+      return { action: 'mail_box_password', domain: raw.domain, local: raw.local, password: raw.password };
+    case 'mail_box_remove':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || typeof raw.deleteData !== 'boolean') return null;
+      return { action: 'mail_box_remove', domain: raw.domain, local: raw.local, deleteData: raw.deleteData };
     default:
       return null;
   }
