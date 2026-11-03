@@ -296,8 +296,11 @@ const definition: ModuleDefinition = {
       },
     },
     'panel.check': {
-      summary: 'Version du panel et disponibilité d\'une mise à jour',
-      handler: () => callHelper<PanelUpdateResult>({ action: 'panel_check' }),
+      summary: 'Version du panel et disponibilité d\'une mise à jour (payload: { force } = vérifier maintenant)',
+      handler: (payload) => {
+        const p = (payload ?? {}) as { force?: unknown };
+        return callHelper<PanelUpdateResult>({ action: 'panel_check', force: p.force === true });
+      },
     },
     'panel.update': {
       summary: 'Mettre à jour le panel (build release, bascule atomique, health-check, rollback auto)',

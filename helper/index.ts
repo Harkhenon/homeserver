@@ -1502,11 +1502,13 @@ WantedBy=multi-user.target
       // Throttling : le check GitHub n'est relancé que si l'état est absent ou vieux (> 30 min).
       // Sinon on ne fait que lire update-status.json — le poll du front ne doit pas
       // déclencher de requêtes API GitHub (rate limit 60 req/h en anonyme).
+      // « Vérifier maintenant » (force) : au plus un check par minute.
+      const maxAge = req.force ? 60_000 : 30 * 60_000;
       let stale = true;
       try {
         const st = readJsonState(STATUS_FILE, '');
         const last = typeof st.lastCheck === 'string' ? Date.parse(st.lastCheck) : NaN;
-        stale = !Number.isFinite(last) || Date.now() - last > 30 * 60_000;
+        stale = !Number.isFinite(last) || Date.now() - last > maxAge;
       } catch { /* pas encore d'état */ }
       if (stale) {
         try {
@@ -1521,8 +1523,19 @@ WantedBy=multi-user.target
       // Lancement NON BLOQUANT : l'apply (npm ci + builds) prend plusieurs minutes.
       // On démarre le service en arrière-plan et on rend la main immédiatement —
       // le front suit la progression via panel.check (lastRun.result === 'running').
+      // L'état lu tout de suite serait encore celui du run PRÉCÉDENT (« ok » d'hier → le
+      // front croirait la mise à jour finie) : on attend que l'apply ait écrit le sien.
+      const runAt = (): unknown => {
+        try { return (readJsonState(STATUS_FILE, '').lastRun as { at?: unknown } | null)?.at ?? null; } catch { return null; }
+      };
+      const before = runAt();
       await exec('systemctl', ['start', '--no-block', 'hs-updater-apply.service'], 30_000);
-      return readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
+      for (let i = 0; i < 30 && runAt() === before; i++) await new Promise((r) => setTimeout(r, 500));
+      const state = readJsonState(STATUS_FILE, 'État de mise à jour indisponible');
+      if (runAt() === before) {
+        return { ...state, lastRun: { at: new Date().toISOString(), result: 'running', message: 'mise à jour lancée' } };
+      }
+      return state;
     }
     case 'panel_rollback': {
       const before = await tryExec('systemctl', ['is-active', 'homeserver']);
@@ -1539,9 +1552,18 @@ WantedBy=multi-user.target
         updatedAt: new Date().toISOString(),
         history: [...(Array.isArray(state.history) ? state.history : []).slice(-19), { version: prev, at: new Date().toISOString(), status: 'rollback' }],
       });
-      await exec('systemctl', ['restart', 'hs-helper', 'homeserver']);
-      const after = await tryExec('systemctl', ['is-active', 'homeserver']);
-      return { rolledBack: true, current: prev, active: (after ?? '').trim() === 'active', wasActive: (before ?? '').trim() === 'active' };
+      // État de mise à jour invalidé : la version quittée redevient proposée au prochain check
+      try {
+        const st = readJsonState(STATUS_FILE, '');
+        delete st.lastCheck;
+        writeJsonState(STATUS_FILE, { ...st, available: false, latest: null, lastRun: { at: new Date().toISOString(), result: 'ok', message: `retour manuel à la version ${prev}` } });
+      } catch { /* pas encore d'état de mise à jour */ }
+      // Redémarrage DIFFÉRÉ : redémarrer hs-helper ici tuerait ce processus avant sa réponse
+      // (le panel afficherait une erreur alors que le retour arrière a réussi).
+      // AccuracySec : sans lui, systemd regroupe les timers à la minute (déclenchement après ~10 s)
+      await exec('systemd-run', ['--quiet', '--collect', '--on-active=2', '--timer-property=AccuracySec=100ms', `--unit=hs-panel-restart-${Date.now()}`,
+        '/bin/sh', '-c', 'systemctl reset-failed hs-helper homeserver; systemctl restart hs-helper homeserver'], 15_000);
+      return { rolledBack: true, current: prev, restarting: true, wasActive: (before ?? '').trim() === 'active' };
     }
     case 'panel_releases': {
       const state = readJsonState(INSTALLED_FILE, 'installed.json introuvable');

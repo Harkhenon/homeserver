@@ -99,6 +99,47 @@ disk_ok() {
   [ "$free_mb" -ge "$MIN_FREE_MB" ]
 }
 
+# Redémarrage tolérant : une release cassée qui plante en boucle épuise StartLimitBurst ;
+# sans reset-failed, systemd refuse tout redémarrage (« Start request repeated too quickly »)
+# et le rollback laisserait le panel éteint.
+restart_services() {
+  systemctl reset-failed hs-helper homeserver >/dev/null 2>&1 || true
+  systemctl restart hs-helper homeserver >>"$LOG_FILE" 2>&1 || log "redémarrage des services en échec"
+}
+
+panel_healthy() { # attend jusqu'à ~60 s que le panel réponde
+  sleep 5
+  local _
+  for _ in $(seq 1 12); do
+    if systemctl is-active --quiet homeserver && curl -fsS --max-time 3 "http://127.0.0.1:$PANEL_PORT/api/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+# Toute sortie imprévue de l'apply (set -e, signal) : le contrat ne doit jamais rester
+# bloqué sur « running » (le front suivrait la progression indéfiniment).
+apply_on_exit() {
+  local rc=$?
+  rm -rf "${APPLY_TMP:-}"
+  [ "$rc" -eq 0 ] && return 0
+  "$NODE_BIN" - "$STATUS_FILE" "$rc" <<'NODEEOF' 2>/dev/null || true
+const fs = require('fs');
+const [f, rc] = process.argv.slice(2);
+try {
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (s.lastRun && s.lastRun.result === 'running') {
+    s.lastRun = { at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), result: 'failed', message: `mise à jour interrompue (code ${rc}) — voir /var/log/homeserver/updater.log` };
+    fs.writeFileSync(f + '.tmp', JSON.stringify(s, null, 2), { mode: 0o644 });
+    fs.renameSync(f + '.tmp', f);
+  }
+} catch {}
+NODEEOF
+  mirror_legacy_status
+}
+
 take_lock() { # mode — une seule instance (check ou apply) à la fois
   exec 8>"$LOCK_FILE"
   flock -n 8
@@ -199,12 +240,14 @@ mode_apply() {
     exit 1
   fi
   log "apply démarré"
+  trap apply_on_exit EXIT
   json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"running\", \"message\": \"mise à jour en cours\"}"
 
   # 0. Garde-fous : disque + version dispo
   disk_ok || fail_run "espace disque insuffisant (< ${MIN_FREE_MB} Mo)"
   local latest_json latest_version current
   latest_json="$(github_latest "$PANEL_REPO_API")"
+  [ "$latest_json" != "null" ] || fail_run "API GitHub injoignable (rate limit ou réseau) — réessaie plus tard"
   latest_version="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})")"
   current="$(current_version)"
   if ! [[ "$latest_version" =~ $VERSION_RE ]] || ! semver_gt "$latest_version" "$current"; then
@@ -220,7 +263,6 @@ mode_apply() {
   sig_url="$(printf '%s' "$latest_json" | "$NODE_BIN" -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const u=process.argv[1]+'.sig';console.log((j.assets||[]).includes(u)?u:'')})" "$tar_url")"
   [ -n "$sig_url" ] || fail_run "release $latest_version non signée — mise à jour refusée"
   APPLY_TMP="$(mktemp -d)"; local tmp="$APPLY_TMP"
-  trap 'rm -rf "${APPLY_TMP:-}"' EXIT
   log "apply: téléchargement $tar_url"
   curl -fsSL "$tar_url" -o "$tmp/panel.tar.gz" && curl -fsSL "$sig_url" -o "$tmp/panel.tar.gz.sig" || fail_run "téléchargement impossible"
   pair_verify "$tmp/panel.tar.gz" "$tmp/panel.tar.gz.sig" || fail_run "signature de la release $latest_version invalide — mise à jour refusée"
@@ -253,17 +295,9 @@ mode_apply() {
   # 4. Bascule + health-check + rollback automatique
   log "apply: builds OK, bascule du symlink"
   bash "$src_dir/scripts/layout.sh" switch "$latest_version" >>"$LOG_FILE" 2>&1 || fail_run "bascule impossible"
-  systemctl restart hs-helper homeserver
-  sleep 5
-  local healthy=false
-  for _ in 1 2 3 4 5 6; do
-    if systemctl is-active --quiet homeserver && curl -fsS "http://127.0.0.1:$PANEL_PORT/api/health" >/dev/null 2>&1; then
-      healthy=true; break
-    fi
-    sleep 5
-  done
+  restart_services
 
-  if $healthy; then
+  if panel_healthy; then
     "$NODE_BIN" - "$STATE_FILE" "$current" "$latest_version" <<'NODEEOF'
 const fs = require('fs');
 const [file, prev, cur] = process.argv.slice(2);
@@ -281,21 +315,27 @@ NODEEOF
     while IFS= read -r d; do
       v="$(basename "$d")"
       [[ "$v" =~ $VERSION_RE ]] && [ "$v" != "$latest_version" ] && [ "$v" != "$current" ] || continue
-      rm -rf "$RELEASES_DIR/$v"
+      rm -rf "${RELEASES_DIR:?}/$v"
     done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort -rV | tail -n +"$((KEEP_RELEASES + 1))")
     json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"ok\", \"message\": \"panel mis à jour vers $latest_version\"}"
     json_set "$STATUS_FILE" available false
     json_set "$STATUS_FILE" latest null
     log "apply OK: $current -> $latest_version"
   else
-    # Rollback
+    # Rollback (la release cassée a pu épuiser la limite de démarrages : restart_services la lève)
+    log "apply: health-check échoué — rollback vers $current"
     if [ "$current" != "none" ] && [ -d "$RELEASES_DIR/$current" ]; then
-      bash "$src_dir/scripts/layout.sh" switch "$current" >>"$LOG_FILE" 2>&1 || true
-      systemctl restart hs-helper homeserver
+      bash "$src_dir/scripts/layout.sh" switch "$current" >>"$LOG_FILE" 2>&1 || log "rollback : bascule en échec"
+      restart_services
     fi
     rm -rf "$new_dir"
-    json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"rolledBack\", \"message\": \"health-check échoué — retour à $current\"}"
-    log "apply ÉCHEC (rollback vers $current)"
+    if panel_healthy; then
+      json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"rolledBack\", \"message\": \"health-check de $latest_version échoué — retour automatique à $current\"}"
+      log "apply ÉCHEC (rollback vers $current OK)"
+    else
+      json_set "$STATUS_FILE" lastRun "{\"at\": \"$(date -u +%FT%TZ)\", \"result\": \"failed\", \"message\": \"health-check de $latest_version échoué ; retour à $current effectué mais le panel ne répond pas — journalctl -u homeserver\"}"
+      log "apply ÉCHEC (rollback vers $current, panel injoignable)"
+    fi
     exit 1
   fi
 }
