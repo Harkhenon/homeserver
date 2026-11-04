@@ -35,6 +35,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, validateFail2banConfig, CONTRACT_VERSION, FAIL2BAN_JAILS } from '../server/src/core/privileged/contract.js';
 import { handleMail, upgradeMailOnStart, type MailDeps } from './mail.js';
+import { webmailConfigured } from './mail-webmail.js';
 import type { MailRequest, SshHardeningStatusResult,SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
@@ -661,6 +662,7 @@ function f2bAvailableJails(): Fail2banJailName[] {
     if (j === 'recidive') return existsSync('/var/log/fail2ban.log');
     if (j === 'postfix' || j === 'postfix-sasl') return existsSync('/etc/postfix/main.cf');
     if (j === 'dovecot') return existsSync('/etc/dovecot/dovecot.conf');
+    if (j === 'roundcube-auth') return webmailConfigured();
     if (j === 'apache-badbots') return apacheAccess;
     if (j.startsWith('apache-')) return apacheError;
     return nginxError;
@@ -680,7 +682,7 @@ function f2bDefaultConfig(web?: 'apache' | 'nginx'): Fail2banConfig {
   const available = f2bAvailableJails();
   const webJail: Fail2banJailName[] = web === 'nginx' ? ['nginx-http-auth'] : web === 'apache' ? ['apache-auth'] : ['apache-auth', 'nginx-http-auth'];
   // fail2ban installé après le service e-mail : ses jails sont actives d'emblée, comme dans l'autre sens
-  const mailJails: Fail2banJailName[] = existsSync('/var/lib/homeserver-mail/state.json') ? ['postfix', 'postfix-sasl', 'dovecot'] : [];
+  const mailJails: Fail2banJailName[] = existsSync('/var/lib/homeserver-mail/state.json') ? ['postfix', 'postfix-sasl', 'dovecot', 'roundcube-auth'] : [];
   const enabled = new Set<Fail2banJailName>(['sshd', ...[...webJail, ...mailJails].filter((j) => available.includes(j))]);
   return f2bNormalize({
     defaults: { ...F2B_DEFAULTS },
@@ -716,7 +718,9 @@ async function f2bBanAction(): Promise<[string, string] | null> {
 /**
  * Compléments aux filtres livrés par les distributions :
  * - postfix : l'unité est postfix@- sur Debian et Ubuntu, et nos ports d'envoi ont leur propre étiquette ;
- * - dovecot : le format « Login aborted » de Dovecot 2.4 n'est reconnu que par certaines versions du filtre.
+ * - dovecot : le format « Login aborted » de Dovecot 2.4 n'est reconnu que par certaines versions du filtre ;
+ * - roundcube-auth : le filtre n'analyse que les lignes « IMAP Error », pas « Failed login ». Une seule ligne
+ *   comptée par tentative : les deux existent, et compter les deux bannirait deux fois trop tôt.
  */
 function f2bFilterFiles(): Record<string, string> {
   return {
@@ -727,6 +731,13 @@ function f2bFilterFiles(): Record<string, string> {
       '',
       '[Init]',
       'journalmatch = SYSLOG_IDENTIFIER=postfix/smtpd + SYSLOG_IDENTIFIER=postfix/submission-587/smtpd + SYSLOG_IDENTIFIER=postfix/submission-465/smtpd',
+      '',
+    ].join('\n'),
+    '/etc/fail2ban/filter.d/roundcube-auth.local': [
+      '# Généré par Homeserver',
+      '[Definition]',
+      String.raw`prefregex = ^\s*(?:%(__hostname)s\s*)?(?:roundcube(?:\[\d*\])?:)?\s*(?:<\w+>\s*)?<F-CONTENT>.+</F-CONTENT>$`,
+      String.raw`failregex = ^Failed login for <F-USER>.*?</F-USER> from <HOST> in session \w+(?: \(error: -?\d+\))?\s*$`,
       '',
     ].join('\n'),
     '/etc/fail2ban/filter.d/dovecot.local': [
@@ -789,7 +800,7 @@ function f2bRender(cfg: Fail2banConfig, banAction: [string, string] | null): str
     if (j.maxretry !== null) lines.push(`maxretry = ${j.maxretry}`);
     // Fedora force backend = systemd par défaut : les jails web/recidive lisent des fichiers
     if (j.name === 'sshd') lines.push(`backend = ${sshJournal ? 'systemd' : 'auto'}`);
-    else if (j.name === 'postfix' || j.name === 'postfix-sasl' || j.name === 'dovecot') lines.push('backend = systemd');
+    else if (j.name === 'postfix' || j.name === 'postfix-sasl' || j.name === 'dovecot' || j.name === 'roundcube-auth') lines.push('backend = systemd');
     else lines.push('backend = auto');
   }
   return lines.join('\n') + '\n';
@@ -926,7 +937,8 @@ function mailDeps(family: 'debian' | 'rhel'): MailDeps {
     enableMailJails: async () => {
       if (!f2bInstalled()) return;
       const cfg = f2bNormalize(f2bReadConfig() ?? f2bDefaultConfig());
-      const mail: Fail2banJailName[] = ['postfix', 'postfix-sasl', 'dovecot'];
+      // Roundcube se connecte depuis 127.0.0.1 : sans sa jail, les essais par le webmail échapperaient à celle de Dovecot
+      const mail: Fail2banJailName[] = ['postfix', 'postfix-sasl', 'dovecot', ...(webmailConfigured() ? ['roundcube-auth' as const] : [])];
       await f2bApply({ ...cfg, jails: cfg.jails.map((j) => (mail.includes(j.name) ? { ...j, enabled: true } : j)) }, true);
     },
   };

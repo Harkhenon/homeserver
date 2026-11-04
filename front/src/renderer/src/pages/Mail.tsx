@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Autocomplete, Badge, Button, Card, Group, Modal, NumberInput, SimpleGrid, Stack, Table, Tabs, Text, TextInput, ThemeIcon,
 } from '@mantine/core';
-import { IconChevronRight, IconClock, IconFileText, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconShieldCheck, IconWorld } from '@tabler/icons-react';
+import { IconChevronRight, IconClock, IconFileText, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconShieldCheck, IconBrowser, IconWorld } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useModuleQuery } from '../api/hooks';
 import { ErrorBlock, LoadingBlock, PageHeader } from '../components';
@@ -11,6 +11,7 @@ import { MailAntispamPanel } from '../components/mail/MailAntispamPanel';
 import { MailDeliverabilityPanel } from '../components/mail/MailDeliverabilityPanel';
 import { MailLogsPanel } from '../components/mail/MailLogsPanel';
 import { MailQueuePanel } from '../components/mail/MailQueuePanel';
+import { MailWebmailPanel } from '../components/mail/MailWebmailPanel';
 import type { MailDomain, MailStatus, Zone } from '../types';
 
 const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)', 'hs-mail-policy': 'Limites d\'envoi', rspamd: 'Rspamd (antispam)', redis: 'Redis', 'redis-server': 'Redis', 'clamav-daemon': 'ClamAV (antivirus)', 'clamav-freshclam': 'ClamAV (mises à jour)' };
@@ -199,6 +200,7 @@ export function MailPage() {
             <Tabs.List mb="md">
               <Tabs.Tab value="domains" leftSection={<IconWorld size={16} stroke={1.5} />}>Domaines</Tabs.Tab>
               <Tabs.Tab value="deliverability" leftSection={<IconSend size={16} stroke={1.5} />}>Délivrabilité</Tabs.Tab>
+              <Tabs.Tab value="webmail" leftSection={<IconBrowser size={16} stroke={1.5} />}>Webmail</Tabs.Tab>
               <Tabs.Tab value="antispam" leftSection={<IconShieldCheck size={16} stroke={1.5} />}>Antispam</Tabs.Tab>
               <Tabs.Tab value="queue" leftSection={<IconClock size={16} stroke={1.5} />}>File d'attente</Tabs.Tab>
               <Tabs.Tab value="logs" leftSection={<IconFileText size={16} stroke={1.5} />}>Journal</Tabs.Tab>
@@ -206,6 +208,7 @@ export function MailPage() {
             <Tabs.Panel value="deliverability">
               <MailDeliverabilityPanel status={status.data} domains={list} onChanged={reload} />
             </Tabs.Panel>
+            <Tabs.Panel value="webmail"><MailWebmailPanel status={status.data} onChanged={reload} /></Tabs.Panel>
             <Tabs.Panel value="antispam"><MailAntispamPanel status={status.data} onChanged={reload} /></Tabs.Panel>
             <Tabs.Panel value="queue" keepMounted={false}><MailQueuePanel /></Tabs.Panel>
             <Tabs.Panel value="logs" keepMounted={false}><MailLogsPanel /></Tabs.Panel>

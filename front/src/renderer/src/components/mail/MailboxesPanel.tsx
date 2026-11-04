@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, Badge, Button, Checkbox, Code, CopyButton, Group, Menu, Modal, NumberInput, PasswordInput,
+  Alert, Anchor, Badge, Button, Checkbox, Code, CopyButton, Group, Menu, Modal, NumberInput, PasswordInput,
   Progress, Stack, Switch, Table, Text, Textarea, TextInput, Tooltip, ActionIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
@@ -357,7 +357,7 @@ function SendLimitModal({ box, domain, onClose, onDone }: { box: MailBox | null;
 }
 
 /** Paramètres à reporter dans un logiciel de messagerie. */
-export function ClientSettings({ hostname }: { hostname: string }) {
+export function ClientSettings({ hostname, webmailUrl }: { hostname: string; webmailUrl?: string | null }) {
   const rows: Array<[string, string, string]> = [
     ['Réception IMAP', '993', 'SSL/TLS'],
     ['Réception POP3', '995', 'SSL/TLS'],
@@ -365,6 +365,8 @@ export function ClientSettings({ hostname }: { hostname: string }) {
     ['Envoi SMTP (variante)', '465', 'SSL/TLS'],
   ];
   return (
+    <Stack gap="xs">
+    {webmailUrl && <Text size="sm">Webmail : <Anchor href={webmailUrl} target="_blank" rel="noopener noreferrer">{webmailUrl}</Anchor></Text>}
     <Table.ScrollContainer minWidth={480}>
     <Table withTableBorder>
       <Table.Thead>
@@ -380,6 +382,7 @@ export function ClientSettings({ hostname }: { hostname: string }) {
       <Table.Caption>Identifiant : l'adresse e-mail complète.</Table.Caption>
     </Table>
     </Table.ScrollContainer>
+    </Stack>
   );
 }
 
@@ -478,7 +481,7 @@ export function MailboxesPanel({ domain }: { domain: string }) {
       {status.data?.hostname && list.length > 0 && (
         <>
           <Text fw={600} mt="sm">Configurer un logiciel de messagerie</Text>
-          <ClientSettings hostname={status.data.hostname} />
+          <ClientSettings hostname={status.data.hostname} webmailUrl={status.data.webmail?.url} />
         </>
       )}
       <CreateBoxModal

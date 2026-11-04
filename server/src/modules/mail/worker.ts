@@ -209,6 +209,13 @@ const definition: ModuleDefinition = {
         return callHelper<MailStatusResult>({ action: 'mail_antispam_set', config: { engine, rbl: p.rbl === true, strictSender: p.strictSender === true, junkScore, rejectScore, clamav: p.clamav === true } }, undefined, SETUP_TIMEOUT_MS);
       },
     },
+    'webmail.set': {
+      summary: 'Activer ou désactiver le webmail Roundcube (payload: { enabled })',
+      handler: (payload) => {
+        const panelPort = Number(process.env.HS_PORT ?? 3000);
+        return callHelper<MailStatusResult>({ action: 'mail_webmail_set', enabled: ((payload ?? {}) as Payload).enabled === true, panelPort }, undefined, SETUP_TIMEOUT_MS);
+      },
+    },
     'queue.list': {
       summary: 'Messages en file d\'attente',
       handler: () => callHelper<MailQueueResult>({ action: 'mail_queue_list' }),

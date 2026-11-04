@@ -14,6 +14,9 @@ import { errText, exec, execInput, serviceActive, tryExec } from './mail-util.js
 import {
   DEFAULT_ANTISPAM, SPAM_SIEVE, antispamAllowed, antispamUnits, applyAntispam, memoryMb, postfixAntispamSettings, rspamdAvailable, writeSpamSieve,
 } from './mail-antispam.js';
+import {
+  detectWebServer, disableWebmail, enableWebmail, newWebmailState, refreshWebmailOnStart, secretMatches, verifyMailPassword, webmailAvailable, webmailRunning, type WebmailState,
+} from './mail-webmail.js';
 import { backupCreate, backupDelete, backupExtract, backupList, backupRead, mailLogs, queueAction, queueList } from './mail-ops.js';
 import type { MailAntispamConfig, MailAliasInfo, MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult, MailVacation } from '../server/src/core/privileged/contract.js';
 
@@ -94,6 +97,7 @@ interface MailState {
   // Mot de passe du relais en clair ici et dans la map Postfix : root seul (0600), inévitable pour s'y authentifier
   relay?: { host: string; port: number; username: string; password: string; spfInclude: string | null } | null;
   antispam?: MailAntispamConfig;
+  webmail?: WebmailState;
   domains: Record<string, DomainState>;
 }
 
@@ -807,7 +811,11 @@ async function upgradeConfig(state: MailState, deps: MailDeps): Promise<void> {
 }
 
 export function upgradeMailOnStart(deps: MailDeps): void {
-  void locked(async () => upgradeConfig(loadState(), deps))
+  void locked(async () => {
+    const state = loadState();
+    await upgradeConfig(state, deps);
+    if (state.webmail?.enabled) await refreshWebmailOnStart(deps);
+  })
     .catch((e: Error) => deps.log(`mail : mise à niveau impossible : ${errText(e)}`));
 }
 
@@ -1005,6 +1013,13 @@ async function status(family: 'debian' | 'rhel'): Promise<MailStatusResult> {
     publicIp: state.publicIp ?? null,
     relay: state.relay ? { host: state.relay.host, port: state.relay.port, username: state.relay.username, spfInclude: state.relay.spfInclude } : null,
     antispam: state.antispam ?? DEFAULT_ANTISPAM,
+    webmail: {
+      available: await webmailAvailable(family),
+      webServer: (await detectWebServer(family)) !== null,
+      enabled: state.webmail?.enabled === true,
+      active: state.webmail?.enabled === true && (await webmailRunning(family)),
+      url: state.webmail?.enabled === true && state.hostname ? `https://${state.hostname}/` : null,
+    },
     rspamdAvailable: await rspamdAvailable(family),
     memoryMb: memoryMb(),
     clockSynced: synced === null ? null : synced.trim() === 'yes',
@@ -1117,6 +1132,24 @@ async function ensureDkimKey(domain: string, selector: string): Promise<void> {
 
 // --- Certificat Let's Encrypt -------------------------------------------------------------------
 
+function writeCertbotHook(hostname: string): void {
+  const hook = `#!/bin/sh
+# ${CONF_MARKER.slice(2)} : copie le certificat renouvelé pour Postfix, Dovecot et le webmail.
+set -e
+install -m 0644 "/etc/letsencrypt/live/${hostname}/fullchain.pem" "${TLS_CERT}"
+install -m 0600 "/etc/letsencrypt/live/${hostname}/privkey.pem" "${TLS_KEY}"
+systemctl reload postfix
+systemctl reload dovecot
+if [ -e /etc/homeserver-webmail/config.inc.php ]; then
+  for unit in apache2 httpd nginx; do
+    if systemctl -q is-active "$unit"; then systemctl reload "$unit"; fi
+  done
+fi
+`;
+  mkdirSync('/etc/letsencrypt/renewal-hooks/deploy', { recursive: true });
+  writeFileSync(CERTBOT_HOOK, hook, { mode: 0o755 });
+}
+
 async function issueCertificate(state: MailState, email: string, deps: MailDeps): Promise<void> {
   assertConfigured(state);
   const hostname = state.hostname as string;
@@ -1135,16 +1168,7 @@ async function issueCertificate(state: MailState, email: string, deps: MailDeps)
   } catch (e) {
     throw new Error(`Certificat refusé. Vérifie que ${hostname} pointe vers ce serveur et que le port 80 est joignable : ${errText(e).split('\n').slice(-4).join(' ')}`);
   }
-  const hook = `#!/bin/sh
-# ${CONF_MARKER.slice(2)} : copie le certificat renouvelé pour Postfix et Dovecot.
-set -e
-install -m 0644 "/etc/letsencrypt/live/${hostname}/fullchain.pem" "${TLS_CERT}"
-install -m 0600 "/etc/letsencrypt/live/${hostname}/privkey.pem" "${TLS_KEY}"
-systemctl reload postfix
-systemctl reload dovecot
-`;
-  mkdirSync('/etc/letsencrypt/renewal-hooks/deploy', { recursive: true });
-  writeFileSync(CERTBOT_HOOK, hook, { mode: 0o755 });
+  writeCertbotHook(hostname);
   await exec(CERTBOT_HOOK, [], 60_000);
   state.tlsMode = 'letsencrypt';
   saveState(state);
@@ -1179,6 +1203,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         await startServices();
         await setFirewall(true, deps).catch((e: Error) => deps.log(`mail : pare-feu non modifié : ${e.message}`));
         await deps.enableMailJails().catch((e: Error) => deps.log(`mail : jails fail2ban non activées : ${e.message}`));
+        if (state.webmail?.enabled) await enableWebmail(state.webmail, req.hostname, { cert: TLS_CERT, key: TLS_KEY }, deps);
         deps.log(`mail : service activé (${req.hostname}, Dovecot ${version})`);
         return status(deps.family);
       });
@@ -1364,6 +1389,37 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         delete d.dkimPending;
         await applyState(state, deps);
         return domainInfo(req.domain, d);
+      });
+    case 'mail_webmail_set':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        if (req.enabled) {
+          const webmail = state.webmail ?? newWebmailState(req.panelPort);
+          webmail.panelPort = req.panelPort;
+          await enableWebmail(webmail, state.hostname as string, { cert: TLS_CERT, key: TLS_KEY }, deps);
+          webmail.enabled = true;
+          state.webmail = webmail;
+          if (state.tlsMode === 'letsencrypt') writeCertbotHook(state.hostname as string);
+        } else if (state.webmail) {
+          await disableWebmail(deps);
+          state.webmail.enabled = false;
+        }
+        saveState(state);
+        await deps.enableMailJails().catch((e: Error) => deps.log(`webmail : jail fail2ban non activée : ${e.message}`));
+        return status(deps.family);
+      });
+    case 'mail_box_self_password':
+      return locked(async () => {
+        const state = loadState();
+        if (!state.webmail?.enabled || !secretMatches(state.webmail.secret, req.token)) throw new Error('Accès refusé');
+        const [local, domain] = req.address.split('@') as [string, string];
+        const b = getBox(getDomain(state, domain), domain, local);
+        if (!(await verifyMailPassword(req.address, req.current))) throw new Error('Mot de passe actuel incorrect');
+        b.hash = await hashPassword(req.password);
+        await applyState(state, deps);
+        await kick(req.address);
+        return { updated: true };
       });
     case 'mail_antispam_set':
       return locked(async () => {

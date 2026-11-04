@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { callHelper } from './core/privileged/client.js';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
@@ -130,6 +131,8 @@ async function main(): Promise<void> {
 
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
+    // Authentifiée par son jeton, réservée à la boucle locale : voir la route plus bas
+    if (request.url === '/api/webmail/password') return;
     if (request.url === '/api/auth/login' || request.url === '/api/health') {
       // Cookie CSRF (double-submit) émis dès l'arrivée sur le login
       if (!request.cookies?.[CSRF_COOKIE]) {
@@ -168,6 +171,34 @@ async function main(): Promise<void> {
         return reply.code(403).send({ error: 'CSRF invalide' });
       }
     }
+  });
+
+  // Changement de mot de passe depuis le webmail. Le plugin de Roundcube n'envoie que du formulaire,
+  // d'où un analyseur limité à cette route. Le helper vérifie le jeton et le mot de passe actuel.
+  await app.register(async (scope) => {
+    scope.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
+      done(null, new URLSearchParams(body as string));
+    });
+    scope.post('/api/webmail/password', async (request, reply) => {
+      const remote = request.raw.socket.remoteAddress ?? '';
+      const local = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+      // Derrière un reverse-proxy local, l'adresse seule ne prouve rien
+      if (!local || request.headers['x-forwarded-for'] !== undefined) return reply.code(403).send({ ok: false });
+      const token = request.headers['x-homeserver-webmail'];
+      const form = request.body instanceof URLSearchParams ? request.body : new URLSearchParams();
+      try {
+        await callHelper({
+          action: 'mail_box_self_password',
+          token: typeof token === 'string' ? token : '',
+          address: (form.get('user') ?? '').toLowerCase(),
+          current: form.get('current') ?? '',
+          password: form.get('password') ?? '',
+        });
+        return { ok: true };
+      } catch {
+        return reply.code(403).send({ ok: false });
+      }
+    });
   });
 
   app.get('/api/health', async () => {

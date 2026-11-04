@@ -17,6 +17,10 @@ const JAIL_INFO: Record<Fail2banJailName, string> = {
   'apache-noscript': 'Apache — recherche de scripts inexistants',
   'nginx-http-auth': 'Nginx — échecs d\'authentification HTTP',
   'nginx-botsearch': 'Nginx — scans d\'URL d\'administration',
+  postfix: 'Postfix — connexions SMTP refusées',
+  'postfix-sasl': 'Postfix — échecs d\'authentification',
+  dovecot: 'Dovecot — échecs de connexion IMAP et POP3',
+  'roundcube-auth': 'Webmail — échecs de connexion',
 };
 
 // Bornes du contrat (secondes côté serveur, minutes dans l'interface)
