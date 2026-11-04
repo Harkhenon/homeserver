@@ -10,7 +10,7 @@ import { mailCall } from '../components/mail/MailboxesPanel';
 import { MailDeliverabilityPanel } from '../components/mail/MailDeliverabilityPanel';
 import type { MailDomain, MailStatus, Zone } from '../types';
 
-const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)' };
+const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)', 'hs-mail-policy': 'Limites d\'envoi' };
 
 function ActivationCard({ zones, onDone }: { zones: Zone[]; onDone: () => void }) {
   const first = zones.find((z) => !z.external)?.domain ?? zones[0]?.domain;
@@ -206,13 +206,15 @@ export function MailPage() {
           ) : (
             <Table highlightOnHover>
               <Table.Thead>
-                <Table.Tr><Table.Th>Domaine</Table.Th><Table.Th>Boîtes</Table.Th><Table.Th>État</Table.Th><Table.Th w={40} /></Table.Tr>
+                <Table.Tr><Table.Th>Domaine</Table.Th><Table.Th>Boîtes</Table.Th><Table.Th>Alias</Table.Th><Table.Th>Espace utilisé</Table.Th><Table.Th>État</Table.Th><Table.Th w={40} /></Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {list.map((d) => (
                   <Table.Tr key={d.domain} style={{ cursor: 'pointer' }} onClick={() => navigate(`/mail/${d.domain}`)}>
                     <Table.Td fw={600}>{d.domain}</Table.Td>
-                    <Table.Td>{d.boxCount}</Table.Td>
+                    <Table.Td>{d.boxCount}{d.maxBoxes > 0 ? ` / ${d.maxBoxes}` : ''}</Table.Td>
+                    <Table.Td>{d.aliasCount}{d.catchAll ? ' + catch-all' : ''}</Table.Td>
+                    <Table.Td>{(d.usedMb ?? 0) >= 1024 ? `${((d.usedMb ?? 0) / 1024).toFixed(1)} Go` : `${d.usedMb ?? 0} Mo`}</Table.Td>
                     <Table.Td><Badge variant="light" color={d.suspended ? 'orange' : 'teal'}>{d.suspended ? 'Suspendu' : 'Actif'}</Badge></Table.Td>
                     <Table.Td><IconChevronRight size={16} stroke={1.5} /></Table.Td>
                   </Table.Tr>

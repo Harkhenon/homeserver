@@ -9,10 +9,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { X509Certificate, createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
-  chmodSync, chownSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  chmodSync, chownSync, copyFileSync, existsSync, lchownSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { promisify } from 'node:util';
-import type { MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult } from '../server/src/core/privileged/contract.js';
+import type { MailAliasInfo, MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult, MailVacation } from '../server/src/core/privileged/contract.js';
 
 const run = promisify(execFile);
 
@@ -37,7 +37,12 @@ const AUTOCONFIG_SITE = 'homeserver-mail-autoconfig.conf';
 const CERTBOT_HOOK = '/etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh';
 const DKIM_SELECTOR = 'hs1';
 const CONF_MARKER = '# Généré par Homeserver';
-const SERVICES = ['postfix', 'dovecot', 'opendkim'] as const;
+const POLICY_UNIT = 'hs-mail-policy';
+const POLICY_UNIT_FILE = `/etc/systemd/system/${POLICY_UNIT}.service`;
+const SERVICES = ['postfix', 'dovecot', 'opendkim', POLICY_UNIT] as const;
+/** À incrémenter quand la configuration générée change : les serveurs déjà activés sont mis à niveau. */
+const CONFIG_VERSION = 3;
+const DEFAULT_SEND_LIMIT = 500;
 const MAIL_PORTS = ['25', '465', '587', '993', '995'];
 
 export interface MailDeps {
@@ -52,6 +57,14 @@ interface BoxState {
   quotaMb: number;
   displayName: string;
   suspended: boolean;
+  forward?: { destinations: string[]; keepCopy: boolean } | null;
+  vacation?: MailVacation | null;
+  sendLimitPerHour?: number | null;
+  createdAt: string;
+}
+
+interface AliasState {
+  destinations: string[];
   createdAt: string;
 }
 
@@ -60,12 +73,17 @@ interface DomainState {
   defaultQuotaMb: number;
   dkimSelector: string;
   dkimPending?: string;
+  maxBoxes: number;
+  sendLimitPerHour: number;
+  catchAll: string | null;
+  aliases: Record<string, AliasState>;
   createdAt: string;
   boxes: Record<string, BoxState>;
 }
 
 interface MailState {
   schema: 1;
+  configVersion?: number;
   hostname: string | null;
   tlsMode: 'selfsigned' | 'letsencrypt' | null;
   publicIp?: string | null;
@@ -80,7 +98,15 @@ function emptyState(): MailState {
 
 function loadState(): MailState {
   try {
-    return { ...emptyState(), ...(JSON.parse(readFileSync(STATE_FILE, 'utf8')) as Partial<MailState>) };
+    const state = { ...emptyState(), ...(JSON.parse(readFileSync(STATE_FILE, 'utf8')) as Partial<MailState>) };
+    // Domaines créés avant ces réglages
+    for (const d of Object.values(state.domains)) {
+      d.aliases ??= {};
+      d.catchAll ??= null;
+      d.maxBoxes ??= 0;
+      d.sendLimitPerHour ??= DEFAULT_SEND_LIMIT;
+    }
+    return state;
   } catch (e) {
     // Fichier absent = pas encore configuré. Illisible = surtout ne rien écraser.
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
@@ -217,6 +243,16 @@ protocol imap {
     imap_quota = yes
   }
 }
+protocol lmtp {
+  mail_plugins {
+    sieve = yes
+  }
+}
+sieve_script personal {
+  driver = file
+  path = ~/sieve
+  active_path = ~/.dovecot.sieve
+}
 quota "User quota" {
 }
 passdb passwd-file {
@@ -243,9 +279,13 @@ mail_plugins = $mail_plugins quota
 protocol imap {
   mail_plugins = $mail_plugins imap_quota
 }
+protocol lmtp {
+  mail_plugins = $mail_plugins sieve
+}
 plugin {
   quota = count:User quota
   quota_vsizes = yes
+  sieve = file:~/sieve;active=~/.dovecot.sieve
 }
 passdb {
   driver = passwd-file
@@ -322,6 +362,9 @@ async function renderFiles(state: MailState, version: string): Promise<OutFile[]
   const users: string[] = [];
   const keyTable: string[] = [];
   const signingTable: string[] = [];
+  const aliases: string[] = [];
+  const blocked: string[] = [];
+  const limits: Record<string, number> = {};
   for (const [domain, d] of Object.entries(state.domains)) {
     // Domaine suspendu : connu de Postfix (réponse 550 propre) mais sans aucune boîte active
     domains.push(`${domain} OK`);
@@ -329,19 +372,47 @@ async function renderFiles(state: MailState, version: string): Promise<OutFile[]
       keyTable.push(`${d.dkimSelector}._domainkey.${domain} ${domain}:${d.dkimSelector}:${dkimKeyPath(domain, d.dkimSelector)}`);
       signingTable.push(`*@${domain} ${d.dkimSelector}._domainkey.${domain}`);
     }
+    if (!d.suspended && d.catchAll) aliases.push(`@${domain} ${d.catchAll}`);
     for (const [local, b] of Object.entries(d.boxes)) {
-      if (d.suspended || b.suspended) continue;
       const address = `${local}@${domain}`;
+      if (d.suspended || b.suspended) {
+        // Refus dès le RCPT : ni catch-all, ni acceptation suivie d'un renvoi à l'expéditeur
+        if (!d.suspended) blocked.push(`${address} 550 5.2.1 Mailbox disabled`);
+        continue;
+      }
       mailboxes.push(`${address} OK`);
       senders.push(`${address} ${address}`);
       users.push(`${address}:${b.hash}:${vmail.uid}:${vmail.gid}::${VMAIL_DIR}/${domain}/${local}::${quotaField(version, b.quotaMb)}`);
+      const limit = b.sendLimitPerHour ?? d.sendLimitPerHour;
+      if (limit > 0) limits[address] = limit;
+      if (b.forward && b.forward.destinations.length > 0) {
+        const targets = b.forward.keepCopy ? [...b.forward.destinations, address] : b.forward.destinations;
+        aliases.push(`${address} ${targets.join(',')}`);
+      } else if (d.catchAll) {
+        // Un catch-all l'emporte sur les boîtes sans cette ligne d'identité
+        aliases.push(`${address} ${address}`);
+      }
+    }
+    if (d.suspended) continue;
+    for (const [local, alias] of Object.entries(d.aliases)) {
+      const address = `${local}@${domain}`;
+      aliases.push(`${address} ${alias.destinations.join(',')}`);
+      // Les boîtes destinataires peuvent envoyer sous l'adresse de l'alias
+      const owners = alias.destinations.filter((dest) => {
+        const [l, dom] = dest.split('@') as [string, string];
+        const box = state.domains[dom]?.boxes[l];
+        return box !== undefined && !box.suspended;
+      });
+      if (owners.length > 0) senders.push(`${address} ${owners.join(',')}`);
     }
   }
   const text = (lines: string[]): string => (lines.length ? `${lines.join('\n')}\n` : '');
   return [
     { path: `${POSTFIX_MAPS}/domains`, content: text(domains), mode: 0o644, ...root },
     { path: `${POSTFIX_MAPS}/mailboxes`, content: text(mailboxes), mode: 0o644, ...root },
-    { path: `${POSTFIX_MAPS}/aliases`, content: '', mode: 0o644, ...root },
+    { path: `${POSTFIX_MAPS}/aliases`, content: text(aliases), mode: 0o644, ...root },
+    { path: `${POSTFIX_MAPS}/blocked_recipients`, content: text(blocked), mode: 0o644, ...root },
+    { path: `${POSTFIX_MAPS}/send_limits.json`, content: JSON.stringify(limits), mode: 0o644, ...root },
     { path: `${POSTFIX_MAPS}/senders`, content: text(senders), mode: 0o644, ...root },
     {
       path: RELAY_PASSWD,
@@ -545,14 +616,14 @@ async function installPackages(deps: MailDeps): Promise<void> {
   if (deps.family === 'debian') {
     // Sinon le paquet postfix attend une réponse debconf (ou reste sans main.cf)
     await execInput('debconf-set-selections', [], 'postfix postfix/main_mailer_type select Internet Site\n');
-    await deps.pkgInstall(['postfix', 'dovecot-imapd', 'dovecot-pop3d', 'dovecot-lmtpd', 'opendkim', 'openssl']);
+    await deps.pkgInstall(['postfix', 'dovecot-imapd', 'dovecot-pop3d', 'dovecot-lmtpd', 'dovecot-sieve', 'opendkim', 'openssl']);
     return;
   }
   // OpenDKIM vient d'EPEL sur RHEL/Rocky/Alma (déjà dans les dépôts sur Fedora)
   if (!/^ID="?fedora/m.test(readFileSync('/etc/os-release', 'utf8'))) {
     await deps.pkgInstall(['epel-release']).catch((e: Error) => deps.log(`mail : epel-release ignoré : ${e.message}`));
   }
-  await deps.pkgInstall(['postfix', 'dovecot', 'opendkim', 'openssl']);
+  await deps.pkgInstall(['postfix', 'dovecot', 'dovecot-pigeonhole', 'opendkim', 'openssl']);
 }
 
 /** Refuse d'écraser un serveur de mail configuré à la main. */
@@ -648,6 +719,7 @@ async function configurePostfix(hostname: string): Promise<void> {
     smtpd_sender_login_maps: `texthash:${POSTFIX_MAPS}/senders`,
     // Port 25 : réception seulement, jamais de relais sans authentification
     smtpd_relay_restrictions: 'permit_mynetworks reject_unauth_destination',
+    smtpd_recipient_restrictions: `check_recipient_access texthash:${POSTFIX_MAPS}/blocked_recipients`,
     smtpd_tls_cert_file: TLS_CERT,
     smtpd_tls_key_file: TLS_KEY,
     smtpd_tls_security_level: 'may',
@@ -658,6 +730,10 @@ async function configurePostfix(hostname: string): Promise<void> {
     smtp_address_preference: 'ipv4',
     smtpd_sasl_type: 'dovecot',
     smtpd_sasl_path: 'private/auth',
+    // Service de limites en panne : le courrier passe, on ne bloque pas tous les envois pour ça
+    smtpd_policy_service_default_action: 'DUNNO',
+    // Paramètre nommé : postconf -P refuse les espaces dans une valeur
+    hs_send_limit_policy: 'check_policy_service inet:127.0.0.1:10031',
     milter_default_action: 'accept',
     milter_protocol: '6',
     smtpd_milters: 'inet:127.0.0.1:8891',
@@ -676,6 +752,8 @@ async function configurePostfix(hostname: string): Promise<void> {
       smtpd_client_restrictions: 'permit_sasl_authenticated,reject',
       smtpd_sender_restrictions: 'reject_sender_login_mismatch',
       smtpd_relay_restrictions: 'permit_sasl_authenticated,reject',
+      // Limite d'envoi par compte, vérifiée une fois le nombre de destinataires connu
+      smtpd_end_of_data_restrictions: '$hs_send_limit_policy',
     };
     for (const [k, v] of Object.entries(params)) {
       await exec('postconf', ['-P', `${port}/inet/${k}=${v}`], 30_000);
@@ -692,6 +770,159 @@ async function configureDovecot(version: string, deps: MailDeps): Promise<void> 
   // passwd-file vide mais présent : doveconf et le démarrage ne doivent pas échouer
   if (!existsSync(DOVECOT_USERS)) writeFileSync(DOVECOT_USERS, '', { mode: 0o640 });
   deps.log(`mail : configuration Dovecot ${version} écrite`);
+}
+
+/** Sans capacité ni accès en écriture : root seulement pour lire la release, qui lui appartient. */
+async function installPolicyUnit(): Promise<void> {
+  const install = process.env.HS_INSTALL_DIR ?? '/usr/share/homeserver';
+  writeFileSync(POLICY_UNIT_FILE, `${CONF_MARKER}
+[Unit]
+Description=Homeserver - limites d'envoi par compte (politique Postfix)
+After=network.target
+Before=postfix.service
+
+[Service]
+Type=simple
+ExecStart=${process.execPath} ${install}/current/server/dist/helper/mail-policy.js
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
+`, { mode: 0o644 });
+  await exec('systemctl', ['daemon-reload'], 30_000);
+}
+
+/** Serveur activé par une version précédente : ajoute ce qui manque, sans toucher à ses données. */
+async function upgradeConfig(state: MailState, deps: MailDeps): Promise<void> {
+  if (!state.hostname || state.configVersion === CONFIG_VERSION) return;
+  deps.log(`mail : mise à niveau de la configuration (${state.configVersion ?? 1} → ${CONFIG_VERSION})`);
+  const wasRunning = await serviceActive('postfix');
+  await installPackages(deps);
+  const version = await dovecotVersion();
+  if (!version) throw new Error('Dovecot introuvable');
+  await configureDovecot(version, deps);
+  await configurePostfix(state.hostname);
+  await configureRelay(state.relay ?? null);
+  await installPolicyUnit();
+  await applyState(state, deps);
+  if (wasRunning) await startServices();
+  state.configVersion = CONFIG_VERSION;
+  saveState(state);
+  deps.log('mail : configuration à jour');
+}
+
+export function upgradeMailOnStart(deps: MailDeps): void {
+  void locked(async () => upgradeConfig(loadState(), deps))
+    .catch((e: Error) => deps.log(`mail : mise à niveau impossible : ${errText(e)}`));
+}
+
+// --- Alias et redirections ------------------------------------------------------------------------
+
+/** Adresse locale existante ? Une destination vers un domaine géré ici doit être réelle. */
+function assertLocalDestinations(state: MailState, destinations: string[]): void {
+  for (const dest of destinations) {
+    const [local, domain] = dest.split('@') as [string, string];
+    const d = state.domains[domain];
+    if (d && !d.boxes[local] && !d.aliases[local]) throw new Error(`${dest} n'existe pas sur ce serveur`);
+  }
+}
+
+/** Refuse toute boucle (a → b → a) : Postfix la détecterait, mais en renvoyant le courrier à l'expéditeur. */
+function assertNoLoop(state: MailState, start: string): void {
+  const next = (address: string): string[] => {
+    const [local, domain] = address.split('@') as [string, string];
+    const d = state.domains[domain];
+    if (!d) return [];
+    if (d.aliases[local]) return d.aliases[local].destinations;
+    return d.boxes[local]?.forward?.destinations ?? [];
+  };
+  const walk = (address: string, seen: Set<string>): void => {
+    for (const dest of next(address)) {
+      if (dest === start) throw new Error(`Boucle détectée : ${address} renvoie vers ${start}`);
+      if (!seen.has(dest)) {
+        seen.add(dest);
+        walk(dest, seen);
+      }
+    }
+  };
+  walk(start, new Set());
+}
+
+/** Adresse supprimée : plus aucun alias, redirection ni catch-all ne doit pointer vers elle. */
+function pruneDestination(state: MailState, address: string): void {
+  for (const d of Object.values(state.domains)) {
+    if (d.catchAll === address) d.catchAll = null;
+    for (const [local, alias] of Object.entries(d.aliases)) {
+      alias.destinations = alias.destinations.filter((x) => x !== address);
+      if (alias.destinations.length === 0) delete d.aliases[local];
+    }
+    for (const b of Object.values(d.boxes)) {
+      if (b.forward) {
+        b.forward.destinations = b.forward.destinations.filter((x) => x !== address);
+        if (b.forward.destinations.length === 0) b.forward = null;
+      }
+    }
+  }
+}
+
+// --- Répondeur d'absence (Sieve) ------------------------------------------------------------------
+
+function sieveString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r\n/g, '\n')}"`;
+}
+
+function renderVacationSieve(v: MailVacation, addresses: string[]): string {
+  const conditions: string[] = [];
+  if (v.startDate) conditions.push(`currentdate :value "ge" "date" ${sieveString(v.startDate)}`);
+  if (v.endDate) conditions.push(`currentdate :value "le" "date" ${sieveString(v.endDate)}`);
+  const test = conditions.length > 0 ? `allof(${conditions.join(', ')})` : 'true';
+  return `# ${CONF_MARKER.slice(2)}
+require ["vacation", "date", "relational"];
+if ${test} {
+  vacation :days 1 :subject ${sieveString(v.subject)} :addresses [${addresses.map(sieveString).join(', ')}] ${sieveString(v.message)};
+}
+`;
+}
+
+/** Écrit (ou retire) le script de la boîte, sous l'utilisateur vmail : ces répertoires sont les siens. */
+async function writeVacation(domain: string, local: string, v: MailVacation | null, addresses: string[]): Promise<void> {
+  const { uid, gid } = await vmailIds();
+  const home = `${VMAIL_DIR}/${domain}/${local}`;
+  const active = `${home}/.dovecot.sieve`;
+  const script = `${home}/sieve/homeserver.sieve`;
+  rmSync(active, { force: true });
+  if (!v || !v.enabled) return;
+  // Parents créés sous vmail : Dovecot doit pouvoir y écrire le binaire compilé du script
+  await exec('runuser', ['-u', VMAIL_USER, '--', 'mkdir', '-p', '-m', '0700', `${home}/sieve`], 15_000);
+  if (lstatSync(`${home}/sieve`).isSymbolicLink()) throw new Error('Répertoire sieve inattendu');
+  rmSync(script, { force: true });
+  writeFileSync(script, renderVacationSieve(v, addresses), { mode: 0o600, flag: 'wx' });
+  chownSync(script, uid, gid);
+  try {
+    await exec('runuser', ['-u', VMAIL_USER, '--', 'sievec', script], 30_000);
+  } catch (e) {
+    rmSync(script, { force: true });
+    throw new Error(`Répondeur refusé par Sieve : ${errText(e)}`);
+  }
+  symlinkSync('sieve/homeserver.sieve', active);
+  lchownSync(active, uid, gid);
 }
 
 async function configureOpendkim(): Promise<void> {
@@ -826,6 +1057,10 @@ function domainInfo(domain: string, d: DomainState): MailDomainInfo {
     boxCount: Object.keys(d.boxes).length,
     dkim: dkimRecord(domain, d.dkimSelector),
     dkimPending: d.dkimPending ? dkimRecord(domain, d.dkimPending) : null,
+    maxBoxes: d.maxBoxes,
+    sendLimitPerHour: d.sendLimitPerHour,
+    aliasCount: Object.keys(d.aliases).length,
+    catchAll: d.catchAll,
     createdAt: d.createdAt,
   };
 }
@@ -836,14 +1071,31 @@ async function boxUsageMb(domain: string, local: string): Promise<number> {
   return Number.isFinite(kb) ? Math.ceil(kb / 1024) : 0;
 }
 
-async function boxInfo(domain: string, local: string, b: BoxState): Promise<MailBoxInfo> {
+async function boxMessages(address: string): Promise<number | null> {
+  const out = await tryExec('doveadm', ['quota', 'get', '-u', address], 15_000);
+  const m = out?.match(/\bMESSAGE\s+(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+async function domainUsedMb(domain: string): Promise<number> {
+  const out = await tryExec('du', ['-sk', `${VMAIL_DIR}/${domain}`], 120_000);
+  const kb = Number(out?.split(/\s/)[0]);
+  return Number.isFinite(kb) ? Math.ceil(kb / 1024) : 0;
+}
+
+async function boxInfo(domain: string, local: string, b: BoxState, d: DomainState): Promise<MailBoxInfo> {
   return {
     address: `${local}@${domain}`,
     local,
     displayName: b.displayName,
     quotaMb: b.quotaMb,
     usedMb: await boxUsageMb(domain, local),
+    messages: await boxMessages(`${local}@${domain}`),
     suspended: b.suspended,
+    forward: b.forward ?? null,
+    vacation: b.vacation ?? null,
+    sendLimitPerHour: b.sendLimitPerHour ?? null,
+    effectiveSendLimit: b.sendLimitPerHour ?? d.sendLimitPerHour,
     createdAt: b.createdAt,
   };
 }
@@ -926,6 +1178,9 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         await configureOpendkim();
         await configureDovecot(version, deps);
         await configurePostfix(req.hostname);
+        await configureRelay(state.relay ?? null);
+        await installPolicyUnit();
+        state.configVersion = CONFIG_VERSION;
         await applyState(state, deps);
         await startServices();
         await openFirewall(deps).catch((e: Error) => deps.log(`mail : pare-feu non modifié : ${e.message}`));
@@ -949,9 +1204,9 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         return status();
       });
     case 'mail_domain_list':
-      return Promise.resolve().then(() => ({
-        domains: Object.entries(loadState().domains)
-          .map(([domain, d]) => domainInfo(domain, d))
+      return Promise.resolve().then(async () => ({
+        domains: (await Promise.all(Object.entries(loadState().domains)
+          .map(async ([domain, d]) => ({ ...domainInfo(domain, d), usedMb: await domainUsedMb(domain) }))))
           .sort((a, b) => a.domain.localeCompare(b.domain)),
       }));
     case 'mail_domain_add':
@@ -963,6 +1218,10 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const d: DomainState = {
           suspended: false,
           defaultQuotaMb: req.defaultQuotaMb,
+          maxBoxes: 0,
+          sendLimitPerHour: DEFAULT_SEND_LIMIT,
+          catchAll: null,
+          aliases: {},
           dkimSelector: DKIM_SELECTOR,
           createdAt: new Date().toISOString(),
           boxes: {},
@@ -977,6 +1236,8 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const d = getDomain(state, req.domain);
         if (req.suspended !== undefined) d.suspended = req.suspended;
         if (req.defaultQuotaMb !== undefined) d.defaultQuotaMb = req.defaultQuotaMb;
+        if (req.maxBoxes !== undefined) d.maxBoxes = req.maxBoxes;
+        if (req.sendLimitPerHour !== undefined) d.sendLimitPerHour = req.sendLimitPerHour;
         await applyState(state, deps);
         if (d.suspended) for (const local of Object.keys(d.boxes)) await kick(`${local}@${req.domain}`);
         return domainInfo(req.domain, d);
@@ -986,6 +1247,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const state = loadState();
         const d = getDomain(state, req.domain);
         delete state.domains[req.domain];
+        for (const address of [...Object.keys(d.boxes), ...Object.keys(d.aliases)]) pruneDestination(state, `${address}@${req.domain}`);
         await applyState(state, deps);
         for (const local of Object.keys(d.boxes)) await kick(`${local}@${req.domain}`);
         if (req.deleteData) {
@@ -997,7 +1259,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
     case 'mail_box_list':
       return Promise.resolve().then(async () => {
         const d = getDomain(loadState(), req.domain);
-        const boxes = await Promise.all(Object.entries(d.boxes).map(([local, b]) => boxInfo(req.domain, local, b)));
+        const boxes = await Promise.all(Object.entries(d.boxes).map(([local, b]) => boxInfo(req.domain, local, b, d)));
         return { boxes: boxes.sort((a, b) => a.local.localeCompare(b.local)) };
       });
     case 'mail_box_add':
@@ -1005,6 +1267,8 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const state = loadState();
         const d = getDomain(state, req.domain);
         if (d.boxes[req.local]) throw new Error(`La boîte ${req.local}@${req.domain} existe déjà`);
+        if (d.aliases[req.local]) throw new Error(`${req.local}@${req.domain} est déjà un alias`);
+        if (d.maxBoxes > 0 && Object.keys(d.boxes).length >= d.maxBoxes) throw new Error(`Limite de ${d.maxBoxes} boîte(s) atteinte pour ${req.domain}`);
         const b: BoxState = {
           hash: await hashPassword(req.password),
           quotaMb: req.quotaMb,
@@ -1014,7 +1278,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         };
         d.boxes[req.local] = b;
         await applyState(state, deps);
-        return boxInfo(req.domain, req.local, b);
+        return boxInfo(req.domain, req.local, b, d);
       });
     case 'mail_box_set':
       return locked(async () => {
@@ -1024,9 +1288,10 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         if (req.quotaMb !== undefined) b.quotaMb = req.quotaMb;
         if (req.suspended !== undefined) b.suspended = req.suspended;
         if (req.displayName !== undefined) b.displayName = req.displayName;
+        if (req.sendLimitPerHour !== undefined) b.sendLimitPerHour = req.sendLimitPerHour;
         await applyState(state, deps);
         if (b.suspended) await kick(`${req.local}@${req.domain}`);
-        return boxInfo(req.domain, req.local, b);
+        return boxInfo(req.domain, req.local, b, d);
       });
     case 'mail_box_password':
       return locked(async () => {
@@ -1043,9 +1308,12 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         const d = getDomain(state, req.domain);
         getBox(d, req.domain, req.local);
         delete d.boxes[req.local];
+        pruneDestination(state, `${req.local}@${req.domain}`);
         await applyState(state, deps);
         await kick(`${req.local}@${req.domain}`);
         if (req.deleteData) rmSync(`${VMAIL_DIR}/${req.domain}/${req.local}`, { recursive: true, force: true });
+        // Messages conservés : le répondeur, lui, ne doit pas survivre à la boîte
+        else await writeVacation(req.domain, req.local, null, []).catch(() => undefined);
         return { deleted: true, dataDeleted: req.deleteData };
       });
     case 'mail_settings_set':
@@ -1095,6 +1363,87 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         delete d.dkimPending;
         await applyState(state, deps);
         return domainInfo(req.domain, d);
+      });
+    case 'mail_alias_list':
+      return Promise.resolve().then(() => {
+        const d = getDomain(loadState(), req.domain);
+        const aliases: MailAliasInfo[] = Object.entries(d.aliases)
+          .map(([local, a]) => ({ address: `${local}@${req.domain}`, local, destinations: a.destinations, createdAt: a.createdAt }))
+          .sort((a, b) => a.local.localeCompare(b.local));
+        return { aliases, catchAll: d.catchAll };
+      });
+    case 'mail_alias_set':
+      return locked(async () => {
+        const state = loadState();
+        await upgradeConfig(state, deps);
+        const d = getDomain(state, req.domain);
+        const address = `${req.local}@${req.domain}`;
+        if (d.boxes[req.local]) throw new Error(`${address} est déjà une boîte`);
+        const destinations = [...new Set(req.destinations)];
+        if (destinations.includes(address)) throw new Error('Un alias ne peut pas pointer vers lui-même');
+        assertLocalDestinations(state, destinations);
+        d.aliases[req.local] = { destinations, createdAt: d.aliases[req.local]?.createdAt ?? new Date().toISOString() };
+        assertNoLoop(state, address);
+        await applyState(state, deps);
+        return { address, local: req.local, destinations };
+      });
+    case 'mail_alias_remove':
+      return locked(async () => {
+        const state = loadState();
+        const d = getDomain(state, req.domain);
+        if (!d.aliases[req.local]) throw new Error(`Alias ${req.local}@${req.domain} inconnu`);
+        delete d.aliases[req.local];
+        pruneDestination(state, `${req.local}@${req.domain}`);
+        await applyState(state, deps);
+        return { deleted: true };
+      });
+    case 'mail_catchall_set':
+      return locked(async () => {
+        const state = loadState();
+        await upgradeConfig(state, deps);
+        const d = getDomain(state, req.domain);
+        if (req.destination) {
+          const [, destDomain] = req.destination.split('@') as [string, string];
+          // Vers son propre domaine, la destination doit exister vraiment, sinon le courrier tourne en rond
+          assertLocalDestinations(state, [req.destination]);
+          if (destDomain === req.domain && !d.boxes[req.destination.split('@')[0] as string]) {
+            throw new Error('Le catch-all doit pointer vers une boîte du domaine ou une adresse extérieure');
+          }
+        }
+        d.catchAll = req.destination;
+        await applyState(state, deps);
+        return { catchAll: d.catchAll };
+      });
+    case 'mail_forward_set':
+      return locked(async () => {
+        const state = loadState();
+        await upgradeConfig(state, deps);
+        const d = getDomain(state, req.domain);
+        const b = getBox(d, req.domain, req.local);
+        const address = `${req.local}@${req.domain}`;
+        const destinations = [...new Set(req.destinations)];
+        if (destinations.includes(address)) throw new Error('Une boîte ne peut pas se rediriger vers elle-même');
+        assertLocalDestinations(state, destinations);
+        b.forward = destinations.length > 0 ? { destinations, keepCopy: req.keepCopy } : null;
+        assertNoLoop(state, address);
+        await applyState(state, deps);
+        return boxInfo(req.domain, req.local, b, d);
+      });
+    case 'mail_vacation_set':
+      return locked(async () => {
+        const state = loadState();
+        await upgradeConfig(state, deps);
+        const d = getDomain(state, req.domain);
+        const b = getBox(d, req.domain, req.local);
+        if (req.startDate && req.endDate && req.endDate < req.startDate) throw new Error('La date de fin précède la date de début');
+        const v: MailVacation = { enabled: req.enabled, subject: req.subject, message: req.message, startDate: req.startDate, endDate: req.endDate };
+        // Le répondeur répond aussi aux messages reçus via un alias de cette boîte
+        const address = `${req.local}@${req.domain}`;
+        const addresses = [address, ...Object.entries(d.aliases).filter(([, a]) => a.destinations.includes(address)).map(([l]) => `${l}@${req.domain}`)];
+        await writeVacation(req.domain, req.local, v, addresses);
+        b.vacation = v;
+        saveState(state);
+        return boxInfo(req.domain, req.local, b, d);
       });
     case 'mail_test_send':
       return Promise.resolve().then(() => {

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert, Badge, Button, Checkbox, Code, CopyButton, Group, Menu, Modal, NumberInput, PasswordInput,
-  Progress, Stack, Table, Text, TextInput, Tooltip, ActionIcon,
+  Progress, Stack, Switch, Table, Text, Textarea, TextInput, Tooltip, ActionIcon,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconCheck, IconCopy, IconDots, IconKey, IconPlayerPause, IconPlayerPlay, IconPlus, IconTrash, IconGauge,
+  IconArrowForwardUp, IconCheck, IconCopy, IconDots, IconKey, IconPlayerPause, IconPlayerPlay, IconPlus, IconPlaneDeparture, IconSend, IconTrash, IconGauge,
 } from '@tabler/icons-react';
 import { call } from '../../api/client';
 import { useModuleQuery } from '../../api/hooks';
@@ -49,7 +49,7 @@ function Usage({ box }: { box: MailBox }) {
   const pct = Math.min(100, (box.usedMb / box.quotaMb) * 100);
   return (
     <Stack gap={4}>
-      <Text size="sm">{used} <Text span c="dimmed">/ {formatQuota(box.quotaMb)}</Text></Text>
+      <Text size="sm">{used} <Text span c="dimmed">/ {formatQuota(box.quotaMb)}{box.messages !== null ? ` · ${box.messages} message${box.messages > 1 ? 's' : ''}` : ''}</Text></Text>
       <Progress value={pct} size="xs" color={pct >= 90 ? 'red' : pct >= 75 ? 'orange' : 'teal'} aria-label="Espace utilisé" />
     </Stack>
   );
@@ -236,6 +236,125 @@ function DeleteBoxModal({ box, domain, onClose, onDone }: { box: MailBox | null;
   );
 }
 
+function ForwardModal({ box, domain, onClose, onDone }: { box: MailBox | null; domain: string; onClose: () => void; onDone: () => void }) {
+  const [destinations, setDestinations] = useState('');
+  const [keepCopy, setKeepCopy] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (box) {
+      setDestinations(box.forward?.destinations.join('\n') ?? '');
+      setKeepCopy(box.forward?.keepCopy ?? true);
+    }
+  }, [box]);
+  const save = async (list: string) => {
+    if (!box) return;
+    setBusy(true);
+    const res = await mailCall('boxes.forward', { domain, local: box.local, destinations: list, keepCopy }, list.trim() ? 'Redirection enregistrée' : 'Redirection retirée');
+    setBusy(false);
+    if (res) { onDone(); onClose(); }
+  };
+  return (
+    <Modal opened={box !== null} onClose={onClose} title={`Redirection de ${box?.address ?? ''}`}>
+      <Stack>
+        <Textarea
+          label="Rediriger vers"
+          description="Une adresse par ligne."
+          autosize
+          minRows={2}
+          data-autofocus
+          value={destinations}
+          onChange={(e) => setDestinations(e.currentTarget.value)}
+        />
+        <Switch label="Garder une copie dans cette boîte" description="Sans copie, le répondeur de cette boîte ne se déclenche pas." checked={keepCopy} onChange={(e) => setKeepCopy(e.currentTarget.checked)} />
+        <Alert color="blue" variant="light">Vers une adresse extérieure, le SPF échoue pour le domaine de l'expéditeur d'origine : certains messages peuvent être refusés ou classés en spam.</Alert>
+        <Group justify="flex-end">
+          {box?.forward && <Button variant="subtle" color="red" loading={busy} onClick={() => void save('')}>Retirer</Button>}
+          <Button variant="default" onClick={onClose}>Annuler</Button>
+          <Button loading={busy} disabled={!destinations.trim()} onClick={() => void save(destinations)}>Enregistrer</Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
+function VacationModal({ box, domain, onClose, onDone }: { box: MailBox | null; domain: string; onClose: () => void; onDone: () => void }) {
+  const [enabled, setEnabled] = useState(true);
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (box) {
+      setEnabled(box.vacation?.enabled ?? true);
+      setSubject(box.vacation?.subject ?? 'Absence');
+      setMessage(box.vacation?.message ?? '');
+      setStartDate(box.vacation?.startDate ?? '');
+      setEndDate(box.vacation?.endDate ?? '');
+    }
+  }, [box]);
+  const submit = async () => {
+    if (!box) return;
+    setBusy(true);
+    const res = await mailCall('boxes.vacation', { domain, local: box.local, enabled, subject, message, startDate, endDate }, enabled ? 'Répondeur activé' : 'Répondeur désactivé');
+    setBusy(false);
+    if (res) { onDone(); onClose(); }
+  };
+  return (
+    <Modal opened={box !== null} onClose={onClose} title={`Répondeur de ${box?.address ?? ''}`}>
+      <Stack>
+        <Switch label="Répondeur actif" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
+        <TextInput label="Objet" value={subject} maxLength={200} onChange={(e) => setSubject(e.currentTarget.value)} data-autofocus />
+        <Textarea label="Message" autosize minRows={4} maxLength={5000} value={message} onChange={(e) => setMessage(e.currentTarget.value)} />
+        <Group grow>
+          <TextInput type="date" label="À partir du (facultatif)" value={startDate} onChange={(e) => setStartDate(e.currentTarget.value)} />
+          <TextInput type="date" label="Jusqu'au (facultatif)" value={endDate} onChange={(e) => setEndDate(e.currentTarget.value)} />
+        </Group>
+        <Text size="xs" c="dimmed">Un même expéditeur reçoit au plus une réponse par jour. Aucune réponse aux listes de diffusion ni aux messages automatiques.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>Annuler</Button>
+          <Button loading={busy} disabled={enabled && (!subject.trim() || !message.trim())} onClick={() => void submit()}>Enregistrer</Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
+function SendLimitModal({ box, domain, onClose, onDone }: { box: MailBox | null; domain: string; onClose: () => void; onDone: () => void }) {
+  const [limit, setLimit] = useState<number | string>('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (box) setLimit(box.sendLimitPerHour ?? '');
+  }, [box]);
+  const submit = async () => {
+    if (!box) return;
+    setBusy(true);
+    const res = await mailCall('boxes.update', { domain, local: box.local, sendLimitPerHour: limit === '' ? null : Number(limit) }, 'Limite d\'envoi enregistrée');
+    setBusy(false);
+    if (res) { onDone(); onClose(); }
+  };
+  return (
+    <Modal opened={box !== null} onClose={onClose} title={`Limite d'envoi de ${box?.address ?? ''}`}>
+      <Stack>
+        <NumberInput
+          label="Destinataires par heure"
+          description="Vide : limite du domaine. 0 : aucune limite. Freine une boîte piratée qui enverrait du spam."
+          min={0}
+          allowDecimal={false}
+          value={limit}
+          onChange={setLimit}
+          data-autofocus
+        />
+        <Text size="sm" c="dimmed">Limite appliquée actuellement : {box?.effectiveSendLimit === 0 ? 'aucune' : `${box?.effectiveSendLimit ?? 0} par heure`}.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>Annuler</Button>
+          <Button loading={busy} onClick={() => void submit()}>Enregistrer</Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
 /** Paramètres à reporter dans un logiciel de messagerie. */
 export function ClientSettings({ hostname }: { hostname: string }) {
   const rows: Array<[string, string, string]> = [
@@ -271,6 +390,9 @@ export function MailboxesPanel({ domain }: { domain: string }) {
   const [passwordBox, setPasswordBox] = useState<MailBox | null>(null);
   const [quotaBox, setQuotaBox] = useState<MailBox | null>(null);
   const [deleteBox, setDeleteBox] = useState<MailBox | null>(null);
+  const [forwardBox, setForwardBox] = useState<MailBox | null>(null);
+  const [vacationBox, setVacationBox] = useState<MailBox | null>(null);
+  const [limitBox, setLimitBox] = useState<MailBox | null>(null);
   const [generated, setGenerated] = useState<{ address: string; password: string } | null>(null);
 
   const toggleSuspend = async (box: MailBox) => {
@@ -311,7 +433,15 @@ export function MailboxesPanel({ domain }: { domain: string }) {
                 </Table.Td>
                 <Table.Td><Usage box={box} /></Table.Td>
                 <Table.Td>
-                  <Badge variant="light" color={box.suspended ? 'orange' : 'teal'}>{box.suspended ? 'Suspendue' : 'Active'}</Badge>
+                  <Group gap={4}>
+                    <Badge variant="light" color={box.suspended ? 'orange' : 'teal'}>{box.suspended ? 'Suspendue' : 'Active'}</Badge>
+                    {box.forward && (
+                      <Tooltip label={`Vers ${box.forward.destinations.join(', ')}${box.forward.keepCopy ? ' (copie conservée)' : ''}`} multiline w={280}>
+                        <Badge variant="light" color="blue">Redirigée</Badge>
+                      </Tooltip>
+                    )}
+                    {box.vacation?.enabled && <Badge variant="light" color="grape">Répondeur</Badge>}
+                  </Group>
                 </Table.Td>
                 <Table.Td>
                   <Menu position="bottom-end" withinPortal>
@@ -321,6 +451,9 @@ export function MailboxesPanel({ domain }: { domain: string }) {
                     <Menu.Dropdown>
                       <Menu.Item leftSection={<IconKey size={14} stroke={1.5} />} onClick={() => setPasswordBox(box)}>Changer le mot de passe</Menu.Item>
                       <Menu.Item leftSection={<IconGauge size={14} stroke={1.5} />} onClick={() => setQuotaBox(box)}>Modifier le quota</Menu.Item>
+                      <Menu.Item leftSection={<IconArrowForwardUp size={14} stroke={1.5} />} onClick={() => setForwardBox(box)}>Redirection</Menu.Item>
+                      <Menu.Item leftSection={<IconPlaneDeparture size={14} stroke={1.5} />} onClick={() => setVacationBox(box)}>Répondeur</Menu.Item>
+                      <Menu.Item leftSection={<IconSend size={14} stroke={1.5} />} onClick={() => setLimitBox(box)}>Limite d'envoi</Menu.Item>
                       <Menu.Item
                         leftSection={box.suspended ? <IconPlayerPlay size={14} stroke={1.5} /> : <IconPlayerPause size={14} stroke={1.5} />}
                         onClick={() => void toggleSuspend(box)}
@@ -361,6 +494,9 @@ export function MailboxesPanel({ domain }: { domain: string }) {
         onGenerated={(password) => setGenerated({ address: passwordBox?.address ?? '', password })}
       />
       <QuotaModal box={quotaBox} domain={domain} onClose={() => setQuotaBox(null)} onDone={() => void boxes.reload(true)} />
+      <ForwardModal box={forwardBox} domain={domain} onClose={() => setForwardBox(null)} onDone={() => void boxes.reload(true)} />
+      <VacationModal box={vacationBox} domain={domain} onClose={() => setVacationBox(null)} onDone={() => void boxes.reload(true)} />
+      <SendLimitModal box={limitBox} domain={domain} onClose={() => setLimitBox(null)} onDone={() => void boxes.reload(true)} />
       <DeleteBoxModal box={deleteBox} domain={domain} onClose={() => setDeleteBox(null)} onDone={() => void boxes.reload(true)} />
       <GeneratedPasswordModal address={generated?.address ?? ''} password={generated?.password ?? null} onClose={() => setGenerated(null)} />
     </Stack>

@@ -190,7 +190,8 @@ if $UNINSTALL; then
 
   # Service e-mail : configuration retirée, boîtes conservées sauf avec --purge
   if [ -f /var/lib/homeserver-mail/state.json ]; then
-    systemctl disable --now postfix dovecot opendkim >/dev/null 2>&1 || true
+    systemctl disable --now postfix dovecot opendkim hs-mail-policy >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/hs-mail-policy.service
     rm -rf /etc/postfix/homeserver /etc/dovecot/homeserver-users /etc/homeserver-mail /etc/systemd/system/opendkim.service.d/zz-homeserver.conf
     rm -f /etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh
     rm -f /etc/apache2/sites-enabled/homeserver-mail-autoconfig.conf /etc/apache2/sites-available/homeserver-mail-autoconfig.conf /etc/httpd/conf.d/homeserver-mail-autoconfig.conf
