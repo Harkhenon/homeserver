@@ -124,6 +124,8 @@ verify_assets() { # repo tag archive version-attendue fichier-de-version-dans-l'
 step "Pré-requis"
 for c in git gh node npm openssl sha256sum tar; do command -v "$c" >/dev/null 2>&1 || die "commande requise introuvable : $c"; done
 gh auth status >/dev/null 2>&1 || die "gh non authentifié : gh auth login"
+# Vérifiée ici pour qu'un --dry-run la détecte aussi : l'échec arriverait sinon en pleine publication
+git var GIT_COMMITTER_IDENT >/dev/null 2>&1 || die "identité Git manquante : git config user.name \"…\" et git config user.email \"…\""
 [ "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH" ] || die "à lancer depuis la branche $BRANCH (actuelle : $(git rev-parse --abbrev-ref HEAD))"
 git fetch -q origin main --tags || die "git fetch impossible"
 git merge-base --is-ancestor origin/main HEAD || die "la branche n'inclut pas origin/main : git pull --ff-only d'abord"
@@ -259,6 +261,12 @@ if [ -n "$NEW_UPD" ]; then
   step "Couple updater $NEW_UPD"
   UPD_DIR="$WORK/updater-repo"
   gh repo clone "$UPDATER_REPO" "$(nat "$UPD_DIR")" -- -q >/dev/null 2>&1 || die "clonage de $UPDATER_REPO impossible"
+  # Clone neuf : il ne voit pas la configuration locale du dépôt courant. Une identité passée
+  # par GIT_AUTHOR_* et GIT_COMMITTER_* lui parvient déjà par l'environnement.
+  for key in user.name user.email; do
+    value="$(git config "$key" || true)"
+    [ -z "$value" ] || git -C "$UPD_DIR" config "$key" "$value"
+  done
   for f in updater-core.sh updater.sh common/pair.sh make-release.sh; do
     git show "HEAD:updater/$f" > "$UPD_DIR/$f"
   done
