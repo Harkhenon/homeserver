@@ -4,7 +4,7 @@ import {
   chownSync, lchownSync, chmodSync, rmdirSync, openSync, closeSync, fstatSync, ftruncateSync, fchmodSync, fchownSync, readlinkSync, renameSync, constants,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { userInfo } from 'node:os';
+import { networkInterfaces, userInfo } from 'node:os';
 
 function uidOf(user: string): number | undefined {
   const passwd = readFileSync('/etc/passwd', 'utf8');
@@ -34,7 +34,7 @@ import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, validateFail2banConfig, CONTRACT_VERSION, FAIL2BAN_JAILS } from '../server/src/core/privileged/contract.js';
-import { handleMail, upgradeMailOnStart } from './mail.js';
+import { handleMail, upgradeMailOnStart, type MailDeps } from './mail.js';
 import type { MailRequest, SshHardeningStatusResult,SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
@@ -659,6 +659,8 @@ function f2bAvailableJails(): Fail2banJailName[] {
   return FAIL2BAN_JAILS.filter((j) => {
     if (j === 'sshd') return true;
     if (j === 'recidive') return existsSync('/var/log/fail2ban.log');
+    if (j === 'postfix' || j === 'postfix-sasl') return existsSync('/etc/postfix/main.cf');
+    if (j === 'dovecot') return existsSync('/etc/dovecot/dovecot.conf');
     if (j === 'apache-badbots') return apacheAccess;
     if (j.startsWith('apache-')) return apacheError;
     return nginxError;
@@ -677,7 +679,9 @@ function f2bNormalize(cfg: Fail2banConfig): Fail2banConfig {
 function f2bDefaultConfig(web?: 'apache' | 'nginx'): Fail2banConfig {
   const available = f2bAvailableJails();
   const webJail: Fail2banJailName[] = web === 'nginx' ? ['nginx-http-auth'] : web === 'apache' ? ['apache-auth'] : ['apache-auth', 'nginx-http-auth'];
-  const enabled = new Set<Fail2banJailName>(['sshd', ...webJail.filter((j) => available.includes(j))]);
+  // fail2ban installé après le service e-mail : ses jails sont actives d'emblée, comme dans l'autre sens
+  const mailJails: Fail2banJailName[] = existsSync('/var/lib/homeserver-mail/state.json') ? ['postfix', 'postfix-sasl', 'dovecot'] : [];
+  const enabled = new Set<Fail2banJailName>(['sshd', ...[...webJail, ...mailJails].filter((j) => available.includes(j))]);
   return f2bNormalize({
     defaults: { ...F2B_DEFAULTS },
     ignoreip: [],
@@ -704,7 +708,60 @@ async function f2bBanAction(): Promise<[string, string] | null> {
     return ['firewallcmd-rich-rules', 'firewallcmd-allports'];
   }
   if (existsSync('/usr/sbin/nft')) return ['nftables-multiport', 'nftables-allports'];
-  return null; // défaut de la distribution (iptables)
+  // Explicite : le défaut de Debian 13 est nftables, même quand nft n'est pas installé (le ban échoue alors en silence)
+  if (existsSync('/usr/sbin/iptables')) return ['iptables-multiport', 'iptables-allports'];
+  return null;
+}
+
+/**
+ * Compléments aux filtres livrés par les distributions :
+ * - postfix : l'unité est postfix@- sur Debian et Ubuntu, et nos ports d'envoi ont leur propre étiquette ;
+ * - dovecot : le format « Login aborted » de Dovecot 2.4 n'est reconnu que par certaines versions du filtre.
+ */
+function f2bFilterFiles(): Record<string, string> {
+  return {
+    '/etc/fail2ban/filter.d/postfix.local': [
+      '# Généré par Homeserver',
+      '[Definition]',
+      String.raw`_daemon = postfix(-\w+)?/[\w-]+(?:/smtp[ds])?`,
+      '',
+      '[Init]',
+      'journalmatch = SYSLOG_IDENTIFIER=postfix/smtpd + SYSLOG_IDENTIFIER=postfix/submission-587/smtpd + SYSLOG_IDENTIFIER=postfix/submission-465/smtpd',
+      '',
+    ].join('\n'),
+    '/etc/fail2ban/filter.d/dovecot.local': [
+      '# Généré par Homeserver',
+      '[Definition]',
+      'failregex = %(known/failregex)s',
+      String.raw`            ^Login aborted: .*\((?:auth failed, \d+ attempts(?: in \d+ secs)?|tried to use (?:disabled|disallowed) \S+ auth)\)(?: \([^)]+\))?:(?: user=<<F-USER>[^>]*</F-USER>>,)?(?: method=\S+,)? rip=<HOST>(?:,|$)`,
+      '',
+    ].join('\n'),
+  };
+}
+
+function f2bFiltersCurrent(): boolean {
+  return Object.entries(f2bFilterFiles()).every(([path, content]) => existsSync(path) && readFileSync(path, 'utf8') === content);
+}
+
+/** Une mise à jour du panel corrige aussi la configuration déjà en place (action de bannissement, filtres). */
+async function f2bRepairOnStart(): Promise<void> {
+  if (!f2bInstalled() || !existsSync(F2B_CONF)) return;
+  const stored = f2bReadConfig();
+  if (!stored) return;
+  const cfg = f2bNormalize(stored);
+  if (readFileSync(F2B_CONF, 'utf8') === f2bRender(cfg, await f2bBanAction()) && f2bFiltersCurrent()) return;
+  log('fail2ban : configuration mise à niveau');
+  await f2bApply(cfg, await f2bServiceActive());
+}
+
+/**
+ * IP du serveur : une application locale qui se trompe de mot de passe ne doit pas le faire se bannir lui-même.
+ * ignoreself de fail2ban ne suffit pas : il passe par le nom d'hôte, qui résout souvent vers 127.0.1.1.
+ */
+function f2bSelfAddresses(): string[] {
+  return Object.values(networkInterfaces()).flat()
+    .filter((a) => a !== undefined && !a.internal && !a.address.startsWith('fe80:'))
+    .map((a) => (a as { address: string }).address);
 }
 
 function f2bRender(cfg: Fail2banConfig, banAction: [string, string] | null): string {
@@ -720,7 +777,7 @@ function f2bRender(cfg: Fail2banConfig, banAction: [string, string] | null): str
     `bantime = ${cfg.defaults.bantime}`,
     `findtime = ${cfg.defaults.findtime}`,
     `maxretry = ${cfg.defaults.maxretry}`,
-    `ignoreip = ${['127.0.0.1/8', '::1', ...cfg.ignoreip].join(' ')}`,
+    `ignoreip = ${['127.0.0.1/8', '::1', ...f2bSelfAddresses(), ...cfg.ignoreip].join(' ')}`,
   ];
   if (banAction) lines.push(`banaction = ${banAction[0]}`, `banaction_allports = ${banAction[1]}`);
   for (const j of cfg.jails) {
@@ -732,6 +789,7 @@ function f2bRender(cfg: Fail2banConfig, banAction: [string, string] | null): str
     if (j.maxretry !== null) lines.push(`maxretry = ${j.maxretry}`);
     // Fedora force backend = systemd par défaut : les jails web/recidive lisent des fichiers
     if (j.name === 'sshd') lines.push(`backend = ${sshJournal ? 'systemd' : 'auto'}`);
+    else if (j.name === 'postfix' || j.name === 'postfix-sasl' || j.name === 'dovecot') lines.push('backend = systemd');
     else lines.push('backend = auto');
   }
   return lines.join('\n') + '\n';
@@ -780,7 +838,11 @@ async function f2bApply(cfg: Fail2banConfig, start = false): Promise<void> {
     else writeFileSync(F2B_CONF, previous, { mode: 0o644 });
   };
   mkdirSync('/etc/fail2ban/jail.d', { recursive: true });
-  writeFileSync(F2B_CONF, f2bRender(cfg, await f2bBanAction()), { mode: 0o644 });
+  const rendered = f2bRender(cfg, await f2bBanAction());
+  writeFileSync(F2B_CONF, rendered, { mode: 0o644 });
+  if (existsSync('/etc/fail2ban/filter.d')) {
+    for (const [path, content] of Object.entries(f2bFilterFiles())) writeFileSync(path, content, { mode: 0o644 });
+  }
   await tryExec('restorecon', [F2B_CONF]); // SELinux : contexte du dossier
   try {
     await exec('fail2ban-client', ['-t'], 30_000);
@@ -790,8 +852,11 @@ async function f2bApply(cfg: Fail2banConfig, start = false): Promise<void> {
   }
   const active = await f2bServiceActive();
   try {
-    if (active) await exec('fail2ban-client', ['reload'], 60_000);
-    else if (start) await exec('systemctl', ['restart', 'fail2ban'], 60_000);
+    // Un reload qui change d'action de ban laisse les jails sans aucune action : les IP sont
+    // inscrites comme bannies, mais plus rien ne les bloque. Les bans en cours sont repris de sa base.
+    const banLine = (conf: string | null): string | undefined => conf?.match(/^banaction = .*$/m)?.[0];
+    if (active && banLine(previous) === banLine(rendered)) await exec('fail2ban-client', ['reload'], 60_000);
+    else if (active || start) await exec('systemctl', ['restart', 'fail2ban'], 60_000);
     // le serveur met quelques secondes à ouvrir son socket et démarrer ses jails
     if (active || start) await f2bWaitReady();
   } catch (e) {
@@ -835,7 +900,8 @@ async function f2bInstall(family: 'debian' | 'rhel'): Promise<void> {
   if (family === 'debian') {
     await aptUpdate();
     // python3-systemd : backend journald pour sshd quand /var/log/auth.log n'existe pas
-    await pkgInstall(family, ['fail2ban', 'python3-systemd']);
+    // nftables : sans lui, l'action par défaut de Debian 13 ne bloque rien
+    await pkgInstall(family, ['fail2ban', 'python3-systemd', 'nftables']);
     return;
   }
   // RHEL/Rocky/Alma : fail2ban vient d'EPEL (Fedora l'a dans ses dépôts)
@@ -851,17 +917,27 @@ async function f2bInstall(family: 'debian' | 'rhel'): Promise<void> {
   await pkgInstall(family, ['fail2ban-server', 'fail2ban-systemd']);
 }
 
+function mailDeps(family: 'debian' | 'rhel'): MailDeps {
+  return {
+    family,
+    pkgInstall: (packages) => pkgInstall(family, packages),
+    pkgRefresh: () => (family === 'debian' ? aptUpdate() : Promise.resolve()),
+    log,
+    enableMailJails: async () => {
+      if (!f2bInstalled()) return;
+      const cfg = f2bNormalize(f2bReadConfig() ?? f2bDefaultConfig());
+      const mail: Fail2banJailName[] = ['postfix', 'postfix-sasl', 'dovecot'];
+      await f2bApply({ ...cfg, jails: cfg.jails.map((j) => (mail.includes(j.name) ? { ...j, enabled: true } : j)) }, true);
+    },
+  };
+}
+
 async function handleRequest(raw: unknown): Promise<unknown> {
   const req = validateRequest(raw);
   if (!req) throw Object.assign(new Error('Requête invalide'), { code: 'VALIDATION' });
   const family = detectFamily();
   if (req.action.startsWith('mail_')) {
-    return handleMail(req as MailRequest, {
-      family,
-      pkgInstall: (packages) => pkgInstall(family, packages),
-      pkgRefresh: () => (family === 'debian' ? aptUpdate() : Promise.resolve()),
-      log,
-    });
+    return handleMail(req as MailRequest, mailDeps(family));
   }
   switch (req.action) {
     case 'echo':
@@ -1943,7 +2019,7 @@ WantedBy=multi-user.target
       if (!(await f2bActiveJails()).includes(req.jail)) throw new Error(`Jail ${req.jail} inactive`);
       // banip passe outre ignoreip : la liste blanche est vérifiée ici
       const whitelist = new BlockList();
-      for (const entry of ['127.0.0.0/8', '::1', ...(f2bReadConfig()?.ignoreip ?? [])]) {
+      for (const entry of ['127.0.0.0/8', '::1', ...f2bSelfAddresses(), ...(f2bReadConfig()?.ignoreip ?? [])]) {
         const [ip = '', prefix] = entry.split('/');
         const type = isIP(ip) === 6 ? 'ipv6' : 'ipv4';
         if (prefix === undefined) whitelist.addAddress(ip, type);
@@ -2041,13 +2117,10 @@ server.maxConnections = MAX_CONNECTIONS;
 migrateBindZones();
 {
   // Serveur de mail activé par une version précédente : mis à niveau sans attendre une action
-  const family = detectFamily();
-  upgradeMailOnStart({
-    family,
-    pkgInstall: (packages) => pkgInstall(family, packages),
-    pkgRefresh: () => (family === 'debian' ? aptUpdate() : Promise.resolve()),
-    log,
-  });
+  // Dans cet ordre : la mise à niveau du mail réécrit aussi la configuration de fail2ban
+  void f2bRepairOnStart()
+    .catch((e: Error) => log(`fail2ban : mise à niveau impossible : ${e.message}`))
+    .finally(() => upgradeMailOnStart(mailDeps(detectFamily())));
 }
 mkdirSync(SOCKET_PATH.replace(/\/[^/]+$/, ''), { recursive: true });
 if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);

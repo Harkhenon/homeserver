@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Autocomplete, Badge, Button, Card, Group, Modal, NumberInput, SimpleGrid, Stack, Table, Tabs, Text, TextInput, ThemeIcon,
 } from '@mantine/core';
-import { IconChevronRight, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconWorld } from '@tabler/icons-react';
+import { IconChevronRight, IconClock, IconFileText, IconLock, IconMail, IconPlayerPause, IconPlayerPlay, IconPlus, IconSend, IconShieldCheck, IconWorld } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useModuleQuery } from '../api/hooks';
 import { ErrorBlock, LoadingBlock, PageHeader } from '../components';
 import { mailCall } from '../components/mail/MailboxesPanel';
+import { MailAntispamPanel } from '../components/mail/MailAntispamPanel';
 import { MailDeliverabilityPanel } from '../components/mail/MailDeliverabilityPanel';
+import { MailLogsPanel } from '../components/mail/MailLogsPanel';
+import { MailQueuePanel } from '../components/mail/MailQueuePanel';
 import type { MailDomain, MailStatus, Zone } from '../types';
 
-const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)', 'hs-mail-policy': 'Limites d\'envoi' };
+const SERVICE_LABELS: Record<string, string> = { postfix: 'Postfix (SMTP)', dovecot: 'Dovecot (IMAP/POP3)', opendkim: 'OpenDKIM (signature)', 'hs-mail-policy': 'Limites d\'envoi', rspamd: 'Rspamd (antispam)', redis: 'Redis', 'redis-server': 'Redis', 'clamav-daemon': 'ClamAV (antivirus)', 'clamav-freshclam': 'ClamAV (mises à jour)' };
 
 function ActivationCard({ zones, onDone }: { zones: Zone[]; onDone: () => void }) {
   const first = zones.find((z) => !z.external)?.domain ?? zones[0]?.domain;
@@ -81,7 +84,7 @@ function TlsModal({ opened, onClose, onDone, hostname }: { opened: boolean; onCl
 function ServiceCard({ status, onChanged }: { status: MailStatus; onChanged: () => void }) {
   const [tlsOpen, setTlsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const running = Object.values(status.services).every(Boolean);
+  const running = status.services.postfix === true && status.services.dovecot === true;
   const toggle = async () => {
     setBusy(true);
     const res = await mailCall('service.set', { enabled: !running }, running ? 'Service e-mail arrêté (boîtes conservées)' : 'Service e-mail démarré');
@@ -196,10 +199,16 @@ export function MailPage() {
             <Tabs.List mb="md">
               <Tabs.Tab value="domains" leftSection={<IconWorld size={16} stroke={1.5} />}>Domaines</Tabs.Tab>
               <Tabs.Tab value="deliverability" leftSection={<IconSend size={16} stroke={1.5} />}>Délivrabilité</Tabs.Tab>
+              <Tabs.Tab value="antispam" leftSection={<IconShieldCheck size={16} stroke={1.5} />}>Antispam</Tabs.Tab>
+              <Tabs.Tab value="queue" leftSection={<IconClock size={16} stroke={1.5} />}>File d'attente</Tabs.Tab>
+              <Tabs.Tab value="logs" leftSection={<IconFileText size={16} stroke={1.5} />}>Journal</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="deliverability">
               <MailDeliverabilityPanel status={status.data} domains={list} onChanged={reload} />
             </Tabs.Panel>
+            <Tabs.Panel value="antispam"><MailAntispamPanel status={status.data} onChanged={reload} /></Tabs.Panel>
+            <Tabs.Panel value="queue" keepMounted={false}><MailQueuePanel /></Tabs.Panel>
+            <Tabs.Panel value="logs" keepMounted={false}><MailLogsPanel /></Tabs.Panel>
             <Tabs.Panel value="domains">
           {list.length === 0 ? (
             <Text c="dimmed" ta="center" py="xl">Aucun domaine pour l'instant : ajoute le premier pour créer des boîtes.</Text>

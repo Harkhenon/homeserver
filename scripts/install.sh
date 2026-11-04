@@ -190,7 +190,11 @@ if $UNINSTALL; then
 
   # Service e-mail : configuration retirée, boîtes conservées sauf avec --purge
   if [ -f /var/lib/homeserver-mail/state.json ]; then
-    systemctl disable --now postfix dovecot opendkim hs-mail-policy >/dev/null 2>&1 || true
+    systemctl disable --now postfix dovecot opendkim hs-mail-policy rspamd clamav-daemon clamav-freshclam >/dev/null 2>&1 || true
+    rm -f /etc/fail2ban/filter.d/postfix.local /etc/fail2ban/filter.d/dovecot.local /etc/dovecot/sieve/homeserver-spam.sieve /etc/dovecot/sieve/homeserver-spam.svbin
+    if [ -d /etc/rspamd/local.d ]; then
+      grep -lF 'Généré par Homeserver' /etc/rspamd/local.d/* 2>/dev/null | xargs -r rm -f
+    fi
     rm -f /etc/systemd/system/hs-mail-policy.service
     rm -rf /etc/postfix/homeserver /etc/dovecot/homeserver-users /etc/homeserver-mail /etc/systemd/system/opendkim.service.d/zz-homeserver.conf
     rm -f /etc/letsencrypt/renewal-hooks/deploy/homeserver-mail.sh
@@ -201,7 +205,7 @@ if $UNINSTALL; then
     if [ -f /etc/opendkim.conf.homeserver-orig ]; then mv -f /etc/opendkim.conf.homeserver-orig /etc/opendkim.conf; fi
     systemctl daemon-reload
     if $PURGE; then
-      rm -rf /var/vmail /var/lib/homeserver-mail /etc/opendkim/keys
+      rm -rf /var/vmail /var/lib/homeserver-mail /etc/opendkim/keys /var/backups/homeserver/mail
       userdel vmail >/dev/null 2>&1 || true
       info "service e-mail retiré, messages et clés DKIM supprimés"
     else

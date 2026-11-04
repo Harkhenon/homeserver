@@ -27,7 +27,7 @@ function Check({ level, title, detail }: { level: Level; title: string; detail: 
   );
 }
 
-function Report({ report }: { report: MailDeliverabilityReport }) {
+function Report({ report, clockSynced }: { report: MailDeliverabilityReport; clockSynced: boolean | null }) {
   const listed = report.blacklists.filter((b) => b.listed === true);
   const unknown = report.blacklists.filter((b) => b.listed === null);
   return (
@@ -59,6 +59,15 @@ function Report({ report }: { report: MailDeliverabilityReport }) {
       {report.relay && (
         <Check level={report.relay.ok ? 'ok' : 'bad'} title="Relais SMTP" detail={report.relay.detail} />
       )}
+      <Check
+        level={clockSynced === null ? 'unknown' : clockSynced ? 'ok' : 'bad'}
+        title="Horloge du serveur"
+        detail={clockSynced === null
+          ? 'État de la synchronisation inconnu.'
+          : clockSynced
+            ? 'Synchronisée par NTP.'
+            : 'Non synchronisée : des dates fausses font classer les messages en indésirables et peuvent invalider leur signature DKIM. Active un service NTP (chrony, systemd-timesyncd).'}
+      />
       {report.blacklists.length > 0 ? (
         <Check
           level={listed.length > 0 ? 'bad' : unknown.length > 0 ? 'warn' : 'ok'}
@@ -185,7 +194,7 @@ export function MailDeliverabilityPanel({ status, domains, onChanged }: { status
             <Text fw={600}>Diagnostic d'envoi</Text>
             <Button size="compact-sm" variant="light" loading={busy} onClick={() => void run()}>{report ? 'Relancer' : 'Lancer'}</Button>
           </Group>
-          {report ? <Report report={report} /> : (
+          {report ? <Report report={report} clockSynced={status.clockSynced} /> : (
             <Text size="sm" c="dimmed">Vérifie l'IP, le DNS inversé, le port 25 sortant et les listes noires. Contacte brièvement le serveur de réception de Gmail pour tester le port 25.</Text>
           )}
         </Card>

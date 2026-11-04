@@ -152,6 +152,41 @@ export interface ServiceStatus {
   enabled: boolean;
 }
 
+export interface MailAntispamConfig {
+  engine: 'basic' | 'rspamd';
+  rbl: boolean;
+  strictSender: boolean;
+  junkScore: number;
+  rejectScore: number;
+  clamav: boolean;
+}
+
+export interface MailQueueItem {
+  id: string;
+  queue: string;
+  arrivalAt: string | null;
+  sizeBytes: number;
+  sender: string;
+  recipients: Array<{ address: string; reason: string | null }>;
+}
+
+export interface MailQueueResult {
+  items: MailQueueItem[];
+  total: number;
+}
+
+export interface MailLogsResult {
+  lines: string[];
+}
+
+export interface MailBackup {
+  file: string;
+  domain: string;
+  local: string | null;
+  sizeMb: number;
+  createdAt: string;
+}
+
 export interface MailStatus {
   installed: boolean;
   configured: boolean;
@@ -162,6 +197,10 @@ export interface MailStatus {
   tls: { mode: 'selfsigned' | 'letsencrypt' | null; expiresAt: string | null };
   publicIp: string | null;
   relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
+  antispam: MailAntispamConfig;
+  rspamdAvailable: boolean;
+  memoryMb: number;
+  clockSynced: boolean | null;
   domainCount: number;
   boxCount: number;
 }

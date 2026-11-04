@@ -6,15 +6,17 @@
 //
 // Multi-distro : maps `texthash:` (hash/lmdb varient selon les paquets), services Postfix
 // déclarés par numéro de port (/etc/services varie), un gabarit par génération de Dovecot.
-import { execFile, spawn } from 'node:child_process';
 import { X509Certificate, createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import {
   chmodSync, chownSync, copyFileSync, existsSync, lchownSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
-import { promisify } from 'node:util';
-import type { MailAliasInfo, MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult, MailVacation } from '../server/src/core/privileged/contract.js';
+import { errText, exec, execInput, serviceActive, tryExec } from './mail-util.js';
+import {
+  DEFAULT_ANTISPAM, SPAM_SIEVE, antispamAllowed, antispamUnits, applyAntispam, memoryMb, postfixAntispamSettings, rspamdAvailable, writeSpamSieve,
+} from './mail-antispam.js';
+import { backupCreate, backupDelete, backupExtract, backupList, backupRead, mailLogs, queueAction, queueList } from './mail-ops.js';
+import type { MailAntispamConfig, MailAliasInfo, MailBoxInfo, MailDomainInfo, MailRequest, MailStatusResult, MailTestResult, MailVacation } from '../server/src/core/privileged/contract.js';
 
-const run = promisify(execFile);
 
 const STATE_DIR = '/var/lib/homeserver-mail';
 const STATE_FILE = `${STATE_DIR}/state.json`;
@@ -39,9 +41,9 @@ const DKIM_SELECTOR = 'hs1';
 const CONF_MARKER = '# Généré par Homeserver';
 const POLICY_UNIT = 'hs-mail-policy';
 const POLICY_UNIT_FILE = `/etc/systemd/system/${POLICY_UNIT}.service`;
-const SERVICES = ['postfix', 'dovecot', 'opendkim', POLICY_UNIT] as const;
+const BASE_SERVICES = ['postfix', 'dovecot', 'opendkim', POLICY_UNIT];
 /** À incrémenter quand la configuration générée change : les serveurs déjà activés sont mis à niveau. */
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
 const DEFAULT_SEND_LIMIT = 500;
 const MAIL_PORTS = ['25', '465', '587', '993', '995'];
 
@@ -49,6 +51,8 @@ export interface MailDeps {
   family: 'debian' | 'rhel';
   pkgInstall(packages: string[]): Promise<void>;
   pkgRefresh(): Promise<void>;
+  /** Active les jails fail2ban du mail (sans effet si fail2ban n'est pas installé). */
+  enableMailJails(): Promise<void>;
   log(line: string): void;
 }
 
@@ -89,8 +93,13 @@ interface MailState {
   publicIp?: string | null;
   // Mot de passe du relais en clair ici et dans la map Postfix : root seul (0600), inévitable pour s'y authentifier
   relay?: { host: string; port: number; username: string; password: string; spfInclude: string | null } | null;
+  antispam?: MailAntispamConfig;
   domains: Record<string, DomainState>;
 }
+
+type BackupMeta =
+  | { kind: 'domain'; domain: string; state: DomainState; dkim: Record<string, string> }
+  | { kind: 'box'; domain: string; local: string; box: BoxState };
 
 function emptyState(): MailState {
   return { schema: 1, hostname: null, tlsMode: null, domains: {} };
@@ -128,45 +137,6 @@ function locked<T>(fn: () => Promise<T>): Promise<T> {
   const next = queue.then(fn, fn);
   queue = next.catch(() => undefined);
   return next;
-}
-
-async function exec(cmd: string, args: string[], timeoutMs = 120_000): Promise<string> {
-  const { stdout } = await run(cmd, args, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 });
-  return stdout;
-}
-
-async function tryExec(cmd: string, args: string[], timeoutMs = 120_000): Promise<string | null> {
-  try {
-    return await exec(cmd, args, timeoutMs);
-  } catch {
-    return null;
-  }
-}
-
-/** Commande avec données sur stdin : les secrets ne passent jamais par les arguments (visibles dans ps). */
-function execInput(cmd: string, args: string[], input: string, timeoutMs = 60_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (c: Buffer) => { out += c.toString('utf8'); });
-    child.stderr.on('data', (c: Buffer) => { err += c.toString('utf8'); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) resolve(out);
-      else reject(new Error(`${cmd} : ${err.trim() || `code ${code}`}`));
-    });
-    child.stdin.end(input);
-  });
-}
-
-async function serviceActive(unit: string): Promise<boolean> {
-  return ((await tryExec('systemctl', ['is-active', unit], 10_000)) ?? '').trim() === 'active';
-}
-
-function errText(e: unknown): string {
-  const err = e as Error & { stderr?: string };
-  return (err.stderr ?? '').trim() || err.message;
 }
 
 // --- Dovecot : deux générations, configuration incompatible ---------------------------------
@@ -253,6 +223,11 @@ sieve_script personal {
   path = ~/sieve
   active_path = ~/.dovecot.sieve
 }
+sieve_script homeserver_spam {
+  type = before
+  driver = file
+  path = ${SPAM_SIEVE}
+}
 quota "User quota" {
 }
 passdb passwd-file {
@@ -286,6 +261,7 @@ plugin {
   quota = count:User quota
   quota_vsizes = yes
   sieve = file:~/sieve;active=~/.dovecot.sieve
+  sieve_before = ${SPAM_SIEVE}
 }
 passdb {
   driver = passwd-file
@@ -697,7 +673,7 @@ async function ensureTls(state: MailState, hostname: string): Promise<void> {
   state.tlsMode = 'selfsigned';
 }
 
-async function configurePostfix(hostname: string): Promise<void> {
+async function configurePostfix(hostname: string, antispam: MailAntispamConfig): Promise<void> {
   const settings: Record<string, string> = {
     myhostname: hostname,
     myorigin: '$myhostname',
@@ -719,7 +695,6 @@ async function configurePostfix(hostname: string): Promise<void> {
     smtpd_sender_login_maps: `texthash:${POSTFIX_MAPS}/senders`,
     // Port 25 : réception seulement, jamais de relais sans authentification
     smtpd_relay_restrictions: 'permit_mynetworks reject_unauth_destination',
-    smtpd_recipient_restrictions: `check_recipient_access texthash:${POSTFIX_MAPS}/blocked_recipients`,
     smtpd_tls_cert_file: TLS_CERT,
     smtpd_tls_key_file: TLS_KEY,
     smtpd_tls_security_level: 'may',
@@ -736,10 +711,8 @@ async function configurePostfix(hostname: string): Promise<void> {
     hs_send_limit_policy: 'check_policy_service inet:127.0.0.1:10031',
     milter_default_action: 'accept',
     milter_protocol: '6',
-    smtpd_milters: 'inet:127.0.0.1:8891',
-    non_smtpd_milters: 'inet:127.0.0.1:8891',
   };
-  await exec('postconf', ['-e', ...Object.entries(settings).map(([k, v]) => `${k}=${v}`)], 30_000);
+  await exec('postconf', ['-e', ...Object.entries({ ...settings, ...postfixAntispamSettings(antispam, `${POSTFIX_MAPS}/blocked_recipients`) }).map(([k, v]) => `${k}=${v}`)], 30_000);
   // 587 (STARTTLS) et 465 (TLS implicite) : envoi authentifié, adresse imposée par le compte
   for (const [port, wrapper] of [['587', 'no'], ['465', 'yes']] as const) {
     await exec('postconf', ['-M', `${port}/inet=${port} inet n - n - - smtpd`], 30_000);
@@ -754,6 +727,9 @@ async function configurePostfix(hostname: string): Promise<void> {
       smtpd_relay_restrictions: 'permit_sasl_authenticated,reject',
       // Limite d'envoi par compte, vérifiée une fois le nombre de destinataires connu
       smtpd_end_of_data_restrictions: '$hs_send_limit_policy',
+      // Client authentifié : pas de listes noires (IP résidentielle), pas d'exigence sur son HELO
+      smtpd_recipient_restrictions: 'permit_sasl_authenticated,reject',
+      smtpd_helo_restrictions: '',
     };
     for (const [k, v] of Object.entries(params)) {
       await exec('postconf', ['-P', `${port}/inet/${k}=${v}`], 30_000);
@@ -766,6 +742,7 @@ async function configureDovecot(version: string, deps: MailDeps): Promise<void> 
     copyFileSync(DOVECOT_CONF, DOVECOT_CONF_ORIG);
   }
   const { uid } = await vmailIds();
+  await writeSpamSieve();
   writeFileSync(DOVECOT_CONF, renderDovecotConf(version, uid), { mode: 0o644 });
   // passwd-file vide mais présent : doveconf et le démarrage ne doivent pas échouer
   if (!existsSync(DOVECOT_USERS)) writeFileSync(DOVECOT_USERS, '', { mode: 0o640 });
@@ -818,11 +795,12 @@ async function upgradeConfig(state: MailState, deps: MailDeps): Promise<void> {
   const version = await dovecotVersion();
   if (!version) throw new Error('Dovecot introuvable');
   await configureDovecot(version, deps);
-  await configurePostfix(state.hostname);
+  await configurePostfix(state.hostname, state.antispam ?? DEFAULT_ANTISPAM);
   await configureRelay(state.relay ?? null);
   await installPolicyUnit();
   await applyState(state, deps);
   if (wasRunning) await startServices();
+  await deps.enableMailJails().catch((e: Error) => deps.log(`mail : jails fail2ban non activées : ${e.message}`));
   state.configVersion = CONFIG_VERSION;
   saveState(state);
   deps.log('mail : configuration à jour');
@@ -966,28 +944,34 @@ ExecStart=/usr/sbin/opendkim -x ${OPENDKIM_CONF}
 }
 
 /** Ouvre les ports uniquement si un pare-feu est actif (sinon rien à faire, et rien à activer). */
-async function openFirewall(deps: MailDeps): Promise<void> {
+async function setFirewall(open: boolean, deps: MailDeps): Promise<void> {
+  const verb = open ? 'ouverts' : 'fermés';
   const ufw = await tryExec('ufw', ['status'], 15_000);
   if (ufw?.startsWith('Status: active')) {
-    for (const p of MAIL_PORTS) await exec('ufw', ['allow', `${p}/tcp`], 30_000);
-    deps.log(`mail : ports ouverts dans ufw (${MAIL_PORTS.join(', ')})`);
+    for (const p of MAIL_PORTS) await exec('ufw', open ? ['allow', `${p}/tcp`] : ['delete', 'allow', `${p}/tcp`], 30_000);
+    deps.log(`mail : ports ${verb} dans ufw (${MAIL_PORTS.join(', ')})`);
     return;
   }
   if ((await tryExec('firewall-cmd', ['--state'], 15_000)) !== null) {
-    for (const p of MAIL_PORTS) await exec('firewall-cmd', ['--quiet', '--permanent', `--add-port=${p}/tcp`], 30_000);
+    for (const p of MAIL_PORTS) await exec('firewall-cmd', ['--quiet', '--permanent', open ? `--add-port=${p}/tcp` : `--remove-port=${p}/tcp`], 30_000);
     await exec('firewall-cmd', ['--quiet', '--reload'], 60_000);
-    deps.log(`mail : ports ouverts dans firewalld (${MAIL_PORTS.join(', ')})`);
+    deps.log(`mail : ports ${verb} dans firewalld (${MAIL_PORTS.join(', ')})`);
   }
 }
 
+function allUnits(state: MailState, family: 'debian' | 'rhel'): string[] {
+  return [...BASE_SERVICES, ...antispamUnits(state.antispam ?? DEFAULT_ANTISPAM, family)];
+}
+
+/** Le socle doit démarrer ; l'antispam est lancé à part (clamd attend le téléchargement de sa base). */
 async function startServices(): Promise<void> {
-  for (const unit of SERVICES) {
+  for (const unit of BASE_SERVICES) {
     await exec('systemctl', ['reset-failed', unit], 15_000).catch(() => undefined);
     await exec('systemctl', ['enable', unit], 30_000);
     await exec('systemctl', ['restart', unit], 60_000);
   }
   const down: string[] = [];
-  for (const unit of SERVICES) if (!(await serviceActive(unit))) down.push(unit);
+  for (const unit of BASE_SERVICES) if (!(await serviceActive(unit))) down.push(unit);
   if (down.length > 0) {
     const journal = await tryExec('journalctl', ['-n', '12', '--no-pager', ...down.flatMap((u) => ['-u', u])], 15_000);
     throw new Error(`Service(s) non démarré(s) : ${down.join(', ')}\n${(journal ?? '').trim()}`);
@@ -996,13 +980,14 @@ async function startServices(): Promise<void> {
 
 // --- État --------------------------------------------------------------------------------------
 
-async function status(): Promise<MailStatusResult> {
+async function status(family: 'debian' | 'rhel'): Promise<MailStatusResult> {
   const state = loadState();
+  const synced = await tryExec('timedatectl', ['show', '-p', 'NTPSynchronized', '--value'], 10_000);
   const installed = (await tryExec('postconf', ['-h', 'mail_version'], 10_000)) !== null
     && (await dovecotVersion()) !== null
     && (await tryExec('id', ['-u', 'opendkim'], 10_000)) !== null;
   const services: Record<string, boolean> = {};
-  for (const unit of SERVICES) services[unit] = await serviceActive(unit);
+  for (const unit of allUnits(state, family)) services[unit] = await serviceActive(unit);
   let expiresAt: string | null = null;
   try {
     expiresAt = new Date(new X509Certificate(readFileSync(TLS_CERT)).validTo).toISOString();
@@ -1019,6 +1004,10 @@ async function status(): Promise<MailStatusResult> {
     tls: { mode: state.tlsMode, expiresAt },
     publicIp: state.publicIp ?? null,
     relay: state.relay ? { host: state.relay.host, port: state.relay.port, username: state.relay.username, spfInclude: state.relay.spfInclude } : null,
+    antispam: state.antispam ?? DEFAULT_ANTISPAM,
+    rspamdAvailable: await rspamdAvailable(family),
+    memoryMb: memoryMb(),
+    clockSynced: synced === null ? null : synced.trim() === 'yes',
     domainCount: domains.length,
     boxCount: domains.reduce((n, d) => n + Object.keys(d.boxes).length, 0),
   };
@@ -1105,14 +1094,19 @@ async function kick(address: string): Promise<void> {
   await tryExec('doveadm', ['kick', address], 15_000);
 }
 
-async function ensureDkimKey(domain: string, selector: string): Promise<void> {
+async function ensureDkimDir(domain: string): Promise<void> {
   const owner = await ownerIds('opendkim');
   const dir = `${OPENDKIM_DIR}/keys/${domain}`;
-  const file = dkimKeyPath(domain, selector);
-  if (existsSync(file)) return;
   mkdirSync(dir, { recursive: true, mode: 0o750 });
   chownSync(dir, owner.uid, owner.gid);
   chmodSync(dir, 0o750);
+}
+
+async function ensureDkimKey(domain: string, selector: string): Promise<void> {
+  const owner = await ownerIds('opendkim');
+  const file = dkimKeyPath(domain, selector);
+  if (existsSync(file)) return;
+  await ensureDkimDir(domain);
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -1161,7 +1155,7 @@ systemctl reload dovecot
 export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
   switch (req.action) {
     case 'mail_status':
-      return status();
+      return status(deps.family);
     case 'mail_setup':
       return locked(async () => {
         const state = loadState();
@@ -1177,31 +1171,38 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         await ensureTls(state, req.hostname);
         await configureOpendkim();
         await configureDovecot(version, deps);
-        await configurePostfix(req.hostname);
+        await configurePostfix(req.hostname, state.antispam ?? DEFAULT_ANTISPAM);
         await configureRelay(state.relay ?? null);
         await installPolicyUnit();
         state.configVersion = CONFIG_VERSION;
         await applyState(state, deps);
         await startServices();
-        await openFirewall(deps).catch((e: Error) => deps.log(`mail : pare-feu non modifié : ${e.message}`));
+        await setFirewall(true, deps).catch((e: Error) => deps.log(`mail : pare-feu non modifié : ${e.message}`));
+        await deps.enableMailJails().catch((e: Error) => deps.log(`mail : jails fail2ban non activées : ${e.message}`));
         deps.log(`mail : service activé (${req.hostname}, Dovecot ${version})`);
-        return status();
+        return status(deps.family);
       });
     case 'mail_service':
       return locked(async () => {
         const state = loadState();
         assertConfigured(state);
+        const antispam = state.antispam ?? DEFAULT_ANTISPAM;
         if (req.enabled) {
           await startServices();
+          await applyAntispam(antispam, deps.family, deps.pkgInstall, deps.pkgRefresh);
         } else {
-          for (const unit of SERVICES) await exec('systemctl', ['disable', '--now', unit], 60_000);
+          for (const unit of allUnits(state, deps.family)) {
+            // Redis peut servir à d'autres applications
+            if (unit !== 'redis-server' && unit !== 'redis') await exec('systemctl', ['disable', '--now', unit], 60_000);
+          }
         }
-        return status();
+        await setFirewall(req.enabled, deps).catch((e: Error) => deps.log(`mail : pare-feu non modifié : ${e.message}`));
+        return status(deps.family);
       });
     case 'mail_tls_issue':
       return locked(async () => {
         await issueCertificate(loadState(), req.email, deps);
-        return status();
+        return status(deps.family);
       });
     case 'mail_domain_list':
       return Promise.resolve().then(async () => ({
@@ -1322,7 +1323,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         assertConfigured(state);
         state.publicIp = req.publicIp;
         saveState(state);
-        return status();
+        return status(deps.family);
       });
     case 'mail_relay_set':
       return locked(async () => {
@@ -1331,7 +1332,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         state.relay = { host: req.host, port: req.port, username: req.username, password: req.password, spfInclude: req.spfInclude };
         await configureRelay(state.relay);
         await applyState(state, deps);
-        return status();
+        return status(deps.family);
       });
     case 'mail_relay_clear':
       return locked(async () => {
@@ -1340,7 +1341,7 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         state.relay = null;
         await configureRelay(null);
         await applyState(state, deps);
-        return status();
+        return status(deps.family);
       });
     case 'mail_dkim_rotate':
       return locked(async () => {
@@ -1363,6 +1364,87 @@ export function handleMail(req: MailRequest, deps: MailDeps): Promise<unknown> {
         delete d.dkimPending;
         await applyState(state, deps);
         return domainInfo(req.domain, d);
+      });
+    case 'mail_antispam_set':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        await upgradeConfig(state, deps);
+        antispamAllowed(deps.family, req.config, await rspamdAvailable(deps.family));
+        await applyAntispam(req.config, deps.family, deps.pkgInstall, deps.pkgRefresh);
+        state.antispam = req.config;
+        await configurePostfix(state.hostname as string, req.config);
+        await configureRelay(state.relay ?? null);
+        await applyState(state, deps);
+        return status(deps.family);
+      });
+    case 'mail_queue_list':
+      return queueList();
+    case 'mail_queue_action':
+      return queueAction(req.queueAction, req.id).then(() => queueList());
+    case 'mail_logs':
+      return mailLogs(req.query, req.limit);
+    case 'mail_backup_list':
+      return Promise.resolve().then(() => backupList());
+    case 'mail_backup_create':
+      return Promise.resolve().then(() => {
+        const state = loadState();
+        const d = getDomain(state, req.domain);
+        if (req.local) {
+          return backupCreate(VMAIL_DIR, req.domain, req.local, { kind: 'box', domain: req.domain, local: req.local, box: getBox(d, req.domain, req.local) } satisfies BackupMeta);
+        }
+        const dkim: Record<string, string> = {};
+        for (const selector of [d.dkimSelector, ...(d.dkimPending ? [d.dkimPending] : [])]) {
+          dkim[selector] = readFileSync(dkimKeyPath(req.domain, selector), 'utf8');
+        }
+        return backupCreate(VMAIL_DIR, req.domain, null, { kind: 'domain', domain: req.domain, state: d, dkim } satisfies BackupMeta);
+      });
+    case 'mail_backup_delete':
+      return Promise.resolve().then(() => {
+        backupDelete(req.file);
+        return { deleted: true };
+      });
+    case 'mail_backup_restore':
+      return locked(async () => {
+        const state = loadState();
+        assertConfigured(state);
+        const { path, meta, domain, local } = await backupRead<BackupMeta>(req.file);
+        if (meta.domain !== domain || (meta.kind === 'box') !== (local !== null) || (meta.kind === 'box' && meta.local !== local)) {
+          throw new Error('Sauvegarde incohérente : son contenu ne correspond pas à son nom');
+        }
+        const restored: string[] = [];
+        if (meta.kind === 'domain') {
+          const existing = state.domains[domain];
+          // Rien d'existant n'est écrasé : les boîtes et alias présents gardent leur état actuel
+          if (!existing) {
+            for (const [selector, pem] of Object.entries(meta.dkim)) {
+              if (!/^hs\d+$/.test(selector)) throw new Error('Sauvegarde incohérente : sélecteur DKIM invalide');
+              await ensureDkimDir(domain);
+              writeAtomic({ path: dkimKeyPath(domain, selector), content: pem, mode: 0o600, ...(await ownerIds('opendkim')) });
+            }
+            state.domains[domain] = meta.state;
+            restored.push(...Object.keys(meta.state.boxes));
+          } else {
+            for (const [l, b] of Object.entries(meta.state.boxes)) {
+              if (!existing.boxes[l] && !existing.aliases[l]) { existing.boxes[l] = b; restored.push(l); }
+            }
+            for (const [l, a] of Object.entries(meta.state.aliases)) {
+              if (!existing.aliases[l] && !existing.boxes[l]) existing.aliases[l] = a;
+            }
+          }
+        } else {
+          const d = getDomain(state, domain);
+          if (d.aliases[meta.local]) throw new Error(`${meta.local}@${domain} est aujourd'hui un alias`);
+          if (!d.boxes[meta.local]) { d.boxes[meta.local] = meta.box; restored.push(meta.local); }
+        }
+        const { uid, gid } = await vmailIds();
+        mkdirSync(`${VMAIL_DIR}/${domain}`, { recursive: true, mode: 0o750 });
+        chownSync(`${VMAIL_DIR}/${domain}`, uid, gid);
+        await backupExtract(path, VMAIL_DIR, local ? `${domain}/${local}` : domain, uid, gid);
+        await applyState(state, deps);
+        const boxes = local ? [local] : Object.keys(state.domains[domain]?.boxes ?? {});
+        for (const l of boxes) await tryExec('doveadm', ['quota', 'recalc', '-u', `${l}@${domain}`], 60_000);
+        return { restored: true, domain, local, recreatedBoxes: restored };
       });
     case 'mail_alias_list':
       return Promise.resolve().then(() => {

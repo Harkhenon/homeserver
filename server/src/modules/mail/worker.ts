@@ -4,7 +4,7 @@ import { isIP } from 'node:net';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import { validatePasswordPolicy } from '../../core/password-policy.js';
-import type { MailAliasInfo, MailStatusResult, MailDomainInfo, MailBoxInfo, MailTestResult } from '../../core/privileged/contract.js';
+import type { MailAntispamConfig, MailBackupInfo, MailLogsResult, MailQueueResult, MailAliasInfo, MailStatusResult, MailDomainInfo, MailBoxInfo, MailTestResult } from '../../core/privileged/contract.js';
 import { applyRecords, checkRecords, deliverabilityReport, expectedRecords, hasLocalZone, type ExpectedRecord } from './dns.js';
 
 // Le helper revalide tout (contrat) : ici, des messages d'erreur lisibles pour le panel.
@@ -195,6 +195,62 @@ const definition: ModuleDefinition = {
         }
         return callHelper<MailDomainInfo>({ action: 'mail_dkim_activate', domain });
       },
+    },
+    'antispam.set': {
+      summary: 'Antispam (payload: { engine, rbl, strictSender, junkScore, rejectScore, clamav })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Partial<MailAntispamConfig>;
+        const engine = p.engine === 'rspamd' ? 'rspamd' : 'basic';
+        const junkScore = Number(p.junkScore);
+        const rejectScore = Number(p.rejectScore);
+        if (!Number.isFinite(junkScore) || !Number.isFinite(rejectScore) || junkScore < 1 || rejectScore > 100 || junkScore >= rejectScore) {
+          throw new Error('Scores invalides : le seuil de refus doit dépasser celui des indésirables (1 à 100)');
+        }
+        return callHelper<MailStatusResult>({ action: 'mail_antispam_set', config: { engine, rbl: p.rbl === true, strictSender: p.strictSender === true, junkScore, rejectScore, clamav: p.clamav === true } }, undefined, SETUP_TIMEOUT_MS);
+      },
+    },
+    'queue.list': {
+      summary: 'Messages en file d\'attente',
+      handler: () => callHelper<MailQueueResult>({ action: 'mail_queue_list' }),
+    },
+    'queue.action': {
+      summary: 'Agir sur la file d\'attente (payload: { action: flush|retry|delete|hold|release, id? }) — sans id : toute la file',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const queueAction = p.action;
+        if (queueAction !== 'flush' && queueAction !== 'retry' && queueAction !== 'delete' && queueAction !== 'hold' && queueAction !== 'release') throw new Error('Action invalide');
+        const id = typeof p.id === 'string' && p.id !== '' ? p.id : undefined;
+        return callHelper<MailQueueResult>({ action: 'mail_queue_action', queueAction, ...(id ? { id } : {}) });
+      },
+    },
+    logs: {
+      summary: 'Journaux du courrier, 7 jours au plus (payload: { query?, limit? }) — query : adresse ou texte',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const query = typeof p.query === 'string' ? p.query.trim() : '';
+        const limit = typeof p.limit === 'number' ? Math.min(2000, Math.max(1, Math.floor(p.limit))) : 300;
+        return callHelper<MailLogsResult>({ action: 'mail_logs', limit, ...(query ? { query } : {}) });
+      },
+    },
+    'backups.list': {
+      summary: 'Sauvegardes de messagerie',
+      handler: () => callHelper<{ backups: MailBackupInfo[] }>({ action: 'mail_backup_list' }),
+    },
+    'backups.create': {
+      summary: 'Sauvegarder un domaine ou une boîte (payload: { domain, local? })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const local = p.local === undefined || p.local === null || p.local === '' ? null : localOf(p);
+        return callHelper<MailBackupInfo>({ action: 'mail_backup_create', domain: domainOf(p), local }, undefined, SETUP_TIMEOUT_MS);
+      },
+    },
+    'backups.delete': {
+      summary: 'Supprimer une sauvegarde (payload: { file })',
+      handler: (payload) => callHelper<{ deleted: boolean }>({ action: 'mail_backup_delete', file: String(((payload ?? {}) as Payload).file ?? '') }),
+    },
+    'backups.restore': {
+      summary: 'Restaurer une sauvegarde : fusionne les messages, recrée ce qui manque, n\'écrase rien (payload: { file })',
+      handler: (payload) => callHelper<{ restored: boolean; recreatedBoxes: string[] }>({ action: 'mail_backup_restore', file: String(((payload ?? {}) as Payload).file ?? '') }, undefined, SETUP_TIMEOUT_MS),
     },
     'domains.list': {
       summary: 'Lister les domaines de messagerie',
