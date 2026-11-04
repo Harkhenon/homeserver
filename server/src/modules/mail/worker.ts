@@ -4,13 +4,14 @@ import { isIP } from 'node:net';
 import type { RpcRequest, RpcReply, ModuleDefinition } from '../../core/types.js';
 import { callHelper } from '../../core/privileged/client.js';
 import { validatePasswordPolicy } from '../../core/password-policy.js';
-import type { MailStatusResult, MailDomainInfo, MailBoxInfo, MailTestResult } from '../../core/privileged/contract.js';
+import type { MailAliasInfo, MailStatusResult, MailDomainInfo, MailBoxInfo, MailTestResult } from '../../core/privileged/contract.js';
 import { applyRecords, checkRecords, deliverabilityReport, expectedRecords, hasLocalZone, type ExpectedRecord } from './dns.js';
 
 // Le helper revalide tout (contrat) : ici, des messages d'erreur lisibles pour le panel.
 const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const LOCAL_RE = /^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$/;
 const EMAIL_RE = /^[a-zA-Z0-9._%+-]{1,64}@[a-zA-Z0-9.-]{1,253}\.[a-zA-Z]{2,63}$/;
+const DESTINATION_RE = /^[a-z0-9._%+-]{1,64}@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const DISPLAY_NAME_RE = /^[\p{L}\p{N} .'_-]{0,64}$/u;
 const DEFAULT_QUOTA_MB = 2048;
 const MAX_QUOTA_MB = 10_485_760;
@@ -48,6 +49,26 @@ function displayNameOf(v: unknown): string {
   const name = typeof v === 'string' ? v.trim() : '';
   if (!DISPLAY_NAME_RE.test(name)) throw new Error('Nom affiché invalide (64 caractères max., sans symboles)');
   return name;
+}
+
+function countOf(v: unknown, label: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 1_000_000) throw new Error(`${label} invalide`);
+  return v;
+}
+
+/** Adresses saisies (liste ou texte séparé par virgules, espaces ou retours à la ligne). */
+function destinationsOf(v: unknown): string[] {
+  const list = Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[\s,;]+/) : [];
+  const out = list.map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  for (const d of out) if (!DESTINATION_RE.test(d)) throw new Error(`Adresse invalide : ${d}`);
+  if (out.length > 50) throw new Error('50 destinations maximum');
+  return out;
+}
+
+function dateOf(v: unknown, label: string): string | null {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`${label} invalide (AAAA-MM-JJ)`);
+  return v;
 }
 
 function booleanOf(v: unknown, label: string): boolean {
@@ -196,6 +217,8 @@ const definition: ModuleDefinition = {
           domain: domainOf(p),
           ...(p.suspended !== undefined ? { suspended: booleanOf(p.suspended, 'suspended') } : {}),
           ...(p.defaultQuotaMb !== undefined ? { defaultQuotaMb: quotaOf(p.defaultQuotaMb, 'Quota par défaut') } : {}),
+          ...(p.maxBoxes !== undefined ? { maxBoxes: countOf(p.maxBoxes, 'Nombre de boîtes') } : {}),
+          ...(p.sendLimitPerHour !== undefined ? { sendLimitPerHour: countOf(p.sendLimitPerHour, 'Limite d\'envoi') } : {}),
         });
       },
     },
@@ -240,7 +263,57 @@ const definition: ModuleDefinition = {
           ...(p.quotaMb !== undefined ? { quotaMb: quotaOf(p.quotaMb, 'Quota') } : {}),
           ...(p.suspended !== undefined ? { suspended: booleanOf(p.suspended, 'suspended') } : {}),
           ...(p.displayName !== undefined ? { displayName: displayNameOf(p.displayName) } : {}),
+          ...(p.sendLimitPerHour !== undefined ? { sendLimitPerHour: p.sendLimitPerHour === null ? null : countOf(p.sendLimitPerHour, 'Limite d\'envoi') } : {}),
         });
+      },
+    },
+    'boxes.forward': {
+      summary: 'Rediriger une boîte (payload: { domain, local, destinations, keepCopy }) — liste vide pour arrêter',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        return callHelper<MailBoxInfo>({ action: 'mail_forward_set', domain: domainOf(p), local: localOf(p), destinations: destinationsOf(p.destinations), keepCopy: p.keepCopy !== false });
+      },
+    },
+    'boxes.vacation': {
+      summary: 'Répondeur d\'absence (payload: { domain, local, enabled, subject, message, startDate?, endDate? })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const enabled = booleanOf(p.enabled, 'enabled');
+        const subject = typeof p.subject === 'string' ? p.subject.trim() : '';
+        const message = typeof p.message === 'string' ? p.message.trim() : '';
+        if (subject.length > 200 || /[\r\n]/.test(subject)) throw new Error('Objet invalide (une ligne, 200 caractères max.)');
+        if (message.length > 5000) throw new Error('Message trop long (5000 caractères max.)');
+        if (enabled && (!subject || !message)) throw new Error('Objet et message requis pour activer le répondeur');
+        return callHelper<MailBoxInfo>({ action: 'mail_vacation_set', domain: domainOf(p), local: localOf(p), enabled, subject, message, startDate: dateOf(p.startDate, 'Date de début'), endDate: dateOf(p.endDate, 'Date de fin') }, undefined, LIST_TIMEOUT_MS);
+      },
+    },
+    'aliases.list': {
+      summary: 'Alias et catch-all d\'un domaine (payload: { domain })',
+      handler: (payload) => callHelper<{ aliases: MailAliasInfo[]; catchAll: string | null }>({ action: 'mail_alias_list', domain: domainOf((payload ?? {}) as Payload) }),
+    },
+    'aliases.set': {
+      summary: 'Créer ou modifier un alias (payload: { domain, local, destinations })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const destinations = destinationsOf(p.destinations);
+        if (destinations.length === 0) throw new Error('Au moins une destination requise');
+        return callHelper({ action: 'mail_alias_set', domain: domainOf(p), local: localOf(p), destinations }, undefined, LIST_TIMEOUT_MS);
+      },
+    },
+    'aliases.delete': {
+      summary: 'Supprimer un alias (payload: { domain, local })',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        return callHelper({ action: 'mail_alias_remove', domain: domainOf(p), local: localOf(p) });
+      },
+    },
+    'catchall.set': {
+      summary: 'Adresse qui reçoit tout le courrier sans destinataire connu (payload: { domain, destination }) — vide pour retirer',
+      handler: (payload) => {
+        const p = (payload ?? {}) as Payload;
+        const destinations = destinationsOf(p.destination ?? '');
+        if (destinations.length > 1) throw new Error('Une seule adresse pour le catch-all');
+        return callHelper({ action: 'mail_catchall_set', domain: domainOf(p), destination: destinations[0] ?? null }, undefined, LIST_TIMEOUT_MS);
       },
     },
     'boxes.password': {

@@ -97,11 +97,11 @@ export type MailRequest =
   | { action: 'mail_tls_issue'; email: string }
   | { action: 'mail_domain_list' }
   | { action: 'mail_domain_add'; domain: string; defaultQuotaMb: number }
-  | { action: 'mail_domain_set'; domain: string; suspended?: boolean; defaultQuotaMb?: number }
+  | { action: 'mail_domain_set'; domain: string; suspended?: boolean; defaultQuotaMb?: number; maxBoxes?: number; sendLimitPerHour?: number }
   | { action: 'mail_domain_remove'; domain: string; deleteData: boolean }
   | { action: 'mail_box_list'; domain: string }
   | { action: 'mail_box_add'; domain: string; local: string; password: string; quotaMb: number; displayName: string }
-  | { action: 'mail_box_set'; domain: string; local: string; quotaMb?: number; suspended?: boolean; displayName?: string }
+  | { action: 'mail_box_set'; domain: string; local: string; quotaMb?: number; suspended?: boolean; displayName?: string; sendLimitPerHour?: number | null }
   | { action: 'mail_box_password'; domain: string; local: string; password: string }
   | { action: 'mail_box_remove'; domain: string; local: string; deleteData: boolean }
   | { action: 'mail_settings_set'; publicIp: string | null }
@@ -109,7 +109,13 @@ export type MailRequest =
   | { action: 'mail_relay_clear' }
   | { action: 'mail_dkim_rotate'; domain: string }
   | { action: 'mail_dkim_activate'; domain: string }
-  | { action: 'mail_test_send'; domain: string; to: string };
+  | { action: 'mail_test_send'; domain: string; to: string }
+  | { action: 'mail_alias_list'; domain: string }
+  | { action: 'mail_alias_set'; domain: string; local: string; destinations: string[] }
+  | { action: 'mail_alias_remove'; domain: string; local: string }
+  | { action: 'mail_catchall_set'; domain: string; destination: string | null }
+  | { action: 'mail_forward_set'; domain: string; local: string; destinations: string[]; keepCopy: boolean }
+  | { action: 'mail_vacation_set'; domain: string; local: string; enabled: boolean; subject: string; message: string; startDate: string | null; endDate: string | null };
 
 export interface MailStatusResult {
   installed: boolean;
@@ -134,7 +140,28 @@ export interface MailDomainInfo {
   dkim: { selector: string; record: string } | null;
   /** Nouvelle clé en cours de rotation : à publier dans le DNS avant de l'activer. */
   dkimPending: { selector: string; record: string } | null;
+  maxBoxes: number;
+  sendLimitPerHour: number;
+  aliasCount: number;
+  catchAll: string | null;
+  /** Espace total du domaine : seulement dans la liste des domaines (calcul coûteux). */
+  usedMb?: number;
   createdAt: string;
+}
+
+export interface MailAliasInfo {
+  address: string;
+  local: string;
+  destinations: string[];
+  createdAt: string;
+}
+
+export interface MailVacation {
+  enabled: boolean;
+  subject: string;
+  message: string;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface MailTestResult {
@@ -149,7 +176,15 @@ export interface MailBoxInfo {
   displayName: string;
   quotaMb: number;
   usedMb: number;
+  /** Nombre de messages, null si Dovecot est arrêté. */
+  messages: number | null;
   suspended: boolean;
+  forward: { destinations: string[]; keepCopy: boolean } | null;
+  vacation: MailVacation | null;
+  /** Limite propre à la boîte ; null = celle du domaine. */
+  sendLimitPerHour: number | null;
+  /** Limite réellement appliquée (0 = aucune). */
+  effectiveSendLimit: number;
   createdAt: string;
 }
 
@@ -426,6 +461,25 @@ function isMailDisplayName(v: unknown): v is string {
 function isMailPassword(v: unknown): v is string {
   // eslint-disable-next-line no-control-regex
   return typeof v === 'string' && v.length >= 12 && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v);
+}
+
+// Destination d'alias ou de redirection : écrite telle quelle dans une map Postfix (séparateurs interdits)
+const MAIL_DESTINATION_RE = /^[a-z0-9._%+-]{1,64}@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const MAIL_MAX_DESTINATIONS = 50;
+function isMailDestinations(v: unknown): v is string[] {
+  return Array.isArray(v) && v.length <= MAIL_MAX_DESTINATIONS && v.every((d) => typeof d === 'string' && MAIL_DESTINATION_RE.test(d));
+}
+function isMailCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1_000_000;
+}
+function isMailDate(v: unknown): v is string {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const parsed = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(v);
+}
+function hasControlChars(v: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return /[\x00-\x1f\x7f]/.test(v);
 }
 
 const MAIL_RELAY_USER_RE = /^[^\s:]{1,255}$/;
@@ -774,11 +828,15 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (!isMailDomain(raw.domain)) return null;
       if (raw.suspended !== undefined && typeof raw.suspended !== 'boolean') return null;
       if (raw.defaultQuotaMb !== undefined && !isMailQuota(raw.defaultQuotaMb)) return null;
+      if (raw.maxBoxes !== undefined && !isMailCount(raw.maxBoxes)) return null;
+      if (raw.sendLimitPerHour !== undefined && !isMailCount(raw.sendLimitPerHour)) return null;
       return {
         action: 'mail_domain_set',
         domain: raw.domain,
         ...(raw.suspended !== undefined ? { suspended: raw.suspended } : {}),
         ...(raw.defaultQuotaMb !== undefined ? { defaultQuotaMb: raw.defaultQuotaMb } : {}),
+        ...(raw.maxBoxes !== undefined ? { maxBoxes: raw.maxBoxes } : {}),
+        ...(raw.sendLimitPerHour !== undefined ? { sendLimitPerHour: raw.sendLimitPerHour } : {}),
       };
     }
     case 'mail_domain_remove':
@@ -796,6 +854,7 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
       if (raw.quotaMb !== undefined && !isMailQuota(raw.quotaMb)) return null;
       if (raw.suspended !== undefined && typeof raw.suspended !== 'boolean') return null;
       if (raw.displayName !== undefined && !isMailDisplayName(raw.displayName)) return null;
+      if (raw.sendLimitPerHour !== undefined && raw.sendLimitPerHour !== null && !isMailCount(raw.sendLimitPerHour)) return null;
       return {
         action: 'mail_box_set',
         domain: raw.domain,
@@ -803,6 +862,7 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
         ...(raw.quotaMb !== undefined ? { quotaMb: raw.quotaMb } : {}),
         ...(raw.suspended !== undefined ? { suspended: raw.suspended } : {}),
         ...(raw.displayName !== undefined ? { displayName: raw.displayName } : {}),
+        ...(raw.sendLimitPerHour !== undefined ? { sendLimitPerHour: raw.sendLimitPerHour } : {}),
       };
     }
     case 'mail_box_password':
@@ -833,6 +893,32 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'mail_test_send':
       if (!isMailDomain(raw.domain) || typeof raw.to !== 'string' || !MAIL_ADDRESS_RE.test(raw.to)) return null;
       return { action: 'mail_test_send', domain: raw.domain, to: raw.to };
+    case 'mail_alias_list':
+      if (!isMailDomain(raw.domain)) return null;
+      return { action: 'mail_alias_list', domain: raw.domain };
+    case 'mail_alias_set':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailDestinations(raw.destinations) || raw.destinations.length === 0) return null;
+      return { action: 'mail_alias_set', domain: raw.domain, local: raw.local, destinations: raw.destinations };
+    case 'mail_alias_remove':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local)) return null;
+      return { action: 'mail_alias_remove', domain: raw.domain, local: raw.local };
+    case 'mail_catchall_set':
+      if (!isMailDomain(raw.domain)) return null;
+      if (raw.destination !== null && !(typeof raw.destination === 'string' && isMailDestinations([raw.destination]))) return null;
+      return { action: 'mail_catchall_set', domain: raw.domain, destination: raw.destination };
+    case 'mail_forward_set':
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailDestinations(raw.destinations) || typeof raw.keepCopy !== 'boolean') return null;
+      return { action: 'mail_forward_set', domain: raw.domain, local: raw.local, destinations: raw.destinations, keepCopy: raw.keepCopy };
+    case 'mail_vacation_set': {
+      if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || typeof raw.enabled !== 'boolean') return null;
+      if (typeof raw.subject !== 'string' || raw.subject.length > 200 || hasControlChars(raw.subject)) return null;
+      // Le corps peut contenir des retours à la ligne, aucun autre caractère de contrôle
+      if (typeof raw.message !== 'string' || raw.message.length > 5000 || hasControlChars(raw.message.replace(/\r?\n/g, ''))) return null;
+      if (raw.startDate !== null && !isMailDate(raw.startDate)) return null;
+      if (raw.endDate !== null && !isMailDate(raw.endDate)) return null;
+      if (raw.enabled && (raw.subject.trim() === '' || raw.message.trim() === '')) return null;
+      return { action: 'mail_vacation_set', domain: raw.domain, local: raw.local, enabled: raw.enabled, subject: raw.subject, message: raw.message, startDate: raw.startDate, endDate: raw.endDate };
+    }
     default:
       return null;
   }

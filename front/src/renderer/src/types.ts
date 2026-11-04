@@ -173,7 +173,27 @@ export interface MailDomain {
   boxCount: number;
   dkim: { selector: string; record: string } | null;
   dkimPending: { selector: string; record: string } | null;
+  maxBoxes: number;
+  sendLimitPerHour: number;
+  aliasCount: number;
+  catchAll: string | null;
+  usedMb?: number;
   createdAt: string;
+}
+
+export interface MailAlias {
+  address: string;
+  local: string;
+  destinations: string[];
+  createdAt: string;
+}
+
+export interface MailVacation {
+  enabled: boolean;
+  subject: string;
+  message: string;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface MailDnsRecord {
@@ -218,6 +238,11 @@ export interface MailBox {
   displayName: string;
   quotaMb: number;
   usedMb: number;
+  messages: number | null;
   suspended: boolean;
+  forward: { destinations: string[]; keepCopy: boolean } | null;
+  vacation: MailVacation | null;
+  sendLimitPerHour: number | null;
+  effectiveSendLimit: number;
   createdAt: string;
 }

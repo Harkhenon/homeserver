@@ -34,7 +34,7 @@ import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { validateRequest, validateFail2banConfig, CONTRACT_VERSION, FAIL2BAN_JAILS } from '../server/src/core/privileged/contract.js';
-import { handleMail } from './mail.js';
+import { handleMail, upgradeMailOnStart } from './mail.js';
 import type { MailRequest, SshHardeningStatusResult,SshHardeningApplyResult, Fail2banStatusResult, Fail2banConfig, Fail2banConfigResult, Fail2banJailName } from '../server/src/core/privileged/contract.js';
 
 const SOCKET_PATH = process.env.HS_HELPER_SOCKET ?? '/run/homeserver/helper.sock';
@@ -2039,6 +2039,16 @@ const server = createServer((socket) => {
 
 server.maxConnections = MAX_CONNECTIONS;
 migrateBindZones();
+{
+  // Serveur de mail activé par une version précédente : mis à niveau sans attendre une action
+  const family = detectFamily();
+  upgradeMailOnStart({
+    family,
+    pkgInstall: (packages) => pkgInstall(family, packages),
+    pkgRefresh: () => (family === 'debian' ? aptUpdate() : Promise.resolve()),
+    log,
+  });
+}
 mkdirSync(SOCKET_PATH.replace(/\/[^/]+$/, ''), { recursive: true });
 if (existsSync(SOCKET_PATH)) unlinkSync(SOCKET_PATH);
 server.listen(SOCKET_PATH, () => {
