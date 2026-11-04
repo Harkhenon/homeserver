@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Table, Button, Modal, TextInput, Stack, Badge } from '@mantine/core';
+import { Table, Button, Modal, TextInput, Stack, Badge, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useModuleQuery, useModuleAction } from '../api/hooks';
 import { PageHeader, LoadingBlock, ErrorBlock } from '../components';
 import { IconDatabaseImport } from '@tabler/icons-react';
-import type { BackupInfo } from '../types';
+import { MailBackupsPanel } from '../components/mail/MailBackupsPanel';
+import type { BackupInfo, MailStatus } from '../types';
 
 export function BackupsPage() {
   const backups = useModuleQuery<{ backups: BackupInfo[] }>('backups', 'backups.list');
+  const mail = useModuleQuery<MailStatus>('mail', 'status');
   const action = useModuleAction('backups');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -65,6 +67,12 @@ icon={IconDatabaseImport}         title="Sauvegardes"
           ))}
         </Table.Tbody>
       </Table>
+      {mail.data?.configured && (
+        <Stack mt="xl">
+          <Title order={4}>Messagerie</Title>
+          <MailBackupsPanel />
+        </Stack>
+      )}
       <CreateBackupModal opened={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); void backups.reload(); }} />
     </div>
   );

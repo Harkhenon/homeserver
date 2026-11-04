@@ -2,12 +2,13 @@ import { useState } from 'react';
 import {
   Alert, Button, Card, Checkbox, Group, Modal, NumberInput, SimpleGrid, Stack, Switch, Tabs, Text, TextInput,
 } from '@mantine/core';
-import { IconAdjustments, IconArrowsSplit, IconBinaryTree, IconMail, IconTrash, IconUsers } from '@tabler/icons-react';
+import { IconAdjustments, IconArrowsSplit, IconBinaryTree, IconDatabaseImport, IconMail, IconTrash, IconUsers } from '@tabler/icons-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useModuleQuery } from '../api/hooks';
 import { ErrorBlock, LoadingBlock, PageHeader } from '../components';
 import { MailboxesPanel, mailCall } from '../components/mail/MailboxesPanel';
 import { MailAliasesPanel } from '../components/mail/MailAliasesPanel';
+import { MailBackupsPanel } from '../components/mail/MailBackupsPanel';
 import { MailDnsPanel } from '../components/mail/MailDnsPanel';
 import type { MailDomain } from '../types';
 
@@ -114,10 +115,12 @@ export function MailDomainPage() {
             <Tabs.Tab value="boxes" leftSection={<IconUsers size={16} stroke={1.5} />}>Boîtes</Tabs.Tab>
             <Tabs.Tab value="aliases" leftSection={<IconArrowsSplit size={16} stroke={1.5} />}>Alias</Tabs.Tab>
             <Tabs.Tab value="dns" leftSection={<IconBinaryTree size={16} stroke={1.5} />}>DNS</Tabs.Tab>
+            <Tabs.Tab value="backups" leftSection={<IconDatabaseImport size={16} stroke={1.5} />}>Sauvegardes</Tabs.Tab>
             <Tabs.Tab value="settings" leftSection={<IconAdjustments size={16} stroke={1.5} />}>Réglages</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="boxes"><MailboxesPanel domain={domain} /></Tabs.Panel>
           <Tabs.Panel value="aliases"><MailAliasesPanel domain={domain} onChanged={() => void domains.reload(true)} /></Tabs.Panel>
+          <Tabs.Panel value="backups" keepMounted={false}><MailBackupsPanel domain={domain} onRestored={() => void domains.reload(true)} /></Tabs.Panel>
           <Tabs.Panel value="settings"><DomainSettingsPanel key={info.createdAt} domain={domain} info={info} onChanged={() => void domains.reload(true)} /></Tabs.Panel>
           <Tabs.Panel value="dns"><MailDnsPanel domain={domain} info={info} onChanged={() => void domains.reload(true)} /></Tabs.Panel>
         </Tabs>

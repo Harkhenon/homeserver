@@ -5,11 +5,12 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconArrowForwardUp, IconCheck, IconCopy, IconDots, IconKey, IconPlayerPause, IconPlayerPlay, IconPlus, IconPlaneDeparture, IconSend, IconTrash, IconGauge,
+  IconArrowForwardUp, IconCheck, IconCopy, IconDatabaseImport, IconDots, IconFileText, IconKey, IconPlayerPause, IconPlayerPlay, IconPlus, IconPlaneDeparture, IconSend, IconTrash, IconGauge,
 } from '@tabler/icons-react';
 import { call } from '../../api/client';
 import { useModuleQuery } from '../../api/hooks';
 import { ErrorBlock, LoadingBlock } from '../StateBlocks';
+import { MailLogsPanel } from './MailLogsPanel';
 import type { MailBox, MailStatus } from '../../types';
 
 /** Appel du module mail : le message d'erreur vient de la réponse (action.error serait périmé ici). */
@@ -393,6 +394,7 @@ export function MailboxesPanel({ domain }: { domain: string }) {
   const [forwardBox, setForwardBox] = useState<MailBox | null>(null);
   const [vacationBox, setVacationBox] = useState<MailBox | null>(null);
   const [limitBox, setLimitBox] = useState<MailBox | null>(null);
+  const [logsBox, setLogsBox] = useState<MailBox | null>(null);
   const [generated, setGenerated] = useState<{ address: string; password: string } | null>(null);
 
   const toggleSuspend = async (box: MailBox) => {
@@ -454,6 +456,8 @@ export function MailboxesPanel({ domain }: { domain: string }) {
                       <Menu.Item leftSection={<IconArrowForwardUp size={14} stroke={1.5} />} onClick={() => setForwardBox(box)}>Redirection</Menu.Item>
                       <Menu.Item leftSection={<IconPlaneDeparture size={14} stroke={1.5} />} onClick={() => setVacationBox(box)}>Répondeur</Menu.Item>
                       <Menu.Item leftSection={<IconSend size={14} stroke={1.5} />} onClick={() => setLimitBox(box)}>Limite d'envoi</Menu.Item>
+                      <Menu.Item leftSection={<IconFileText size={14} stroke={1.5} />} onClick={() => setLogsBox(box)}>Journal</Menu.Item>
+                      <Menu.Item leftSection={<IconDatabaseImport size={14} stroke={1.5} />} onClick={() => void mailCall('backups.create', { domain, local: box.local }, `Sauvegarde de ${box.address} créée`)}>Sauvegarder</Menu.Item>
                       <Menu.Item
                         leftSection={box.suspended ? <IconPlayerPlay size={14} stroke={1.5} /> : <IconPlayerPause size={14} stroke={1.5} />}
                         onClick={() => void toggleSuspend(box)}
@@ -497,6 +501,9 @@ export function MailboxesPanel({ domain }: { domain: string }) {
       <ForwardModal box={forwardBox} domain={domain} onClose={() => setForwardBox(null)} onDone={() => void boxes.reload(true)} />
       <VacationModal box={vacationBox} domain={domain} onClose={() => setVacationBox(null)} onDone={() => void boxes.reload(true)} />
       <SendLimitModal box={limitBox} domain={domain} onClose={() => setLimitBox(null)} onDone={() => void boxes.reload(true)} />
+      <Modal opened={logsBox !== null} onClose={() => setLogsBox(null)} title={`Journal de ${logsBox?.address ?? ''}`} size="xl">
+        {logsBox && <MailLogsPanel initialQuery={logsBox.address} />}
+      </Modal>
       <DeleteBoxModal box={deleteBox} domain={domain} onClose={() => setDeleteBox(null)} onDone={() => void boxes.reload(true)} />
       <GeneratedPasswordModal address={generated?.address ?? ''} password={generated?.password ?? null} onClose={() => setGenerated(null)} />
     </Stack>

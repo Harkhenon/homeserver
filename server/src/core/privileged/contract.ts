@@ -115,7 +115,54 @@ export type MailRequest =
   | { action: 'mail_alias_remove'; domain: string; local: string }
   | { action: 'mail_catchall_set'; domain: string; destination: string | null }
   | { action: 'mail_forward_set'; domain: string; local: string; destinations: string[]; keepCopy: boolean }
+  | { action: 'mail_antispam_set'; config: MailAntispamConfig }
+  | { action: 'mail_queue_list' }
+  | { action: 'mail_queue_action'; queueAction: 'flush' | 'retry' | 'delete' | 'hold' | 'release'; id?: string }
+  | { action: 'mail_logs'; query?: string; limit: number }
+  | { action: 'mail_backup_list' }
+  | { action: 'mail_backup_create'; domain: string; local: string | null }
+  | { action: 'mail_backup_delete'; file: string }
+  | { action: 'mail_backup_restore'; file: string }
   | { action: 'mail_vacation_set'; domain: string; local: string; enabled: boolean; subject: string; message: string; startDate: string | null; endDate: string | null };
+
+export interface MailAntispamConfig {
+  engine: 'basic' | 'rspamd';
+  /** Listes noires (Spamhaus, SpamCop) sur le port 25. */
+  rbl: boolean;
+  /** Refus des HELO et expéditeurs mal formés ou sans domaine résolvable. */
+  strictSender: boolean;
+  /** Score Rspamd à partir duquel le message va dans Junk. */
+  junkScore: number;
+  /** Score Rspamd à partir duquel le message est refusé. */
+  rejectScore: number;
+  clamav: boolean;
+}
+
+export interface MailQueueItem {
+  id: string;
+  queue: string;
+  arrivalAt: string | null;
+  sizeBytes: number;
+  sender: string;
+  recipients: Array<{ address: string; reason: string | null }>;
+}
+
+export interface MailQueueResult {
+  items: MailQueueItem[];
+  total: number;
+}
+
+export interface MailLogsResult {
+  lines: string[];
+}
+
+export interface MailBackupInfo {
+  file: string;
+  domain: string;
+  local: string | null;
+  sizeMb: number;
+  createdAt: string;
+}
 
 export interface MailStatusResult {
   installed: boolean;
@@ -128,6 +175,11 @@ export interface MailStatusResult {
   /** IP publique saisie (serveur derrière un NAT), sinon null : serverIp fait foi. */
   publicIp: string | null;
   relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
+  antispam: MailAntispamConfig;
+  rspamdAvailable: boolean;
+  memoryMb: number;
+  /** Horloge synchronisée par NTP (null : inconnu). Une horloge fausse fausse les dates des messages. */
+  clockSynced: boolean | null;
   domainCount: number;
   boxCount: number;
 }
@@ -280,6 +332,7 @@ export const FAIL2BAN_JAILS = [
   'sshd', 'recidive',
   'apache-auth', 'apache-badbots', 'apache-noscript',
   'nginx-http-auth', 'nginx-botsearch',
+  'postfix', 'postfix-sasl', 'dovecot',
 ] as const;
 export type Fail2banJailName = typeof FAIL2BAN_JAILS[number];
 
@@ -480,6 +533,11 @@ function isMailDate(v: unknown): v is string {
 function hasControlChars(v: string): boolean {
   // eslint-disable-next-line no-control-regex
   return /[\x00-\x1f\x7f]/.test(v);
+}
+
+const MAIL_BACKUP_RE = /^mail-[a-z0-9.-]+(\+[a-z0-9._-]+)?-\d{8}T\d{6}\.tar\.gz$/;
+function isMailScore(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 100;
 }
 
 const MAIL_RELAY_USER_RE = /^[^\s:]{1,255}$/;
@@ -909,6 +967,36 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'mail_forward_set':
       if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailDestinations(raw.destinations) || typeof raw.keepCopy !== 'boolean') return null;
       return { action: 'mail_forward_set', domain: raw.domain, local: raw.local, destinations: raw.destinations, keepCopy: raw.keepCopy };
+    case 'mail_antispam_set': {
+      const c = raw.config;
+      if (!isObject(c)) return null;
+      if ((c.engine !== 'basic' && c.engine !== 'rspamd') || typeof c.rbl !== 'boolean' || typeof c.strictSender !== 'boolean' || typeof c.clamav !== 'boolean') return null;
+      if (!isMailScore(c.junkScore) || !isMailScore(c.rejectScore) || c.junkScore >= c.rejectScore) return null;
+      return { action: 'mail_antispam_set', config: { engine: c.engine, rbl: c.rbl, strictSender: c.strictSender, junkScore: c.junkScore, rejectScore: c.rejectScore, clamav: c.clamav } };
+    }
+    case 'mail_queue_list':
+      return { action: 'mail_queue_list' };
+    case 'mail_queue_action': {
+      const a = raw.queueAction;
+      if (a !== 'flush' && a !== 'retry' && a !== 'delete' && a !== 'hold' && a !== 'release') return null;
+      if (raw.id !== undefined && (typeof raw.id !== 'string' || !/^[0-9A-Za-z]{5,32}$/.test(raw.id))) return null;
+      return { action: 'mail_queue_action', queueAction: a, ...(raw.id !== undefined ? { id: raw.id } : {}) };
+    }
+    case 'mail_logs':
+      if (raw.query !== undefined && (typeof raw.query !== 'string' || raw.query.length > 254 || hasControlChars(raw.query))) return null;
+      if (typeof raw.limit !== 'number' || !Number.isInteger(raw.limit) || raw.limit < 1 || raw.limit > 2000) return null;
+      return { action: 'mail_logs', limit: raw.limit, ...(raw.query !== undefined ? { query: raw.query } : {}) };
+    case 'mail_backup_list':
+      return { action: 'mail_backup_list' };
+    case 'mail_backup_create':
+      if (!isMailDomain(raw.domain) || (raw.local !== null && !isMailLocal(raw.local))) return null;
+      return { action: 'mail_backup_create', domain: raw.domain, local: raw.local };
+    case 'mail_backup_delete':
+      if (typeof raw.file !== 'string' || !MAIL_BACKUP_RE.test(raw.file)) return null;
+      return { action: 'mail_backup_delete', file: raw.file };
+    case 'mail_backup_restore':
+      if (typeof raw.file !== 'string' || !MAIL_BACKUP_RE.test(raw.file)) return null;
+      return { action: 'mail_backup_restore', file: raw.file };
     case 'mail_vacation_set': {
       if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || typeof raw.enabled !== 'boolean') return null;
       if (typeof raw.subject !== 'string' || raw.subject.length > 200 || hasControlChars(raw.subject)) return null;
