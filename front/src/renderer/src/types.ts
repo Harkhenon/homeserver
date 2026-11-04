@@ -108,7 +108,8 @@ export interface FirewallStatus {
 export type Fail2banJailName =
   | 'sshd' | 'recidive'
   | 'apache-auth' | 'apache-badbots' | 'apache-noscript'
-  | 'nginx-http-auth' | 'nginx-botsearch';
+  | 'nginx-http-auth' | 'nginx-botsearch'
+  | 'postfix' | 'postfix-sasl' | 'dovecot' | 'roundcube-auth';
 
 export interface Fail2banStatus {
   installed: boolean;
@@ -198,6 +199,7 @@ export interface MailStatus {
   publicIp: string | null;
   relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
   antispam: MailAntispamConfig;
+  webmail: { available: boolean; webServer: boolean; enabled: boolean; active: boolean; url: string | null };
   rspamdAvailable: boolean;
   memoryMb: number;
   clockSynced: boolean | null;

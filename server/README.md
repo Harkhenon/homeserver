@@ -32,7 +32,7 @@ Panel de gestion de serveur web/hébergement.
 | `POST /api/firewall/:action` | `status`, `enable`, `rules.add/remove` (ufw/firewalld) |
 | `POST /api/monitor/:action` | `history`, `latest`, `summary` (échantillons 1/min, 12h) |
 | `POST /api/node/:action` | `apps.list/create/delete/service`, `ports.check` — apps Node SSR en systemd `hs-app-*`, port dédié, proxy Apache/Nginx |
-| `POST /api/mail/:action` | `status`, `setup`, `service.set`, `tls.issue`, `settings.set`, `relay.set/clear`, `deliverability.check`, `test.send`, `dns.records/apply`, `dkim.rotate/activate`, `domains.list/add/update/delete`, `aliases.list/set/delete`, `catchall.set`, `boxes.list/add/update/password/forward/vacation/delete`, `antispam.set`, `queue.list/action`, `logs`, `backups.list/create/delete/restore` — service e-mail (Postfix + Dovecot + OpenDKIM) |
+| `POST /api/mail/:action` | `status`, `setup`, `service.set`, `tls.issue`, `settings.set`, `relay.set/clear`, `deliverability.check`, `test.send`, `dns.records/apply`, `dkim.rotate/activate`, `domains.list/add/update/delete`, `aliases.list/set/delete`, `catchall.set`, `boxes.list/add/update/password/forward/vacation/delete`, `antispam.set`, `queue.list/action`, `logs`, `backups.list/create/delete/restore`, `webmail.set` — service e-mail (Postfix + Dovecot + OpenDKIM) |
 | `POST /api/nginx/:action` | `vhosts.list/get/create/delete`, `service.status/reload` — alternative à Apache, PHP-FPM ou proxy Node |
 
 Exemple :
@@ -109,6 +109,7 @@ Le mail dépend d'un **domaine**, pas d'un site : supprimer un site ne touche pa
 - **Protection** : jails fail2ban `postfix`, `postfix-sasl` et `dovecot` activées avec le service et réglables dans la page Fail2ban. Les ports sont ouverts et fermés dans ufw ou firewalld avec le service.
 - **Exploitation** : file d'attente (voir, relancer, retenir, supprimer), journaux sur 7 jours filtrés par adresse, avec les lignes des messages concernés.
 - **Sauvegardes** : par domaine ou par boîte dans `/var/backups/homeserver/mail` (root, 0600), messages, réglages, hashes et clés DKIM compris. La restauration vérifie l'archive, fusionne les messages et recrée ce qui manque sans écraser l'existant.
+- **Webmail** : Roundcube à l'adresse `https://<nom d'hôte du serveur de mail>/`, activé à la demande, avec Apache ou Nginx. Pool PHP-FPM et utilisateur `homeserver-webmail` dédiés, base SQLite dans `/var/lib/homeserver-webmail`, notre configuration dans `/etc/homeserver-webmail`, fichiers des paquets intacts. Les utilisateurs changent leur mot de passe depuis ses réglages : la demande passe par une route locale du panel, protégée par un jeton, puis par le helper qui vérifie le mot de passe actuel. Jail fail2ban `roundcube-auth` pour les échecs de connexion. Contacts et préférences du webmail ne font pas partie des sauvegardes de messagerie.
 - **Logiciels de messagerie** : autoconfig pour Thunderbird et compatibles (`autoconfig.<domaine>`), SRV pour les autres. La découverte Outlook et MTA-STS exigent un HTTPS par domaine : pas encore gérés.
 - La désinstallation retire la configuration et conserve `/var/vmail`, sauf avec `--purge`.
 

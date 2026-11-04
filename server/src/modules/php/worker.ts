@@ -135,7 +135,7 @@ const definition: ModuleDefinition = {
         if (!/^\d\.\d$/.test(version)) throw new Error('Version invalide (format X.Y)');
         const dir = poolDir(version);
         const res = await callHelper<{ entries: DirEntryInfo[] }>({ action: 'list_dir', path: dir });
-        const files = (res.entries ?? []).filter((e) => e.type === 'file' && /[A-Za-z0-9._-]+\.conf$/.test(e.name));
+        const files = (res.entries ?? []).filter((e) => e.type === 'file' && /[A-Za-z0-9._-]+\.conf$/.test(e.name) && e.name !== 'homeserver-webmail.conf'); // géré par le module mail
         const pools = await Promise.all(files.map(async (e) => {
           const content = await callHelper<{ content: string }>({ action: 'read_file', path: `${dir}/${e.name}` });
           return parsePool(content.content, e.name, version);

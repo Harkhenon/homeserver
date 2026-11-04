@@ -116,6 +116,8 @@ export type MailRequest =
   | { action: 'mail_catchall_set'; domain: string; destination: string | null }
   | { action: 'mail_forward_set'; domain: string; local: string; destinations: string[]; keepCopy: boolean }
   | { action: 'mail_antispam_set'; config: MailAntispamConfig }
+  | { action: 'mail_webmail_set'; enabled: boolean; panelPort: number }
+  | { action: 'mail_box_self_password'; token: string; address: string; current: string; password: string }
   | { action: 'mail_queue_list' }
   | { action: 'mail_queue_action'; queueAction: 'flush' | 'retry' | 'delete' | 'hold' | 'release'; id?: string }
   | { action: 'mail_logs'; query?: string; limit: number }
@@ -176,6 +178,15 @@ export interface MailStatusResult {
   publicIp: string | null;
   relay: { host: string; port: number; username: string; spfInclude: string | null } | null;
   antispam: MailAntispamConfig;
+  webmail: {
+    /** Roundcube présent dans les dépôts de la distribution. */
+    available: boolean;
+    /** Apache ou Nginx actif. */
+    webServer: boolean;
+    enabled: boolean;
+    active: boolean;
+    url: string | null;
+  };
   rspamdAvailable: boolean;
   memoryMb: number;
   /** Horloge synchronisée par NTP (null : inconnu). Une horloge fausse fausse les dates des messages. */
@@ -332,7 +343,7 @@ export const FAIL2BAN_JAILS = [
   'sshd', 'recidive',
   'apache-auth', 'apache-badbots', 'apache-noscript',
   'nginx-http-auth', 'nginx-botsearch',
-  'postfix', 'postfix-sasl', 'dovecot',
+  'postfix', 'postfix-sasl', 'dovecot', 'roundcube-auth',
 ] as const;
 export type Fail2banJailName = typeof FAIL2BAN_JAILS[number];
 
@@ -967,6 +978,15 @@ export function validateRequest(raw: unknown): PrivilegedRequest | null {
     case 'mail_forward_set':
       if (!isMailDomain(raw.domain) || !isMailLocal(raw.local) || !isMailDestinations(raw.destinations) || typeof raw.keepCopy !== 'boolean') return null;
       return { action: 'mail_forward_set', domain: raw.domain, local: raw.local, destinations: raw.destinations, keepCopy: raw.keepCopy };
+    case 'mail_webmail_set':
+      if (typeof raw.enabled !== 'boolean' || typeof raw.panelPort !== 'number' || !Number.isInteger(raw.panelPort) || raw.panelPort < 1 || raw.panelPort > 65535) return null;
+      return { action: 'mail_webmail_set', enabled: raw.enabled, panelPort: raw.panelPort };
+    case 'mail_box_self_password':
+      if (typeof raw.token !== 'string' || !/^[0-9a-f]{64}$/.test(raw.token)) return null;
+      if (typeof raw.address !== 'string' || raw.address.length > 254 || !MAIL_ADDRESS_RE.test(raw.address)) return null;
+      if (typeof raw.current !== 'string' || raw.current.length < 1 || raw.current.length > 1024 || hasControlChars(raw.current)) return null;
+      if (!isMailPassword(raw.password)) return null;
+      return { action: 'mail_box_self_password', token: raw.token, address: raw.address, current: raw.current, password: raw.password };
     case 'mail_antispam_set': {
       const c = raw.config;
       if (!isObject(c)) return null;
