@@ -147,6 +147,9 @@ async function installPackages(deps: WebmailDeps): Promise<void> {
   } else {
     await deps.pkgInstall(['roundcubemail', 'php-fpm', 'php-cli', 'php-pdo']);
   }
+  // Téléchargement des pièces jointes en ZIP (plugin zipdownload) : facultatif, le webmail fonctionne sans
+  await deps.pkgInstall([deps.family === 'debian' ? 'php-zip' : 'php-pecl-zip'])
+    .catch((e: Error) => deps.log(`webmail : extension PHP zip non installée, téléchargement en ZIP indisponible : ${e.message.split('\n')[0]}`));
 }
 
 async function ensureUser(group: string): Promise<{ uid: number; gid: number }> {
