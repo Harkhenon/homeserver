@@ -5,3 +5,8 @@ dist/
 .DS_Store
 front/dist/
 front/node_modules/
+
+# Outils de Claude Code (worktrees, réglages locaux)
+.claude/
+# Journaux des tests sur VMs
+tests/vm/out/
